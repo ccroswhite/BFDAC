@@ -24,9 +24,14 @@ module artix_dac_top (
     input  logic        i2s_lrclk,
     input  logic        i2s_data,
 
-    // High-Speed LVDS Outputs to Converter Blades (8 Data + 1 Strobe)
-    output logic [8:0]  lvds_tx_p,
-    output logic [8:0]  lvds_tx_n
+    // High-Speed LVDS Outputs to 8 Converter Blades (Data, Clock, Frame)
+    output logic [7:0]  lvds_data_p,
+    output logic [7:0]  lvds_data_n,
+    output logic [7:0]  lvds_clk_p,
+    output logic [7:0]  lvds_clk_n,
+    output logic [7:0]  lvds_frame_p,
+    output logic [7:0]  lvds_frame_n
+    
 );
 
     // ==============================================================
@@ -179,15 +184,21 @@ module artix_dac_top (
     );
 
     // ==============================================================
-    // High-Speed LVDS Egress 
+    // High-Speed LVDS Egress to 8 DIMM Blades
     // ==============================================================
-    lvds_tx_serializer u_lvds_tx (
-        .bit_clk        (lvds_bit_clk),
-        .frame_clk      (lvds_frame_clk),
+    lvds_blade_tx u_lvds_tx (
+        .bit_clk        (lvds_bit_clk),    // Natively 45.1584 MHz or 49.152 MHz
         .rst_n          (sys_rst_n),
+        
         .data_in_64     (resistor_ring_bus),
-        .lvds_tx_p      (lvds_tx_p),
-        .lvds_tx_n      (lvds_tx_n)
+        .data_valid     (interpolated_valid), // 705.6 kHz pulse from the FIR
+        
+        .lvds_data_p    (lvds_data_p),
+        .lvds_data_n    (lvds_data_n),
+        .lvds_clk_p     (lvds_clk_p),
+        .lvds_clk_n     (lvds_clk_n),
+        .lvds_frame_p   (lvds_frame_p),
+        .lvds_frame_n   (lvds_frame_n)
     );
 
 endmodule
