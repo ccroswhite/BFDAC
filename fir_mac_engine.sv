@@ -49,11 +49,13 @@ module fir_mac_engine #(
         end
     end
 
-    // -----------------------------------------------------
+// -----------------------------------------------------
     // STAGE 3: Multiplier Pipeline (Maps to DSP48 M Register)
     // -----------------------------------------------------
     localparam int PROD_WIDTH = DATA_WIDTH + COEF_WIDTH;
-    logic signed [PROD_WIDTH-1:0] product_reg;
+    
+    // Force synthesis to use dedicated DSP slices
+    (* use_dsp = "yes" *) logic signed [PROD_WIDTH-1:0] product_reg;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
