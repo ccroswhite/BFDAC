@@ -3,7 +3,7 @@
 module fir_systolic_array #(
     parameter int NUM_MACS   = 256,
     parameter int DATA_WIDTH = 32,
-    parameter int COEF_WIDTH = 32,
+    parameter int COEF_WIDTH = 18, // UPDATED: Fits natively into one DSP48E1 slice (25x18)
     parameter int ACC_WIDTH  = 64
 )(
     input  logic                                     clk,
@@ -41,7 +41,6 @@ module fir_systolic_array #(
         for (i = 0; i < NUM_MACS; i++) begin : gen_mac_array
             
             // Extract strictly the coefficient chunk for this specific pipeline tap
-            // Utilizing dynamic indexed part-select avoiding implicit logic wrappers
             logic signed [COEF_WIDTH-1:0] local_coef;
             assign local_coef = $signed(coef_bus_in[i * COEF_WIDTH +: COEF_WIDTH]);
 
