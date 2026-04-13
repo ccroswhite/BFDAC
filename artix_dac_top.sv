@@ -31,7 +31,7 @@ module artix_dac_top (
     output logic [7:0]  lvds_clk_n,
     output logic [7:0]  lvds_frame_p,
     output logic [7:0]  lvds_frame_n
-    
+
 );
 
     // ==============================================================
@@ -63,7 +63,7 @@ module artix_dac_top (
     logic        volumed_audio_valid;
 
     // New Super-DSP Nets
-    logic signed [47:0] interpolated_audio_48b; // FIXED: Now 48 bits
+    logic signed [63:0] interpolated_audio_64b;
     logic               interpolated_valid;
     logic [5:0]         dem_drive_command;
     logic [63:0]        resistor_ring_bus; 
@@ -147,23 +147,20 @@ module artix_dac_top (
 
     // 2. The 1-Million Tap Folded Polyphase Interpolator (16x Upsampling)
     fir_polyphase_interpolator #(
-        .NUM_MACS   (256),
-        .DATA_WIDTH (24),
-        .COEF_WIDTH (18),
-        .ACC_WIDTH  (48)  // LOCKED to DSP48E1 Hardware Limit
+        .NUM_MACS(256), .DATA_WIDTH(32), .COEF_WIDTH(18), .ACC_WIDTH(64)
     ) u_1m_tap_fir (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
         .new_sample_valid   (volumed_audio_valid),
-        .new_sample_data    (volumed_audio_data[31:8]), 
-        .interpolated_out   (interpolated_audio_48b), // Catch the 48-bit word
-        .interpolated_valid (interpolated_valid)
+        .new_sample_data    (volumed_audio_data),
+        .interpolated_out   (interpolated_audio_64b), // Massive 64-bit math result
+        .interpolated_valid (interpolated_valid)      // Fires 16 times per input sample
     );
 
     // 3. The 2nd-Order Digital Delta-Sigma Modulator
-    // Extract the top 32 bits from the 48-bit accumulator. 
-    // Shift = 48 (total) - 32 (needed) = 16.
-    localparam int FIR_GAIN_SHIFT = 16; 
+    // We slice the 32 active bits out of the 64-bit FIR accumulator. 
+    // The shift value (e.g., 20) depends on the exact gain of your Sinc coefficients.
+    localparam int FIR_GAIN_SHIFT = 20; 
     
     noise_shaper_2nd_order #(
         .INPUT_WIDTH(32), .FRAC_WIDTH(26)
@@ -171,8 +168,7 @@ module artix_dac_top (
         .clk            (dsp_clk),
         .rst_n          (sys_rst_n),
         .enable         (interpolated_valid),
-        // FIXED: Now listening to the 48b wire, safely slicing bits [47:16]
-        .data_in        (interpolated_audio_48b[FIR_GAIN_SHIFT + 31 : FIR_GAIN_SHIFT]),
+        .data_in        (interpolated_audio_64b[FIR_GAIN_SHIFT + 31 : FIR_GAIN_SHIFT]),
         .dem_drive_out  (dem_drive_command) // The physical 0-32 command
     );
 

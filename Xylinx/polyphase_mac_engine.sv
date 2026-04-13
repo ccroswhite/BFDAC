@@ -1,21 +1,23 @@
 `timescale 1ns / 1ps
 
+// Force Vivado to map this entire module into a single DSP48E1 slice
+(* use_dsp = "yes" *)
 module polyphase_mac_engine #(
-    parameter int DATA_WIDTH = 32,
+    parameter int DATA_WIDTH = 24, // Locked to 24 for the 25-bit Pre-Adder limit
     parameter int COEF_WIDTH = 18,
-    parameter int ACC_WIDTH  = 64,
-    parameter int MAC_ID     = 0   // Unique ID to load the correct ROM file
+    parameter int ACC_WIDTH  = 48, // Locked to 48 for the DSP P-Register limit
+    parameter int MAC_ID     = 0   
 )(
     input  logic                      clk,
     input  logic                      rst_n,
 
-    // Phase Control (Broadcast globally from the master controller)
-    input  logic                      phase_sync,  // Triggers the start of a 128-cycle phase
-    input  logic [10:0]               coef_addr,   // 0 to 2047 (128 cycles * 16 phases)
+    // Phase Control
+    input  logic                      phase_sync, 
+    input  logic [10:0]               coef_addr,  
 
-    // The Folded Audio Cascade (The "U-Shape" Delay Line)
-    input  logic signed [DATA_WIDTH-1:0] audio_fwd_in,  // Audio moving New -> Old
-    input  logic signed [DATA_WIDTH-1:0] audio_rev_in,  // Audio moving Old -> New
+    // The Folded Audio Cascade
+    input  logic signed [DATA_WIDTH-1:0] audio_fwd_in,
+    input  logic signed [DATA_WIDTH-1:0] audio_rev_in,
     
     output logic signed [DATA_WIDTH-1:0] audio_fwd_out,
     output logic signed [DATA_WIDTH-1:0] audio_rev_out,
@@ -26,15 +28,12 @@ module polyphase_mac_engine #(
 );
 
     // =================================---------------------------------------
-    // 1. Local Coefficient ROM (Inferred as 1x RAMB36 Block RAM)
-    // 1,048,576 taps / 256 MACs / 2 (Symmetry) = 2048 coefficients per MAC
+    // 1. Local Coefficient ROM 
     // =================================---------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_rom [0:2047];
     logic signed [COEF_WIDTH-1:0] local_coef;
 
-    // In a real build, you use $readmemh to load the specific slice of the Sinc filter
-    // initial $readmemh($sformatf("sinc_coef_mac_%0d.mem", MAC_ID), coef_rom);
-
+    // STRICTLY SYNCHRONOUS
     always_ff @(posedge clk) begin
         local_coef <= coef_rom[coef_addr];
     end
@@ -44,7 +43,10 @@ module polyphase_mac_engine #(
     // =================================---------------------------------------
     logic signed [DATA_WIDTH-1:0] fwd_reg, rev_reg;
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    // STRICTLY SYNCHRONOUS - No negedge rst_n
+    always_ff @(posedge clk) begin
+        // We use synchronous reset here if needed, but for datapath 
+        // it's safer for DSP inference to just let it pipeline.
         if (!rst_n) begin
             fwd_reg <= '0;
             rev_reg <= '0;
@@ -60,31 +62,30 @@ module polyphase_mac_engine #(
     // =================================---------------------------------------
     // 3. The DSP48E1 Math Core (Pre-Adder + Multiplier + Accumulator)
     // =================================---------------------------------------
-    (* use_dsp = "yes" *) logic signed [DATA_WIDTH:0]   pre_adder;    // 33-bit to prevent overflow
-    (* use_dsp = "yes" *) logic signed [ACC_WIDTH-1:0]  product_reg;
-    (* use_dsp = "yes" *) logic signed [ACC_WIDTH-1:0]  local_acc;
+    logic signed [DATA_WIDTH:0]  pre_adder;    // 25-bit
+    logic signed [ACC_WIDTH-1:0] product_reg;  // 48-bit (holds 43-bit result)
+    logic signed [ACC_WIDTH-1:0] local_acc;    // 48-bit
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    // STRICTLY SYNCHRONOUS - No negedge rst_n allowed in DSP math blocks!
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
+            // Synchronous resets map perfectly to the DSP's RSTA/RSTM/RSTP pins
             pre_adder   <= '0;
             product_reg <= '0;
             local_acc   <= '0;
             acc_out     <= '0;
         end else begin
-            // STAGE 1: The Pre-Adder (Exploiting Sinc Symmetry to cut silicon in half)
+            // STAGE 1: The Pre-Adder (Maps to AD_REG)
             pre_adder <= $signed(fwd_reg) + $signed(rev_reg);
             
-            // STAGE 2: The Multiplier
+            // STAGE 2: The Multiplier (Maps to M_REG)
             product_reg <= pre_adder * local_coef;
             
-            // STAGE 3: The Accumulator & Systolic Shift
+            // STAGE 3: The Accumulator & Systolic Shift (Maps to P_REG)
             if (phase_sync) begin
-                // Phase is complete: Dump the local total into the systolic chain
                 acc_out   <= local_acc + acc_in;
-                // Instantly seed the new phase with the current product
                 local_acc <= product_reg; 
             end else begin
-                // Accumulate the 128 taps locally
                 local_acc <= local_acc + product_reg;
             end
         end

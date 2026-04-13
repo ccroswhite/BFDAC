@@ -1,182 +1,140 @@
 `timescale 1ns / 1ps
 
-module sys_clock_gen #(
-    // MMCM Math based on the 49.152 MHz / 45.1584 MHz family
-    // Note: The MMCM will use the same multipliers for both, meaning:
-    // 49.152 MHz in -> 98.304 MHz Frame / 393.216 MHz Bit
-    // 45.1584 MHz in -> 90.3168 MHz Frame / 361.2672 MHz Bit
-    parameter real VCO_MULTIPLIER  = 20.000, 
-    parameter real BIT_CLK_DIVIDE  = 2.500,  
-    parameter integer FRAME_DIVIDE = 10      
-)(
-    // Physical differential inputs from the two Crystek VCXOs
+module sys_clock_gen (
+    // Dual Differential Master Clocks
     input  logic clk_45m_p,
     input  logic clk_45m_n,
     input  logic clk_49m_p,
     input  logic clk_49m_n,
     
-    // System controls
+    // System Reset & Control
     input  logic rst_n,
-    input  logic base_rate_sel,   // 0 = 44.1k family (45MHz), 1 = 48k family (49MHz)
-
-    // Generated outputs
-    output logic dsp_clk,         // Master DSP / OSERDES Frame Clock
-    output logic lvds_bit_clk,    // High-Speed OSERDES Bit Clock
-    output logic locked           // MMCM Locked Indicator (Audio Mute Control)
+    input  logic base_rate_sel, // 0 = 45.1584 MHz, 1 = 49.152 MHz
+    
+    // Generated Output Clocks
+    output logic dsp_clk,       // 2x Base Rate (~90.3 MHz / 98.3 MHz)
+    output logic lvds_bit_clk,  // 8x Base Rate (~361.2 MHz / 393.2 MHz)
+    output logic locked
 );
 
     // =========================================================================
-    // 1. Differential Input Buffers
+    // 1. Input Differential Buffers (IBUFDS)
     // =========================================================================
-    logic clk_45m_single, clk_49m_single;
+    logic clk_45m_ibuf;
+    logic clk_49m_ibuf;
 
-    IBUFGDS #(.DIFF_TERM("TRUE")) u_ibuf_45m (
+    IBUFDS u_ibufds_45m (
         .I  (clk_45m_p),
         .IB (clk_45m_n),
-        .O  (clk_45m_single)
+        .O  (clk_45m_ibuf)
     );
 
-    IBUFGDS #(.DIFF_TERM("TRUE")) u_ibuf_49m (
+    IBUFDS u_ibufds_49m (
         .I  (clk_49m_p),
         .IB (clk_49m_n),
-        .O  (clk_49m_single)
+        .O  (clk_49m_ibuf)
     );
 
     // =========================================================================
-    // 2. Glitch-Free Clock Multiplexer
+    // 2. Glitch-Free Clock Mux (BUFGMUX)
     // =========================================================================
-    logic selected_master_clk;
-    logic safe_clk_sel;
+    logic clk_in_buffered;
 
-    // BUFGMUX_CTRL guarantees that when 'safe_clk_sel' flips, it waits for 
-    // the current clock to hit low, and the new clock to hit low, before switching.
-    BUFGMUX_CTRL u_clk_mux (
-        .I0 (clk_45m_single), // input 0
-        .I1 (clk_49m_single), // input 1
-        .S  (safe_clk_sel),   // select pin
-        .O  (selected_master_clk)
+    BUFGMUX u_bufgmux_base (
+        .O  (clk_in_buffered),
+        .I0 (clk_45m_ibuf),
+        .I1 (clk_49m_ibuf),
+        .S  (base_rate_sel)
     );
 
     // =========================================================================
-    // 3. MMCM Safe-Reset State Machine (Driven by a slow, safe internal clock)
+    // 3. The MMCM Core (MMCME2_ADV)
     // =========================================================================
-    // We cannot use the DSP clock for this state machine because the DSP clock 
-    // will be dead while the MMCM is in reset! 
-    // We must use the un-switched 49Mhz clock as the management heartbeat.
-    
-    typedef enum logic [1:0] {
-        ST_NORMAL = 2'b00,
-        ST_RESET  = 2'b01,
-        ST_SWITCH = 2'b10,
-        ST_WAIT   = 2'b11
-    } state_t;
-    
-    state_t state, next_state;
-    logic current_sel_reg;
-    logic mmcm_reset;
-    logic [7:0] wait_timer; // Small delay to let the MMCM settle
-    
-    always_ff @(posedge clk_49m_single or negedge rst_n) begin
-        if (!rst_n) begin
-            state           <= ST_RESET;
-            current_sel_reg <= 1'b0;
-            safe_clk_sel    <= 1'b0;
-            wait_timer      <= '0;
-        end else begin
-            state <= next_state;
-            
-            case (state)
-                ST_NORMAL: begin
-                    // If a sample rate change is requested, trigger the reset sequence
-                    if (base_rate_sel != current_sel_reg) begin
-                        current_sel_reg <= base_rate_sel;
-                    end
-                end
-                ST_SWITCH: begin
-                    safe_clk_sel <= current_sel_reg;
-                    wait_timer   <= '0;
-                end
-                ST_WAIT: begin
-                    if (wait_timer != 8'hFF) wait_timer <= wait_timer + 1;
-                end
-                default: ; // Do nothing
-            endcase
-        end
-    end
+    logic clkfb_out, clkfb_buf;
+    logic dsp_clk_unbuf;
+    logic lvds_clk_unbuf;
 
-    // Combinational next-state logic
-    always_comb begin
-        next_state = state;
-        mmcm_reset = 1'b0;
-        
-        case (state)
-            ST_NORMAL: begin
-                if (base_rate_sel != current_sel_reg) next_state = ST_RESET;
-            end
-            ST_RESET: begin
-                mmcm_reset = 1'b1;
-                next_state = ST_SWITCH;
-            end
-            ST_SWITCH: begin
-                mmcm_reset = 1'b1;
-                next_state = ST_WAIT; // Wait for the BUFGMUX to physically switch
-            end
-            ST_WAIT: begin
-                mmcm_reset = 1'b1;
-                if (wait_timer == 8'hFF) next_state = ST_NORMAL; // Release reset
-            end
-        endcase
-    end
-
-    // =========================================================================
-    // 4. The MMCM Engine
-    // =========================================================================
-    logic vco_feedback_out, vco_feedback_in;
-    logic clk_out_bit_unbuf, clk_out_frame_unbuf;
-    logic mmcm_locked;
-
-    // Notice we use a generic PERIOD here because we are dynamically switching. 
-    // The MMCM will track the input seamlessly.
-MMCME2_ADV #(
+    MMCME2_ADV #(
         .BANDWIDTH            ("OPTIMIZED"),
+        .CLKOUT4_CASCADE      ("FALSE"),
         .COMPENSATION         ("ZHOLD"),
         .STARTUP_WAIT         ("FALSE"),
         .DIVCLK_DIVIDE        (1),
-        .CLKFBOUT_MULT_F      (10.000), // (Your specific multiplier parameters here)
-        .CLKFBOUT_PHASE       (0.000)
-        // Make sure there are NO .DADDR or .DCLK lines up here in the parameters
-    ) u_mmcm_master (
-        // --- Physical Clock In/Out Ports ---
-        .CLKIN1               (clk_in),
-        .CLKFBIN              (clk_fb_in),
-        .CLKOUT0              (clk_out_dsp),
-        .CLKOUT1              (clk_out_bit),
+        
+        // Multiply by 16 to put the VCO inside the 600-1200 MHz safe zone
+        .CLKFBOUT_MULT_F      (16.000), 
+        .CLKFBOUT_PHASE       (0.000),
+        
+        // Output 0: LVDS Bit Clock (VCO / 2 = 8x Base Rate)
+        .CLKOUT0_DIVIDE_F     (2.000), 
+        .CLKOUT0_PHASE        (0.000),
+        .CLKOUT0_DUTY_CYCLE   (0.500),
+        
+        // Output 1: DSP Clock (VCO / 8 = 2x Base Rate)
+        .CLKOUT1_DIVIDE       (8),     
+        .CLKOUT1_PHASE        (0.000),
+        .CLKOUT1_DUTY_CYCLE   (0.500)
+    ) u_mmcm_adv (
+        // --- PHYSICAL CLOCKS & RESETS ---
+        .CLKIN1               (clk_in_buffered),
+        .CLKIN2               (1'b0),
+        .CLKINSEL             (1'b1),
         .RST                  (~rst_n),
         .PWRDWN               (1'b0),
-
-        // --- Tie-offs belong down here in the port map ---
-        .DADDR                (7'h00),
+        
+        // --- OUTPUT CLOCKS ---
+        .CLKFBOUT             (clkfb_out),
+        .CLKFBOUTB            (),
+        .CLKOUT0              (lvds_clk_unbuf),
+        .CLKOUT0B             (),
+        .CLKOUT1              (dsp_clk_unbuf),
+        .CLKOUT1B             (),
+        .CLKOUT2              (),
+        .CLKOUT2B             (),
+        .CLKOUT3              (),
+        .CLKOUT3B             (),
+        .CLKOUT4              (),
+        .CLKOUT5              (),
+        .CLKOUT6              (),
+        
+        // --- FEEDBACK ---
+        .CLKFBIN              (clkfb_buf),
+        
+        // --- STATUS ---
+        .LOCKED               (locked),
+        
+        // --- FIXED: DRP PORTS MOVED OUT OF PARAMETERS AND TIED TO GROUND ---
+        .DADDR                (7'h0),
         .DCLK                 (1'b0),
         .DEN                  (1'b0),
-        .DI                   (16'h0000),
+        .DI                   (16'h0),
         .DWE                  (1'b0),
+        .DRDY                 (),
+        .DO                   (),
+        
+        // --- DYNAMIC PHASE SHIFT PORTS (UNUSED) ---
         .PSCLK                (1'b0),
         .PSEN                 (1'b0),
         .PSINCDEC             (1'b0),
-        .LOCKED               (mmcm_locked)
+        .PSDONE               ()
     );
 
     // =========================================================================
-    // 5. Global Clock Buffers (BUFG)
+    // 4. Output Global Buffers (BUFG)
     // =========================================================================
-    BUFG u_bufg_fb    (.I(vco_feedback_out),    .O(vco_feedback_in));
-    BUFG u_bufg_bit   (.I(clk_out_bit_unbuf),   .O(lvds_bit_clk));
-    BUFG u_bufg_frame (.I(clk_out_frame_unbuf), .O(dsp_clk));
+    BUFG u_bufg_fb (
+        .I (clkfb_out),
+        .O (clkfb_buf)
+    );
 
-    // Expose the locked signal so the top module knows when to mute/unmute audio
-    always_ff @(posedge dsp_clk or negedge rst_n) begin
-        if (!rst_n) locked <= 1'b0;
-        else        locked <= mmcm_locked;
-    end
+    BUFG u_bufg_dsp (
+        .I (dsp_clk_unbuf),
+        .O (dsp_clk)
+    );
+
+    BUFG u_bufg_lvds (
+        .I (lvds_clk_unbuf),
+        .O (lvds_bit_clk)
+    );
 
 endmodule

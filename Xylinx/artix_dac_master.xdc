@@ -6,18 +6,19 @@
 # ------------------------------------------------------------------------------
 # 1. PHYSICAL I/O CONSTRAINTS (VOLTAGE & LOCATION)
 # ------------------------------------------------------------------------------
-# Note: Replace "PACKAGE_PIN XX" with your actual schematic netlist pins.
+# NOTE: Physical PACKAGE_PIN assignments are commented out for Synthesis/Timing.
+# Use the Vivado I/O Planner GUI to assign these once PCB schematic is finalized.
 
 # --- Master Clocks (Requires 2.5V or 3.3V High Range Bank for LVDS_25 / LVCMOS) ---
-set_property PACKAGE_PIN A1 [get_ports clk_49m_p]
+# set_property PACKAGE_PIN [YOUR_P_PIN_HERE] [get_ports clk_49m_p]
 set_property IOSTANDARD LVDS_25 [get_ports clk_49m_p]
 
-set_property PACKAGE_PIN B1 [get_ports clk_45m_p]
+# set_property PACKAGE_PIN [YOUR_P_PIN_HERE] [get_ports clk_45m_p]
 set_property IOSTANDARD LVDS_25 [get_ports clk_45m_p]
 
 # --- Administrative Control Plane (3.3V Domain) ---
 set_property IOSTANDARD LVCMOS33 [get_ports ext_rst_n]
-set_property PACKAGE_PIN C1 [get_ports ext_rst_n]
+# set_property PACKAGE_PIN [YOUR_PIN_HERE] [get_ports ext_rst_n]
 
 set_property IOSTANDARD LVCMOS33 [get_ports spi_sclk]
 set_property IOSTANDARD LVCMOS33 [get_ports spi_cs_n]
@@ -25,7 +26,8 @@ set_property IOSTANDARD LVCMOS33 [get_ports spi_mosi]
 set_property IOSTANDARD LVCMOS33 [get_ports spi_miso]
 
 # --- Hardware Relays & Sensors (3.3V Domain) ---
-set_property IOSTANDARD LVCMOS33 [get_ports {blade_detect_pins[*]}]
+# Using standard wildcards to prevent port-matching errors
+set_property IOSTANDARD LVCMOS33 [get_ports blade_detect_pins*]
 set_property IOSTANDARD LVCMOS33 [get_ports relay_iv_filter]
 set_property IOSTANDARD LVCMOS33 [get_ports relay_gain_6v]
 
@@ -37,8 +39,18 @@ set_property IOSTANDARD LVCMOS33 [get_ports i2s_data]
 # --- High-Speed LVDS Egress to Blades (Requires 2.5V Bank) ---
 # 8 Data Lanes + 1 Strobe Clock
 # SLEW FAST is mandatory to preserve the eye diagram at ~400 MHz
-set_property IOSTANDARD LVDS_25 [get_ports {lvds_tx_p[*]}]
-set_property SLEW FAST [get_ports {lvds_tx_p[*]}]
+# --- High-Speed LVDS Egress to Blades (Requires 2.5V Bank) ---
+# 8 Data Lanes + 1 Strobe Clock + 1 Frame Clock
+# SLEW FAST is mandatory to preserve the eye diagram at ~400 MHz
+
+set_property IOSTANDARD LVDS_25 [get_ports lvds_data_p*]
+set_property SLEW FAST [get_ports lvds_data_p*]
+
+set_property IOSTANDARD LVDS_25 [get_ports lvds_clk_p*]
+set_property SLEW FAST [get_ports lvds_clk_p*]
+
+set_property IOSTANDARD LVDS_25 [get_ports lvds_frame_p*]
+set_property SLEW FAST [get_ports lvds_frame_p*]
 
 # ------------------------------------------------------------------------------
 # 2. TIMING ASSERTIONS & CLOCK CREATION
@@ -69,15 +81,17 @@ set_clock_groups -physically_exclusive -group [get_clocks clk_49m] -group [get_c
 # RULE 2: The Async FIFO Moat
 # The I2S clock domain and the DSP clock domain are safely isolated by our async_fifo.
 # We instruct Vivado to ignore paths crossing this boundary.
-set_clock_groups -asynchronous -group [get_clocks i2s_bclk] -group [get_clocks -include_generated_clocks clk_49m clk_45m]
+# FIXED: Grouped clocks in curly braces
+set_clock_groups -asynchronous -group [get_clocks i2s_bclk] -group [get_clocks -include_generated_clocks {clk_49m clk_45m}]
 
 # RULE 3: The SPI Control Domain
 # The SPI registers change at human/ARM speeds and cross into the DSP domain via 
 # multi-cycle paths or stable registers.
-set_clock_groups -asynchronous -group [get_clocks spi_sclk] -group [get_clocks -include_generated_clocks clk_49m clk_45m]
+# FIXED: Grouped clocks in curly braces
+set_clock_groups -asynchronous -group [get_clocks spi_sclk] -group [get_clocks -include_generated_clocks {clk_49m clk_45m}]
 
 # RULE 4: Hardware Control Pins
 # Relays and blade detection pins do not require high-speed timing analysis.
-set_false_path -from [get_ports {blade_detect_pins[*]}]
+set_false_path -from [get_ports blade_detect_pins*]
 set_false_path -to [get_ports relay_iv_filter]
 set_false_path -to [get_ports relay_gain_6v]
