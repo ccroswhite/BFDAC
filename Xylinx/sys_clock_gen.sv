@@ -137,29 +137,33 @@ module sys_clock_gen #(
 
     // Notice we use a generic PERIOD here because we are dynamically switching. 
     // The MMCM will track the input seamlessly.
-    MMCME2_ADV #(
+MMCME2_ADV #(
         .BANDWIDTH            ("OPTIMIZED"),
         .COMPENSATION         ("ZHOLD"),
+        .STARTUP_WAIT         ("FALSE"),
         .DIVCLK_DIVIDE        (1),
-        .CLKFBOUT_MULT_F      (VCO_MULTIPLIER),
-        .CLKFBOUT_PHASE       (0.000),
-        .CLKIN1_PERIOD        (20.345), // Base period hint
-        
-        .CLKOUT0_DIVIDE_F     (BIT_CLK_DIVIDE),
-        .CLKOUT1_DIVIDE       (FRAME_DIVIDE)
+        .CLKFBOUT_MULT_F      (10.000), // (Your specific multiplier parameters here)
+        .CLKFBOUT_PHASE       (0.000)
+        // Make sure there are NO .DADDR or .DCLK lines up here in the parameters
     ) u_mmcm_master (
-        .CLKIN1      (selected_master_clk),
-        .CLKIN2      (1'b0),
-        .CLKINSEL    (1'b1),
-        .RST         (mmcm_reset | ~rst_n), // Driven by our state machine
-        .PWRDWN      (1'b0),
+        // --- Physical Clock In/Out Ports ---
+        .CLKIN1               (clk_in),
+        .CLKFBIN              (clk_fb_in),
+        .CLKOUT0              (clk_out_dsp),
+        .CLKOUT1              (clk_out_bit),
+        .RST                  (~rst_n),
+        .PWRDWN               (1'b0),
 
-        .CLKFBOUT    (vco_feedback_out),
-        .CLKFBIN     (vco_feedback_in),
-        .CLKOUT0     (clk_out_bit_unbuf),
-        .CLKOUT1     (clk_out_frame_unbuf),
-
-        .LOCKED      (mmcm_locked)
+        // --- Tie-offs belong down here in the port map ---
+        .DADDR                (7'h00),
+        .DCLK                 (1'b0),
+        .DEN                  (1'b0),
+        .DI                   (16'h0000),
+        .DWE                  (1'b0),
+        .PSCLK                (1'b0),
+        .PSEN                 (1'b0),
+        .PSINCDEC             (1'b0),
+        .LOCKED               (mmcm_locked)
     );
 
     // =========================================================================
