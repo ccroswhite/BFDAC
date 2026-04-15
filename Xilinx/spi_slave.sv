@@ -1,107 +1,105 @@
 `timescale 1ns / 1ps
 
 module spi_slave #(
-    parameter int WORD_WIDTH = 16
+    parameter int WORD_WIDTH = 32
 )(
-    input  logic                  clk,         // High-speed system clock
-    input  logic                  rst_n,       // Active-low system reset
-
-    input  logic                  spi_sclk,    // SPI clock from master
-    input  logic                  spi_cs_n,    // Active-low chip select from master
-    input  logic                  spi_mosi,    // Master Out, Slave In
-
-    output logic                  spi_miso,    // Master In, Slave Out
-    output logic [WORD_WIDTH-1:0] data_out,    // Fully received word
-    output logic                  data_valid   // Pulse indicating data_out is valid
+    input  logic                    clk,
+    input  logic                    rst_n,
+    
+    // SPI Bus (Asynchronous from ARM)
+    input  logic                    spi_sclk,
+    input  logic                    spi_cs_n,
+    input  logic                    spi_mosi,
+    output logic                    spi_miso,
+    
+    // Internal Synchronous Interface
+    output logic [WORD_WIDTH-1:0]   data_out,
+    output logic                    data_valid
 );
 
-    // 2-stage synchronizer signals
-    logic sync_sclk_meta, sync_sclk;
-    logic sync_cs_n_meta, sync_cs_n;
-    logic sync_mosi_meta, sync_mosi;
+    // =========================================================
+    // 1. CDC Synchronizers (Double Flopping)
+    // =========================================================
+    logic [2:0] sclk_sync;
+    logic [2:0] cs_n_sync;
+    logic [1:0] mosi_sync;
 
-    // Previous state signals for edge detection
-    logic sync_sclk_prev;
-    logic sync_cs_n_prev;
-
-    // Shift register
-    logic [WORD_WIDTH-1:0] shift_reg;
-
-    // Edge detections using continuous assignment based on synchronized signals
-    logic sclk_rising_edge;
-    logic sclk_falling_edge;
-    logic cs_n_rising_edge;
-    logic cs_n_falling_edge;
-
-    assign sclk_rising_edge  = (sync_sclk == 1'b1) && (sync_sclk_prev == 1'b0);
-    assign sclk_falling_edge = (sync_sclk == 1'b0) && (sync_sclk_prev == 1'b1);
-    assign cs_n_rising_edge  = (sync_cs_n == 1'b1) && (sync_cs_n_prev == 1'b0);
-    assign cs_n_falling_edge = (sync_cs_n == 1'b0) && (sync_cs_n_prev == 1'b1);
-
-    // Sequential Logic operating entirely on high-speed system clk
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset synchronizers and internal states
-            sync_sclk_meta <= 1'b0;
-            sync_sclk      <= 1'b0;
-            
-            sync_cs_n_meta <= 1'b1;
-            sync_cs_n      <= 1'b1;
-            
-            sync_mosi_meta <= 1'b0;
-            sync_mosi      <= 1'b0;
-            
-            sync_sclk_prev <= 1'b0;
-            sync_cs_n_prev <= 1'b1;
-
-            shift_reg      <= '0;
-            data_out       <= '0;
-            data_valid     <= 1'b0;
-            spi_miso       <= 1'b0;
+            sclk_sync <= 3'b000;
+            cs_n_sync <= 3'b111;
+            mosi_sync <= 2'b00;
         end else begin
-            // 1. Double-flop synchronizers to bring signals safely into clk domain
-            sync_sclk_meta <= spi_sclk;
-            sync_sclk      <= sync_sclk_meta;
-            
-            sync_cs_n_meta <= spi_cs_n;
-            sync_cs_n      <= sync_cs_n_meta;
-            
-            sync_mosi_meta <= spi_mosi;
-            sync_mosi      <= sync_mosi_meta;
-            
-            // 2. Maintain history for edge detection
-            sync_sclk_prev <= sync_sclk;
-            sync_cs_n_prev <= sync_cs_n;
+            sclk_sync <= {sclk_sync[1:0], spi_sclk};
+            cs_n_sync <= {cs_n_sync[1:0], spi_cs_n};
+            mosi_sync <= {mosi_sync[0], spi_mosi};
+        end
+    end
 
-            // Default valid logic - will pulse high only on CS_n rising edge
+    // =========================================================
+    // 2. Edge Detection
+    // =========================================================
+    logic sclk_rise, sclk_fall;
+    logic cs_n_fall, cs_n_rise;
+    logic cs_n_active;
+    logic mosi_val;
+
+    assign sclk_rise   = (sclk_sync[2:1] == 2'b01);
+    assign sclk_fall   = (sclk_sync[2:1] == 2'b10);
+    assign cs_n_fall   = (cs_n_sync[2:1] == 2'b10);
+    assign cs_n_rise   = (cs_n_sync[2:1] == 2'b01);
+    assign cs_n_active = ~cs_n_sync[1]; 
+    assign mosi_val    = mosi_sync[1];
+
+    // =========================================================
+    // 3. Shift Register and Counter
+    // =========================================================
+    logic [WORD_WIDTH-1:0] shift_reg;
+    logic [$clog2(WORD_WIDTH):0] bit_cnt;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            shift_reg  <= '0;
+            bit_cnt    <= '0;
             data_valid <= 1'b0;
+            data_out   <= '0;
+        end else begin
+            data_valid <= 1'b0; // Default pulse low
 
-            // Transaction completion
-            if (cs_n_rising_edge) begin
-                data_out   <= shift_reg;
-                data_valid <= 1'b1;
-            end
-
-            // 3. SPI Protocol Logic (Mode 0)
-            if (cs_n_falling_edge) begin
-                // Prepare first MISO bit when chip select is initially asserted
-                spi_miso <= shift_reg[WORD_WIDTH-1];
-            end else if (!sync_cs_n) begin
-                // While chip is selected:
-                if (sclk_rising_edge) begin
-                    // Sample MOSI into LSB on SCLK rising edge
-                    shift_reg <= {shift_reg[WORD_WIDTH-2:0], sync_mosi};
+            if (cs_n_fall) begin
+                // Reset counter at start of transaction
+                bit_cnt <= '0;
+            end else if (cs_n_active) begin
+                // Shift in on rising edge (SPI Mode 0)
+                if (sclk_rise) begin
+                    shift_reg <= {shift_reg[WORD_WIDTH-2:0], mosi_val};
+                    bit_cnt   <= bit_cnt + 1;
                 end
-                
-                if (sclk_falling_edge) begin
-                    // Shift the next bit onto MISO on SCLK falling edge
-                    spi_miso <= shift_reg[WORD_WIDTH-1];
+            end else if (cs_n_rise) begin
+                // Validate data if we received the exact expected number of bits
+                if (bit_cnt == WORD_WIDTH) begin
+                    data_out   <= shift_reg;
+                    data_valid <= 1'b1;
                 end
-            end else begin
-                // Keep MISO low (or could be set to High-Z at the top level)
-                spi_miso <= 1'b0;
             end
         end
     end
+
+    // =========================================================
+    // 4. MISO Driving
+    // =========================================================
+    logic miso_reg;
+    
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            miso_reg <= 1'b0;
+        end else if (cs_n_fall) begin
+            miso_reg <= shift_reg[WORD_WIDTH-1]; // Pre-load MSB on CS fall
+        end else if (cs_n_active && sclk_fall) begin
+            miso_reg <= shift_reg[WORD_WIDTH-1]; // Shift out on falling edge
+        end
+    end
+
+    assign spi_miso = cs_n_active ? miso_reg : 1'b0;
 
 endmodule

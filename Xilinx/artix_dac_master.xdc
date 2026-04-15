@@ -1,106 +1,159 @@
 # ==============================================================================
-# ARTIX-7 REFERENCE DAC MASTER CONSTRAINTS (.XDC)
-# ARCHITECTURE: 1-Million Tap Polyphase Interpolator + 2nd Order DEM
+# ARTIX-7 (XC7A200T-FBG484) - SYNTHESIS ONLY CONSTRAINTS
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 1. PHYSICAL I/O CONSTRAINTS (VOLTAGE & LOCATION)
+# 0. FPGA CONFIGURATION & AUTONOMOUS BOOT
 # ------------------------------------------------------------------------------
-# NOTE: Physical PACKAGE_PIN assignments are commented out for Synthesis/Timing.
-# Use the Vivado I/O Planner GUI to assign these once PCB schematic is finalized.
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
+set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]
+set_property BITSTREAM.CONFIG.SPI_FALL_EDGE YES [current_design]
 
-# --- Master Clocks (Requires 2.5V or 3.3V High Range Bank for LVDS_25 / LVCMOS) ---
-# set_property PACKAGE_PIN [YOUR_P_PIN_HERE] [get_ports clk_49m_p]
-set_property IOSTANDARD LVDS_25 [get_ports clk_49m_p]
+# ------------------------------------------------------------------------------
+# 1. I/O STANDARDS (3.3V DOMAIN)
+# ------------------------------------------------------------------------------
+# Clocks
+set_property IOSTANDARD LVCMOS33 [get_ports clk_49m]
+set_property IOSTANDARD LVCMOS33 [get_ports clk_45m]
 
-# set_property PACKAGE_PIN [YOUR_P_PIN_HERE] [get_ports clk_45m_p]
-set_property IOSTANDARD LVDS_25 [get_ports clk_45m_p]
+# HyperRAM
+set_property IOSTANDARD LVCMOS33 [get_ports hyper_ck]
+set_property IOSTANDARD LVCMOS33 [get_ports hyper_cs_n]
+set_property IOSTANDARD LVCMOS33 [get_ports hyper_rwds]
+set_property IOSTANDARD LVCMOS33 [get_ports {hyper_dq[*]}]
+set_property IOSTANDARD LVCMOS33 [get_ports hyper_reset_n]
 
-# --- Administrative Control Plane (3.3V Domain) ---
-set_property IOSTANDARD LVCMOS33 [get_ports ext_rst_n]
-# set_property PACKAGE_PIN [YOUR_PIN_HERE] [get_ports ext_rst_n]
-
-set_property IOSTANDARD LVCMOS33 [get_ports spi_sclk]
+# SPI & I2S & Reset
 set_property IOSTANDARD LVCMOS33 [get_ports spi_cs_n]
+set_property IOSTANDARD LVCMOS33 [get_ports spi_sclk]
 set_property IOSTANDARD LVCMOS33 [get_ports spi_mosi]
 set_property IOSTANDARD LVCMOS33 [get_ports spi_miso]
-
-# --- Hardware Relays & Sensors (3.3V Domain) ---
-# Using standard wildcards to prevent port-matching errors
-set_property IOSTANDARD LVCMOS33 [get_ports blade_detect_pins*]
-set_property IOSTANDARD LVCMOS33 [get_ports relay_iv_filter]
-set_property IOSTANDARD LVCMOS33 [get_ports relay_gain_6v]
-
-# --- I2S Audio Ingress (3.3V Domain) ---
 set_property IOSTANDARD LVCMOS33 [get_ports i2s_bclk]
 set_property IOSTANDARD LVCMOS33 [get_ports i2s_lrclk]
 set_property IOSTANDARD LVCMOS33 [get_ports i2s_data]
+set_property IOSTANDARD LVCMOS33 [get_ports ext_rst_n]
 
-# --- High-Speed LVDS Egress to Blades (Requires 2.5V Bank) ---
-# 8 Data Lanes + 1 Strobe Clock
-# SLEW FAST is mandatory to preserve the eye diagram at ~400 MHz
-# --- High-Speed LVDS Egress to Blades (Requires 2.5V Bank) ---
-# 8 Data Lanes + 1 Strobe Clock + 1 Frame Clock
-# SLEW FAST is mandatory to preserve the eye diagram at ~400 MHz
-
-set_property IOSTANDARD LVDS_25 [get_ports lvds_data_p*]
-# set_property SLEW FAST [get_ports lvds_data_p*]
-
-set_property IOSTANDARD LVDS_25 [get_ports lvds_clk_p*]
-# set_property SLEW FAST [get_ports lvds_clk_p*]
-
-set_property IOSTANDARD LVDS_25 [get_ports lvds_frame_p*]
-# set_property SLEW FAST [get_ports lvds_frame_p*]
+# Relays & Sensors
+set_property IOSTANDARD LVCMOS33 [get_ports relay_iv_filter]
+set_property IOSTANDARD LVCMOS33 [get_ports relay_gain_6v]
+set_property IOSTANDARD LVCMOS33 [get_ports {blade_detect_pins[*]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[7]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[6]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[5]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[4]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[3]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[2]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[1]}]
+set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[0]}]
 
 # ------------------------------------------------------------------------------
-# 2. TIMING ASSERTIONS & CLOCK CREATION
+# 2. I/O STANDARDS (2.5V DOMAIN)
 # ------------------------------------------------------------------------------
+# LVDS Egress
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_data_p[*]}]
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_clk_p[*]}]
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_frame_p[*]}]
 
-# Define the physical base clocks entering the FPGA pins.
-# Vivado's MMCM primitive will automatically derive the 90.3MHz / 98.3MHz DSP 
-# clocks and the 361MHz / 393MHz LVDS Bit Clocks from these definitions.
-create_clock -period 20.345 -name clk_49m -waveform {0.000 10.172} [get_ports clk_49m_p]
-create_clock -period 22.144 -name clk_45m -waveform {0.000 11.072} [get_ports clk_45m_p]
-
-# Define the asynchronous I2S Boundary Clock (Example: 24.576 MHz / 64 bits = ~384 kHz max)
+# ------------------------------------------------------------------------------
+# 3. TIMING ASSERTIONS
+# ------------------------------------------------------------------------------
+create_clock -period 20.345 -name clk_49m -waveform {0.000 10.172} [get_ports clk_49m]
+create_clock -period 22.144 -name clk_45m -waveform {0.000 11.072} [get_ports clk_45m]
 create_clock -period 40.690 -name i2s_bclk [get_ports i2s_bclk]
-
-# Define the slow administrative SPI Clock (e.g., 10 MHz)
 create_clock -period 100.000 -name spi_sclk [get_ports spi_sclk]
 
-# -------------------------------------------------------------------------
-# Clock Domain Exclusivity Constraints
-# -------------------------------------------------------------------------
-# Tell Vivado that the 45MHz (44.1k base) and 49MHz (48k base) clock trees 
-# are mutually exclusive at the BUFGMUX and will never interact.
-set_clock_groups -physically_exclusive \
-  -group [get_clocks -include_generated_clocks -of_objects [get_ports clk_45m_p]] \
-  -group [get_clocks -include_generated_clocks -of_objects [get_ports clk_49m_p]]
-
-# ------------------------------------------------------------------------------
-# 3. CLOCK EXCEPTIONS & CROSS-DOMAIN RULES (THE CRITICAL PATH)
-# ------------------------------------------------------------------------------
-
-# RULE 1: The Glitch-Free Mux Exception (CRITICAL)
-# Instructs Vivado that the 45MHz and 49MHz families never physically interact.
-# This forces the timing analyzer to verify the 1-Million tap FIR engine at 
-# both 90.3MHz and 98.3MHz independently without throwing setup/hold errors.
+# Clock Domain Exclusivity
 set_clock_groups -physically_exclusive -group [get_clocks clk_49m] -group [get_clocks clk_45m]
-
-# RULE 2: The Async FIFO Moat
-# The I2S clock domain and the DSP clock domain are safely isolated by our async_fifo.
-# We instruct Vivado to ignore paths crossing this boundary.
-# FIXED: Grouped clocks in curly braces
 set_clock_groups -asynchronous -group [get_clocks i2s_bclk] -group [get_clocks -include_generated_clocks {clk_49m clk_45m}]
-
-# RULE 3: The SPI Control Domain
-# The SPI registers change at human/ARM speeds and cross into the DSP domain via 
-# multi-cycle paths or stable registers.
-# FIXED: Grouped clocks in curly braces
 set_clock_groups -asynchronous -group [get_clocks spi_sclk] -group [get_clocks -include_generated_clocks {clk_49m clk_45m}]
 
-# RULE 4: Hardware Control Pins
-# Relays and blade detection pins do not require high-speed timing analysis.
-set_false_path -from [get_ports blade_detect_pins*]
+# Slow paths
+set_false_path -from [get_ports {blade_detect_pins[*]}]
 set_false_path -to [get_ports relay_iv_filter]
 set_false_path -to [get_ports relay_gain_6v]
+
+set_property PACKAGE_PIN B1 [get_ports {lvds_clk_p[0]}]
+set_property PACKAGE_PIN A1 [get_ports {lvds_clk_n[0]}]
+set_property PACKAGE_PIN C2 [get_ports {lvds_clk_p[3]}]
+set_property PACKAGE_PIN B2 [get_ports {lvds_clk_n[3]}]
+set_property PACKAGE_PIN E1 [get_ports {lvds_clk_p[2]}]
+set_property PACKAGE_PIN D1 [get_ports {lvds_clk_n[2]}]
+set_property PACKAGE_PIN E2 [get_ports {lvds_clk_p[1]}]
+set_property PACKAGE_PIN D2 [get_ports {lvds_clk_n[1]}]
+set_property PACKAGE_PIN L3 [get_ports {lvds_frame_p[0]}]
+set_property PACKAGE_PIN K3 [get_ports {lvds_frame_n[0]}]
+set_property PACKAGE_PIN G1 [get_ports {lvds_frame_p[3]}]
+set_property PACKAGE_PIN F1 [get_ports {lvds_frame_n[3]}]
+set_property PACKAGE_PIN F3 [get_ports {lvds_frame_p[2]}]
+set_property PACKAGE_PIN E3 [get_ports {lvds_frame_n[2]}]
+set_property PACKAGE_PIN K1 [get_ports {lvds_frame_p[1]}]
+set_property PACKAGE_PIN J1 [get_ports {lvds_frame_n[1]}]
+set_property PACKAGE_PIN H2 [get_ports {lvds_data_p[0]}]
+set_property PACKAGE_PIN G2 [get_ports {lvds_data_n[0]}]
+set_property PACKAGE_PIN J5 [get_ports {lvds_data_p[2]}]
+set_property PACKAGE_PIN H5 [get_ports {lvds_data_n[2]}]
+set_property PACKAGE_PIN K2 [get_ports {lvds_data_p[3]}]
+set_property PACKAGE_PIN J2 [get_ports {lvds_data_n[3]}]
+set_property PACKAGE_PIN H3 [get_ports {lvds_data_p[1]}]
+set_property PACKAGE_PIN G3 [get_ports {lvds_data_n[1]}]
+set_property PACKAGE_PIN R3 [get_ports {lvds_data_p[5]}]
+set_property PACKAGE_PIN R2 [get_ports {lvds_data_n[5]}]
+set_property PACKAGE_PIN T1 [get_ports {lvds_data_p[7]}]
+set_property PACKAGE_PIN U1 [get_ports {lvds_data_n[7]}]
+set_property PACKAGE_PIN U2 [get_ports {lvds_data_p[6]}]
+set_property PACKAGE_PIN V2 [get_ports {lvds_data_n[6]}]
+set_property PACKAGE_PIN W2 [get_ports {lvds_data_p[4]}]
+set_property PACKAGE_PIN Y2 [get_ports {lvds_data_n[4]}]
+set_property PACKAGE_PIN W1 [get_ports {lvds_clk_p[7]}]
+set_property PACKAGE_PIN Y1 [get_ports {lvds_clk_n[7]}]
+set_property PACKAGE_PIN Y4 [get_ports {lvds_clk_p[4]}]
+set_property PACKAGE_PIN AA4 [get_ports {lvds_clk_n[4]}]
+set_property PACKAGE_PIN AA1 [get_ports {lvds_clk_p[5]}]
+set_property PACKAGE_PIN AB1 [get_ports {lvds_clk_n[5]}]
+set_property PACKAGE_PIN U3 [get_ports {lvds_clk_p[6]}]
+set_property PACKAGE_PIN V3 [get_ports {lvds_clk_n[6]}]
+set_property PACKAGE_PIN Y6 [get_ports {lvds_frame_p[4]}]
+set_property PACKAGE_PIN AA6 [get_ports {lvds_frame_n[4]}]
+set_property PACKAGE_PIN AB3 [get_ports {lvds_frame_p[7]}]
+set_property PACKAGE_PIN AB2 [get_ports {lvds_frame_n[7]}]
+set_property PACKAGE_PIN Y3 [get_ports {lvds_frame_p[6]}]
+set_property PACKAGE_PIN AA3 [get_ports {lvds_frame_n[6]}]
+set_property PACKAGE_PIN AA5 [get_ports {lvds_frame_p[5]}]
+set_property PACKAGE_PIN AB5 [get_ports {lvds_frame_n[5]}]
+
+set_property PACKAGE_PIN G20 [get_ports {hyper_dq[2]}]
+set_property PACKAGE_PIN M21 [get_ports {hyper_dq[7]}]
+set_property PACKAGE_PIN H22 [get_ports {hyper_dq[0]}]
+set_property PACKAGE_PIN L21 [get_ports {hyper_dq[6]}]
+set_property PACKAGE_PIN H20 [get_ports {hyper_dq[3]}]
+set_property PACKAGE_PIN K21 [get_ports {hyper_dq[5]}]
+set_property PACKAGE_PIN J22 [get_ports {hyper_dq[1]}]
+set_property PACKAGE_PIN K22 [get_ports {hyper_dq[4]}]
+set_property PACKAGE_PIN L15 [get_ports hyper_reset_n]
+set_property PACKAGE_PIN K16 [get_ports hyper_ck]
+set_property PACKAGE_PIN L14 [get_ports hyper_cs_n]
+set_property PACKAGE_PIN J16 [get_ports hyper_rwds]
+set_property PACKAGE_PIN B22 [get_ports spi_mosi]
+set_property PACKAGE_PIN C22 [get_ports spi_miso]
+set_property PACKAGE_PIN A21 [get_ports spi_cs_n]
+set_property PACKAGE_PIN B21 [get_ports spi_sclk]
+set_property PACKAGE_PIN F15 [get_ports i2s_lrclk]
+set_property PACKAGE_PIN F14 [get_ports i2s_data]
+set_property PACKAGE_PIN E21 [get_ports ext_rst_n]
+set_property PACKAGE_PIN Y19 [get_ports clk_45m]
+set_property PACKAGE_PIN U20 [get_ports clk_49m]
+set_property PACKAGE_PIN Y14 [get_ports {blade_detect_pins[7]}]
+set_property PACKAGE_PIN AA14 [get_ports {blade_detect_pins[5]}]
+set_property PACKAGE_PIN Y13 [get_ports {blade_detect_pins[6]}]
+set_property PACKAGE_PIN AA15 [get_ports {blade_detect_pins[4]}]
+set_property PACKAGE_PIN AB15 [get_ports {blade_detect_pins[3]}]
+set_property PACKAGE_PIN AA13 [get_ports {blade_detect_pins[2]}]
+set_property PACKAGE_PIN AB13 [get_ports {blade_detect_pins[1]}]
+set_property PACKAGE_PIN AB16 [get_ports {blade_detect_pins[0]}]
+set_property PACKAGE_PIN Y17 [get_ports relay_iv_filter]
+set_property PACKAGE_PIN Y16 [get_ports relay_gain_6v]
+set_property DRIVE 12 [get_ports relay_gain_6v]
+
+set_property PACKAGE_PIN E19 [get_ports i2s_bclk]
