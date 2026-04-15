@@ -44,13 +44,13 @@ set_property IOSTANDARD LVCMOS33 [get_ports i2s_data]
 # SLEW FAST is mandatory to preserve the eye diagram at ~400 MHz
 
 set_property IOSTANDARD LVDS_25 [get_ports lvds_data_p*]
-set_property SLEW FAST [get_ports lvds_data_p*]
+# set_property SLEW FAST [get_ports lvds_data_p*]
 
 set_property IOSTANDARD LVDS_25 [get_ports lvds_clk_p*]
-set_property SLEW FAST [get_ports lvds_clk_p*]
+# set_property SLEW FAST [get_ports lvds_clk_p*]
 
 set_property IOSTANDARD LVDS_25 [get_ports lvds_frame_p*]
-set_property SLEW FAST [get_ports lvds_frame_p*]
+# set_property SLEW FAST [get_ports lvds_frame_p*]
 
 # ------------------------------------------------------------------------------
 # 2. TIMING ASSERTIONS & CLOCK CREATION
@@ -67,6 +67,15 @@ create_clock -period 40.690 -name i2s_bclk [get_ports i2s_bclk]
 
 # Define the slow administrative SPI Clock (e.g., 10 MHz)
 create_clock -period 100.000 -name spi_sclk [get_ports spi_sclk]
+
+# -------------------------------------------------------------------------
+# Clock Domain Exclusivity Constraints
+# -------------------------------------------------------------------------
+# Tell Vivado that the 45MHz (44.1k base) and 49MHz (48k base) clock trees 
+# are mutually exclusive at the BUFGMUX and will never interact.
+set_clock_groups -physically_exclusive \
+  -group [get_clocks -include_generated_clocks -of_objects [get_ports clk_45m_p]] \
+  -group [get_clocks -include_generated_clocks -of_objects [get_ports clk_49m_p]]
 
 # ------------------------------------------------------------------------------
 # 3. CLOCK EXCEPTIONS & CROSS-DOMAIN RULES (THE CRITICAL PATH)

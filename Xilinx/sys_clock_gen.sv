@@ -66,7 +66,7 @@ module sys_clock_gen (
         .CLKFBOUT_PHASE       (0.000),
         
         // Output 0: LVDS Bit Clock (VCO / 2 = 8x Base Rate)
-        .CLKOUT0_DIVIDE_F     (2.000), 
+        .CLKOUT0_DIVIDE_F     (16.000), 
         .CLKOUT0_PHASE        (0.000),
         .CLKOUT0_DUTY_CYCLE   (0.500),
         
@@ -102,6 +102,9 @@ module sys_clock_gen (
         
         // --- STATUS ---
         .LOCKED               (locked),
+        
+        .CLKFBSTOPPED         (),
+        .CLKINSTOPPED         (),
         
         // --- FIXED: DRP PORTS MOVED OUT OF PARAMETERS AND TIED TO GROUND ---
         .DADDR                (7'h0),

@@ -49,28 +49,7 @@ module lvds_blade_tx (
     end
 
     // =========================================================================
-    // 2. Hardware Clock Forwarding (The Golden Rule)
-    // =========================================================================
-    // We cannot just assign "bit_clk" to an output pin. We MUST use an ODDR 
-    // tied to 1 and 0 to perfectly mirror the clock onto the output pad.
-    logic forwarded_clk;
-    
-    ODDR #(
-        .DDR_CLK_EDGE ("OPPOSITE_EDGE"), 
-        .INIT         (1'b0),
-        .SRTYPE       ("SYNC")
-    ) u_clk_forwarder (
-        .Q  (forwarded_clk),
-        .C  (bit_clk),
-        .CE (1'b1),
-        .D1 (1'b1), // Drives High on rising edge
-        .D2 (1'b0), // Drives Low on falling edge
-        .R  (1'b0),
-        .S  (1'b0)
-    );
-
-    // =========================================================================
-    // 3. Physical LVDS Buffer Fanout (8 Blades)
+    // 2. Physical LVDS Buffer Fanout (8 Blades)
     // =========================================================================
     genvar i;
     generate
@@ -83,9 +62,30 @@ module lvds_blade_tx (
                 .OB (lvds_data_n[i])
             );
 
+            // -----------------------------------------------------------
+            // Hardware Clock Forwarding (The Golden Rule)
+            // Each output pin gets its own dedicated ODDR block physically 
+            // located in the I/O ring to ensure perfect clock mirroring.
+            // -----------------------------------------------------------
+            logic local_forwarded_clk;
+            
+            ODDR #(
+                .DDR_CLK_EDGE ("OPPOSITE_EDGE"), 
+                .INIT         (1'b0),
+                .SRTYPE       ("SYNC")
+            ) u_clk_forwarder (
+                .Q  (local_forwarded_clk),
+                .C  (bit_clk),
+                .CE (1'b1),
+                .D1 (1'b1), // Drives High on rising edge
+                .D2 (1'b0), // Drives Low on falling edge
+                .R  (1'b0),
+                .S  (1'b0)
+            );
+
             // Broadcast Continuous Clock
             OBUFDS u_buf_clk (
-                .I  (forwarded_clk),
+                .I  (local_forwarded_clk),
                 .O  (lvds_clk_p[i]),
                 .OB (lvds_clk_n[i])
             );

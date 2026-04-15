@@ -190,12 +190,21 @@ module artix_dac_top (
     // ==============================================================
     // High-Speed LVDS Egress to 8 DIMM Blades
     // ==============================================================
+    // Stretch the 90MHz pulse to 2 cycles so the 45MHz clock doesn't miss it
+    logic interpolated_valid_q;
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) interpolated_valid_q <= 1'b0;
+        else            interpolated_valid_q <= interpolated_valid;
+    end
+
     lvds_blade_tx u_lvds_tx (
-        .bit_clk        (lvds_bit_clk),    // Natively 45.1584 MHz or 49.152 MHz
+        .bit_clk        (lvds_bit_clk),    
         .rst_n          (sys_rst_n),
         
         .data_in_64     (resistor_ring_bus),
-        .data_valid     (interpolated_valid), // 705.6 kHz pulse from the FIR
+        
+        // Pass the stretched 2-cycle pulse
+        .data_valid     (interpolated_valid | interpolated_valid_q), 
         
         .lvds_data_p    (lvds_data_p),
         .lvds_data_n    (lvds_data_n),
