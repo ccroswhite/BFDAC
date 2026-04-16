@@ -6,11 +6,16 @@ module artix_dac_top (
     input  logic       clk_49m, 
     input  logic       ext_rst_n,
 
-    // ARM SPI Interface
+    // ARM SPI Interface (Control Plane)
     input  logic       spi_sclk,
     input  logic       spi_cs_n,
     input  logic       spi_mosi,
     output logic       spi_miso,
+
+    // Dedicated Flash SPI Interface (Storage Plane)
+    output logic       qspi_cs_n,
+    output logic       qspi_mosi,
+    input  logic       qspi_miso,
 
     // Hardware Control & Sensing Plane
     input  logic [7:0] blade_detect_pins, 
@@ -51,6 +56,30 @@ module artix_dac_top (
     assign lvds_frame_clk = dsp_clk;
 
     // ==============================================================
+    // STARTUPE2 Primitive (Hijack CCLK for Flash Bridge)
+    // ==============================================================
+    logic internal_flash_clk;
+    
+    STARTUPE2 #(
+        .PROG_USR("FALSE"),
+        .SIM_CCLK_FREQ(0.0)
+    ) u_startup (
+        .CFGCLK     (),
+        .CFGMCLK    (),
+        .EOS        (),
+        .PREQ       (),
+        .CLK        (1'b0),
+        .GSR        (1'b0),
+        .GTS        (1'b0),
+        .KEYCLEARB  (1'b1),
+        .PACK       (1'b0),
+        .USRCCLKO   (internal_flash_clk), // Driven by flash_bridge.sv
+        .USRCCLKTS  (1'b0),               // 0 = Enable CCLK output
+        .USRDONEO   (1'b1),
+        .USRDONETS  (1'b1)
+    );
+
+    // ==============================================================
     // Control & Data Nets
     // ==============================================================
     logic [31:0] ctrl_bus_data;
@@ -59,6 +88,15 @@ module artix_dac_top (
     logic [31:0] sys_volume;
     logic        cmd_gain_6v;
     logic        base_rate_sel; 
+
+    // Flash Control Nets
+    logic [7:0]  flash_cmd_opcode;
+    logic [23:0] flash_cmd_addr;
+    logic        flash_cmd_trigger;
+    logic        flash_busy;
+    logic [7:0]  flash_fifo_wdata;
+    logic        flash_fifo_we;
+    logic [7:0]  flash_fifo_waddr;
 
     logic [31:0] raw_left_data, raw_right_data;
     logic        raw_data_valid;
@@ -95,26 +133,21 @@ module artix_dac_top (
         end else begin
             fpga_heartbeat <= fpga_heartbeat + 1'b1;
 
-            // Synchronize Async Clocks for edge detection
             wd_bclk_sync  <= {wd_bclk_sync[1:0], i2s_bclk};
             wd_lrclk_sync <= {wd_lrclk_sync[1:0], i2s_lrclk};
 
-            // I2S Bit Clock Watchdog (Reset on edge)
             if (wd_bclk_sync[2] ^ wd_bclk_sync[1]) wd_bclk_cnt <= '0; 
             else if (wd_bclk_cnt < 20'd1_000_000)  wd_bclk_cnt <= wd_bclk_cnt + 1'b1;
-            if (wd_bclk_cnt == 20'd950_000)        err_wdog_bclk <= 1'b1; // ~10.5ms timeout
+            if (wd_bclk_cnt == 20'd950_000)        err_wdog_bclk <= 1'b1; 
 
-            // I2S Word Clock Watchdog (Reset on edge)
             if (wd_lrclk_sync[2] ^ wd_lrclk_sync[1]) wd_lrclk_cnt <= '0;
             else if (wd_lrclk_cnt < 20'd1_000_000)   wd_lrclk_cnt <= wd_lrclk_cnt + 1'b1;
-            if (wd_lrclk_cnt == 20'd950_000)         err_wdog_lrclk <= 1'b1; // ~10.5ms timeout
+            if (wd_lrclk_cnt == 20'd950_000)         err_wdog_lrclk <= 1'b1; 
 
-            // SPI Crash Watchdog (If CS is low without completion for > 10ms)
             if (spi_cs_n == 1'b1)                 wd_sclk_cnt <= '0; 
             else if (wd_sclk_cnt < 20'd1_000_000) wd_sclk_cnt <= wd_sclk_cnt + 1'b1;
             if (wd_sclk_cnt == 20'd950_000)       err_wdog_spi <= 1'b1; 
 
-            // Clear on Read (Address 0x24)
             if (ctrl_bus_valid && ctrl_bus_data[31] && ctrl_bus_data[30:24] == 7'h24) begin
                 err_wdog_bclk  <= 1'b0;
                 err_wdog_lrclk <= 1'b0;
@@ -124,7 +157,7 @@ module artix_dac_top (
     end
 
     // ==============================================================
-    // Thermal & Power State (XADC Auto-Sequencer)
+    // Thermal & Power State (XADC)
     // ==============================================================
     logic [15:0] xadc_do;
     logic        xadc_drdy;
@@ -133,45 +166,21 @@ module artix_dac_top (
     logic [15:0] fpga_temp_raw, vccint_raw, vccaux_raw, vccbram_raw;
 
     XADC #(
-        .INIT_40(16'h0000), // Averaging off
-        .INIT_41(16'h2000), // Continuous Sequence Mode
-        .INIT_48(16'h0047), // Sequence Ch: Temp(0), VCCINT(1), VCCAUX(2), VCCBRAM(6)
-        .INIT_49(16'h0000), // Sequence Ch: None
-        .INIT_4A(16'h0000), 
-        .INIT_4B(16'h0000),
-        .INIT_4E(16'h0000),
-        .INIT_4F(16'h0000)
+        .INIT_40(16'h0000), .INIT_41(16'h2000), .INIT_48(16'h0047), 
+        .INIT_49(16'h0000), .INIT_4A(16'h0000), .INIT_4B(16'h0000),
+        .INIT_4E(16'h0000), .INIT_4F(16'h0000)
     ) u_xadc (
-        .DADDR   ({2'b00, xadc_channel}), // Dynamically read the channel that just finished
-        .DCLK    (dsp_clk),               // DRP Clock
-        .DEN     (xadc_eoc),              // Trigger DRP read when conversion finishes
-        .DI      (16'h0000),
-        .DWE     (1'b0),
-        .RESET   (~sys_rst_n),
-        .VAUXN   (16'h0000),
-        .VAUXP   (16'h0000),
-        .VN      (1'b0),
-        .VP      (1'b0),
-        .DO      (xadc_do),
-        .DRDY    (xadc_drdy),
-        .EOC     (xadc_eoc),
-        .ALM     (),
-        .BUSY    (),
-        .CHANNEL (xadc_channel),
-        .EOS     (),
-        .JTAGBUSY(),
-        .JTAGLOCKED(),
-        .JTAGMODIFIED(),
-        .OT      (),
-        .MUXADDR ()
+        .DADDR({2'b00, xadc_channel}), .DCLK(dsp_clk), .DEN(xadc_eoc),
+        .DI(16'h0000), .DWE(1'b0), .RESET(~sys_rst_n),
+        .VAUXN(16'h0000), .VAUXP(16'h0000), .VN(1'b0), .VP(1'b0),
+        .DO(xadc_do), .DRDY(xadc_drdy), .EOC(xadc_eoc),
+        .ALM(), .BUSY(), .CHANNEL(xadc_channel), .EOS(),
+        .JTAGBUSY(), .JTAGLOCKED(), .JTAGMODIFIED(), .OT(), .MUXADDR()
     );
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            fpga_temp_raw <= '0;
-            vccint_raw    <= '0;
-            vccaux_raw    <= '0;
-            vccbram_raw   <= '0;
+            fpga_temp_raw <= '0; vccint_raw <= '0; vccaux_raw <= '0; vccbram_raw <= '0;
         end else if (xadc_drdy) begin
             case (xadc_channel)
                 5'h00: fpga_temp_raw <= xadc_do;
@@ -183,29 +192,19 @@ module artix_dac_top (
     end
 
     // ==============================================================
-    // I2S Framing Integrity Check (i2s_bclk Domain)
+    // I2S Framing Integrity Check 
     // ==============================================================
     logic [6:0] bclk_counter;
-    logic       i2s_lrclk_q;
-    logic       frame_err_raw;
-    logic       i2s_synced; 
+    logic       i2s_lrclk_q, frame_err_raw, i2s_synced; 
 
     always_ff @(posedge i2s_bclk or negedge sys_rst_n) begin
         if (!sys_rst_n) begin
-            bclk_counter  <= '0;
-            i2s_lrclk_q   <= 1'b0;
-            frame_err_raw <= 1'b0;
-            i2s_synced    <= 1'b0;
+            bclk_counter <= '0; i2s_lrclk_q <= 1'b0; frame_err_raw <= 1'b0; i2s_synced <= 1'b0;
         end else begin
-            i2s_lrclk_q   <= i2s_lrclk;
-            frame_err_raw <= 1'b0; 
-
+            i2s_lrclk_q <= i2s_lrclk; frame_err_raw <= 1'b0; 
             if (i2s_lrclk_q == 1'b0 && i2s_lrclk == 1'b1) begin
-                if (i2s_synced && (bclk_counter != 7'd64)) begin
-                    frame_err_raw <= 1'b1;
-                end
-                bclk_counter <= 7'd1; 
-                i2s_synced   <= 1'b1; 
+                if (i2s_synced && (bclk_counter != 7'd64)) frame_err_raw <= 1'b1;
+                bclk_counter <= 7'd1; i2s_synced <= 1'b1; 
             end else begin
                 if (bclk_counter < 7'd127) bclk_counter <= bclk_counter + 7'd1;
             end
@@ -225,51 +224,35 @@ module artix_dac_top (
     logic       err_audio_clip, err_i2s_frame;
     logic [7:0] spi_comms_err_count;
     logic [1:0] lrclk_sync;
-    logic [15:0] lrclk_counter;
-    logic [15:0] last_lrclk_count;
+    logic [15:0] lrclk_counter, last_lrclk_count;
     logic [6:0]  read_addr_reg;
     logic [31:0] spi_tx_data;
 
     always_ff @(posedge dsp_clk) begin
         if (!ext_rst_n) begin
-            err_fifo_overflow   <= 1'b0;
-            err_fifo_underflow  <= 1'b0;
-            err_clk_unlock      <= 1'b0;
-            err_audio_clip      <= 1'b0;
-            err_i2s_frame       <= 1'b0;
-            spi_comms_err_count <= '0;
-            lrclk_sync          <= 2'b00;
-            lrclk_counter       <= '0;
-            last_lrclk_count    <= '0;
+            err_fifo_overflow <= 1'b0; err_fifo_underflow <= 1'b0; err_clk_unlock <= 1'b0;
+            err_audio_clip <= 1'b0; err_i2s_frame <= 1'b0; spi_comms_err_count <= '0;
+            lrclk_sync <= 2'b00; lrclk_counter <= '0; last_lrclk_count <= '0;
         end else begin
-            // Track Flow, Comms, and Frame Errors
             if (fifo_full)  err_fifo_overflow  <= 1'b1;
             if (fifo_empty) err_fifo_underflow <= 1'b1;
             if (!clk_locked) err_clk_unlock    <= 1'b1;
             if (spi_crc_error) spi_comms_err_count <= spi_comms_err_count + 1'b1;
             if (frame_err_sync[1]) err_i2s_frame <= 1'b1;
-
-            // Track Audio Saturation 
             if (volumed_clip_detect) err_audio_clip <= 1'b1;
-            if (raw_data_valid && (raw_left_data == 32'h7FFFFFFF || raw_left_data == 32'h80000000)) begin
-                err_audio_clip <= 1'b1;
-            end
+            if (raw_data_valid && (raw_left_data == 32'h7FFFFFFF || raw_left_data == 32'h80000000)) err_audio_clip <= 1'b1;
 
-            // Clear Errors on SPI Read 
             if (ctrl_bus_valid && ctrl_bus_data[31]) begin
                 if (ctrl_bus_data[30:24] == 7'h13) begin
-                    err_fifo_overflow  <= 1'b0;
-                    err_fifo_underflow <= 1'b0;
-                    err_clk_unlock     <= 1'b0;
+                    err_fifo_overflow <= 1'b0; err_fifo_underflow <= 1'b0; err_clk_unlock <= 1'b0;
                 end
                 if (ctrl_bus_data[30:24] == 7'h15) spi_comms_err_count <= '0;
                 if (ctrl_bus_data[30:24] == 7'h16) err_audio_clip      <= 1'b0;
                 if (ctrl_bus_data[30:24] == 7'h17) err_i2s_frame       <= 1'b0;
             end
 
-            // Measure I2S Sample Rate
             lrclk_sync <= {lrclk_sync[0], i2s_lrclk};
-            if (lrclk_sync == 2'b01) begin // Rising Edge
+            if (lrclk_sync == 2'b01) begin 
                 last_lrclk_count <= lrclk_counter;
                 lrclk_counter    <= 16'd1;
             end else begin
@@ -281,31 +264,48 @@ module artix_dac_top (
     // SPI Read/Write Command Decoder
     always_ff @(posedge dsp_clk) begin
         if (!ext_rst_n) begin
-            sys_volume    <= 32'hFFFFFFFF; 
-            cmd_gain_6v   <= 1'b0;
-            relay_gain_6v <= 1'b0;
-            base_rate_sel <= 1'b0; 
-            read_addr_reg <= 7'h00;
-        end else if (ctrl_bus_valid) begin
-            if (ctrl_bus_data[31] == 1'b0) begin 
-                // WRITE OPERATION (Bit 31 = 0)
-                case (ctrl_bus_data[30:24])
-                    7'h01: sys_volume    <= {8'h00, ctrl_bus_data[23:0]};
-                    7'h02: cmd_gain_6v   <= ctrl_bus_data[0];             
-                    7'h03: base_rate_sel <= ctrl_bus_data[0];             
-                endcase
-                relay_gain_6v <= cmd_gain_6v; 
-            end else begin
-                // READ OPERATION (Bit 31 = 1)
-                read_addr_reg <= ctrl_bus_data[30:24];
+            sys_volume        <= 32'hFFFFFFFF; 
+            cmd_gain_6v       <= 1'b0;
+            relay_gain_6v     <= 1'b0;
+            base_rate_sel     <= 1'b0; 
+            read_addr_reg     <= 7'h00;
+            flash_cmd_trigger <= 1'b0;
+            flash_fifo_we     <= 1'b0;
+        end else begin
+            flash_cmd_trigger <= 1'b0;
+            flash_fifo_we     <= 1'b0;
+            
+            if (ctrl_bus_valid) begin
+                if (ctrl_bus_data[31] == 1'b0) begin 
+                    // WRITE OPERATION
+                    case (ctrl_bus_data[30:24])
+                        7'h01: sys_volume    <= {8'h00, ctrl_bus_data[23:0]};
+                        7'h02: cmd_gain_6v   <= ctrl_bus_data[0];             
+                        7'h03: base_rate_sel <= ctrl_bus_data[0]; 
+                        // Flash Commands
+                        7'h30: begin 
+                               flash_cmd_opcode  <= ctrl_bus_data[7:0];
+                               flash_cmd_trigger <= 1'b1;
+                               end
+                        7'h31: flash_cmd_addr    <= ctrl_bus_data[23:0];
+                        7'h32: begin
+                               flash_fifo_wdata  <= ctrl_bus_data[7:0];
+                               flash_fifo_waddr  <= ctrl_bus_data[15:8];
+                               flash_fifo_we     <= 1'b1;
+                               end
+                    endcase
+                    relay_gain_6v <= cmd_gain_6v; 
+                end else begin
+                    // READ OPERATION
+                    read_addr_reg <= ctrl_bus_data[30:24];
+                end
             end
         end
     end
 
-    // SPI Read Output MUX (Includes Advanced Telemetry)
+    // SPI Read Output MUX
     always_comb begin
         case (read_addr_reg)
-            // Baseline Metrics
             7'h10: spi_tx_data = 32'hDAC02026; 
             7'h11: spi_tx_data = {24'd0, blade_detect_pins}; 
             7'h12: spi_tx_data = {29'd0, relay_iv_filter, base_rate_sel, relay_gain_6v}; 
@@ -316,17 +316,18 @@ module artix_dac_top (
             7'h17: spi_tx_data = {31'd0, err_i2s_frame}; 
             7'h18: spi_tx_data = {16'd0, fpga_temp_raw}; 
             7'h19: spi_tx_data = fpga_heartbeat; 
+            7'h20: spi_tx_data = safe_audio_data; 
+            7'h21: spi_tx_data = volumed_audio_data; 
+            7'h22: spi_tx_data = interpolated_audio_48b[47:16]; 
+            7'h23: spi_tx_data = {26'd0, dem_drive_command}; 
+            7'h24: spi_tx_data = {29'd0, err_wdog_spi, err_wdog_lrclk, err_wdog_bclk}; 
+            7'h25: spi_tx_data = {16'd0, vccint_raw}; 
+            7'h26: spi_tx_data = {16'd0, vccaux_raw}; 
+            7'h27: spi_tx_data = {16'd0, vccbram_raw}; 
             
-            // Advanced DSP Signal Taps & System Voltages
-            7'h20: spi_tx_data = safe_audio_data; // Raw Rx
-            7'h21: spi_tx_data = volumed_audio_data; // Post-Volume
-            7'h22: spi_tx_data = interpolated_audio_48b[47:16]; // Post-FIR (Upper 32 bits)
-            7'h23: spi_tx_data = {26'd0, dem_drive_command}; // Post-Noise Shaper
-            7'h24: spi_tx_data = {29'd0, err_wdog_spi, err_wdog_lrclk, err_wdog_bclk}; // Watchdogs
-            7'h25: spi_tx_data = {16'd0, vccint_raw}; // 1.0V Core
-            7'h26: spi_tx_data = {16'd0, vccaux_raw}; // 1.8V Aux
-            7'h27: spi_tx_data = {16'd0, vccbram_raw}; // 1.0V BRAM
-            
+            // Flash Status
+            7'h33: spi_tx_data = {31'd0, flash_busy};
+
             default: spi_tx_data = 32'hDEADBEEF; 
         endcase
     end
@@ -357,6 +358,22 @@ module artix_dac_top (
         .data_out      (ctrl_bus_data), 
         .data_valid    (ctrl_bus_valid),
         .crc_err_pulse (spi_crc_error)
+    );
+
+    flash_bridge u_flash_bridge (
+        .clk         (dsp_clk),
+        .rst_n       (sys_rst_n),
+        .cmd_opcode  (flash_cmd_opcode),
+        .cmd_addr    (flash_cmd_addr),
+        .cmd_trigger (flash_cmd_trigger),
+        .cmd_busy    (flash_busy),
+        .fifo_wdata  (flash_fifo_wdata),
+        .fifo_we     (flash_fifo_we),
+        .fifo_waddr  (flash_fifo_waddr),
+        .flash_clk   (internal_flash_clk), // Routes implicitly via STARTUPE2
+        .flash_cs_n  (qspi_cs_n),
+        .flash_mosi  (qspi_mosi),
+        .flash_miso  (qspi_miso)
     );
 
     i2s_rx #(.DATA_WIDTH(32)) u_i2s_rx (

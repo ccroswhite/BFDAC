@@ -3,13 +3,19 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 0. FPGA CONFIGURATION & AUTONOMOUS BOOT
+# 0. FPGA CONFIGURATION & AUTONOMOUS BOOT (MultiBoot Enabled)
 # ------------------------------------------------------------------------------
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property CONFIG_MODE SPIx4 [current_design]
+
+set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
 set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]
 set_property BITSTREAM.CONFIG.SPI_FALL_EDGE YES [current_design]
+
+set_property BITSTREAM.CONFIG.CONFIGFALLBACK ENABLE [current_design]
+set_property BITSTREAM.CONFIG.NEXT_CONFIG_ADDR 0x00400000 [current_design]
 
 # ------------------------------------------------------------------------------
 # 1. I/O STANDARDS (3.3V DOMAIN)
@@ -157,4 +163,3 @@ set_property PACKAGE_PIN Y16 [get_ports relay_gain_6v]
 set_property DRIVE 12 [get_ports relay_gain_6v]
 
 set_property PACKAGE_PIN E19 [get_ports i2s_bclk]
-
