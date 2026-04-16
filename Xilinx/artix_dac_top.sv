@@ -74,27 +74,77 @@ module artix_dac_top (
     logic [63:0]        resistor_ring_bus; 
 
     // ==============================================================
-    // FPGA Heartbeat
+    // FPGA Heartbeat & Stuck-At Watchdogs
     // ==============================================================
     logic [31:0] fpga_heartbeat;
+    logic [2:0]  wd_bclk_sync, wd_lrclk_sync;
+    logic [19:0] wd_bclk_cnt, wd_lrclk_cnt, wd_sclk_cnt;
+    logic        err_wdog_bclk, err_wdog_lrclk, err_wdog_spi;
     
     always_ff @(posedge dsp_clk) begin
-        if (!sys_rst_n) fpga_heartbeat <= '0;
-        else            fpga_heartbeat <= fpga_heartbeat + 1'b1;
+        if (!sys_rst_n) begin
+            fpga_heartbeat <= '0;
+            wd_bclk_sync   <= '0;
+            wd_lrclk_sync  <= '0;
+            wd_bclk_cnt    <= '0;
+            wd_lrclk_cnt   <= '0;
+            wd_sclk_cnt    <= '0;
+            err_wdog_bclk  <= 1'b0;
+            err_wdog_lrclk <= 1'b0;
+            err_wdog_spi   <= 1'b0;
+        end else begin
+            fpga_heartbeat <= fpga_heartbeat + 1'b1;
+
+            // Synchronize Async Clocks for edge detection
+            wd_bclk_sync  <= {wd_bclk_sync[1:0], i2s_bclk};
+            wd_lrclk_sync <= {wd_lrclk_sync[1:0], i2s_lrclk};
+
+            // I2S Bit Clock Watchdog (Reset on edge)
+            if (wd_bclk_sync[2] ^ wd_bclk_sync[1]) wd_bclk_cnt <= '0; 
+            else if (wd_bclk_cnt < 20'd1_000_000)  wd_bclk_cnt <= wd_bclk_cnt + 1'b1;
+            if (wd_bclk_cnt == 20'd950_000)        err_wdog_bclk <= 1'b1; // ~10.5ms timeout
+
+            // I2S Word Clock Watchdog (Reset on edge)
+            if (wd_lrclk_sync[2] ^ wd_lrclk_sync[1]) wd_lrclk_cnt <= '0;
+            else if (wd_lrclk_cnt < 20'd1_000_000)   wd_lrclk_cnt <= wd_lrclk_cnt + 1'b1;
+            if (wd_lrclk_cnt == 20'd950_000)         err_wdog_lrclk <= 1'b1; // ~10.5ms timeout
+
+            // SPI Crash Watchdog (If CS is low without completion for > 10ms)
+            if (spi_cs_n == 1'b1)                 wd_sclk_cnt <= '0; 
+            else if (wd_sclk_cnt < 20'd1_000_000) wd_sclk_cnt <= wd_sclk_cnt + 1'b1;
+            if (wd_sclk_cnt == 20'd950_000)       err_wdog_spi <= 1'b1; 
+
+            // Clear on Read (Address 0x24)
+            if (ctrl_bus_valid && ctrl_bus_data[31] && ctrl_bus_data[30:24] == 7'h24) begin
+                err_wdog_bclk  <= 1'b0;
+                err_wdog_lrclk <= 1'b0;
+                err_wdog_spi   <= 1'b0;
+            end
+        end
     end
 
     // ==============================================================
-    // Thermal State (XADC)
+    // Thermal & Power State (XADC Auto-Sequencer)
     // ==============================================================
     logic [15:0] xadc_do;
     logic        xadc_drdy;
     logic        xadc_eoc;
-    logic [15:0] fpga_temp_raw;
+    logic [4:0]  xadc_channel;
+    logic [15:0] fpga_temp_raw, vccint_raw, vccaux_raw, vccbram_raw;
 
-    XADC u_xadc (
-        .DADDR   (7'h00),      // 0x00 = Die Temperature Sensor
-        .DCLK    (dsp_clk),    // DRP Clock
-        .DEN     (xadc_eoc),   // Read when conversion finishes
+    XADC #(
+        .INIT_40(16'h0000), // Averaging off
+        .INIT_41(16'h2000), // Continuous Sequence Mode
+        .INIT_48(16'h0047), // Sequence Ch: Temp(0), VCCINT(1), VCCAUX(2), VCCBRAM(6)
+        .INIT_49(16'h0000), // Sequence Ch: None
+        .INIT_4A(16'h0000), 
+        .INIT_4B(16'h0000),
+        .INIT_4E(16'h0000),
+        .INIT_4F(16'h0000)
+    ) u_xadc (
+        .DADDR   ({2'b00, xadc_channel}), // Dynamically read the channel that just finished
+        .DCLK    (dsp_clk),               // DRP Clock
+        .DEN     (xadc_eoc),              // Trigger DRP read when conversion finishes
         .DI      (16'h0000),
         .DWE     (1'b0),
         .RESET   (~sys_rst_n),
@@ -107,7 +157,7 @@ module artix_dac_top (
         .EOC     (xadc_eoc),
         .ALM     (),
         .BUSY    (),
-        .CHANNEL (),
+        .CHANNEL (xadc_channel),
         .EOS     (),
         .JTAGBUSY(),
         .JTAGLOCKED(),
@@ -117,8 +167,19 @@ module artix_dac_top (
     );
 
     always_ff @(posedge dsp_clk) begin
-        if (!sys_rst_n) fpga_temp_raw <= '0;
-        else if (xadc_drdy) fpga_temp_raw <= xadc_do;
+        if (!sys_rst_n) begin
+            fpga_temp_raw <= '0;
+            vccint_raw    <= '0;
+            vccaux_raw    <= '0;
+            vccbram_raw   <= '0;
+        end else if (xadc_drdy) begin
+            case (xadc_channel)
+                5'h00: fpga_temp_raw <= xadc_do;
+                5'h01: vccint_raw    <= xadc_do;
+                5'h02: vccaux_raw    <= xadc_do;
+                5'h06: vccbram_raw   <= xadc_do;
+            endcase
+        end
     end
 
     // ==============================================================
@@ -139,7 +200,6 @@ module artix_dac_top (
             i2s_lrclk_q   <= i2s_lrclk;
             frame_err_raw <= 1'b0; 
 
-            // Check exactly 64 BCLKs on the rising edge of LRCLK (Start of frame)
             if (i2s_lrclk_q == 1'b0 && i2s_lrclk == 1'b1) begin
                 if (i2s_synced && (bclk_counter != 7'd64)) begin
                     frame_err_raw <= 1'b1;
@@ -147,13 +207,11 @@ module artix_dac_top (
                 bclk_counter <= 7'd1; 
                 i2s_synced   <= 1'b1; 
             end else begin
-                // Prevent counter overflow
                 if (bclk_counter < 7'd127) bclk_counter <= bclk_counter + 7'd1;
             end
         end
     end
 
-    // CDC: Bring 3MHz frame error pulse safely into 90MHz DSP domain
     (* ASYNC_REG = "TRUE" *) logic [1:0] frame_err_sync;
     always_ff @(posedge dsp_clk or negedge sys_rst_n) begin
         if (!sys_rst_n) frame_err_sync <= 2'b00;
@@ -172,7 +230,6 @@ module artix_dac_top (
     logic [6:0]  read_addr_reg;
     logic [31:0] spi_tx_data;
 
-    // Sticky Error Trapping & Sample Rate Counter
     always_ff @(posedge dsp_clk) begin
         if (!ext_rst_n) begin
             err_fifo_overflow   <= 1'b0;
@@ -192,7 +249,7 @@ module artix_dac_top (
             if (spi_crc_error) spi_comms_err_count <= spi_comms_err_count + 1'b1;
             if (frame_err_sync[1]) err_i2s_frame <= 1'b1;
 
-            // Track Audio Saturation (DSP Math Clip OR 0dBFS Source Clip)
+            // Track Audio Saturation 
             if (volumed_clip_detect) err_audio_clip <= 1'b1;
             if (raw_data_valid && (raw_left_data == 32'h7FFFFFFF || raw_left_data == 32'h80000000)) begin
                 err_audio_clip <= 1'b1;
@@ -245,19 +302,31 @@ module artix_dac_top (
         end
     end
 
-    // SPI Read Output MUX
+    // SPI Read Output MUX (Includes Advanced Telemetry)
     always_comb begin
         case (read_addr_reg)
-            7'h10: spi_tx_data = 32'hDAC02026; // Magic ID for firmware confirmation
-            7'h11: spi_tx_data = {24'd0, blade_detect_pins}; // Connected Converter Blades
-            7'h12: spi_tx_data = {29'd0, relay_iv_filter, base_rate_sel, relay_gain_6v}; // Hardware Config
-            7'h13: spi_tx_data = {29'd0, err_clk_unlock, err_fifo_underflow, err_fifo_overflow}; // Audio Flow Errors
-            7'h14: spi_tx_data = {16'd0, last_lrclk_count}; // DSP Clocks per Audio Frame (Rate Est)
-            7'h15: spi_tx_data = {24'd0, spi_comms_err_count}; // SPI Data Integrity Failures
-            7'h16: spi_tx_data = {31'd0, err_audio_clip}; // DSP Math Clipping / 0dBFS Hit
-            7'h17: spi_tx_data = {31'd0, err_i2s_frame}; // I2S Framing Out-of-Sync
-            7'h18: spi_tx_data = {16'd0, fpga_temp_raw}; // XADC Die Temperature
-            7'h19: spi_tx_data = fpga_heartbeat; // FPGA Heartbeat Counter
+            // Baseline Metrics
+            7'h10: spi_tx_data = 32'hDAC02026; 
+            7'h11: spi_tx_data = {24'd0, blade_detect_pins}; 
+            7'h12: spi_tx_data = {29'd0, relay_iv_filter, base_rate_sel, relay_gain_6v}; 
+            7'h13: spi_tx_data = {29'd0, err_clk_unlock, err_fifo_underflow, err_fifo_overflow}; 
+            7'h14: spi_tx_data = {16'd0, last_lrclk_count}; 
+            7'h15: spi_tx_data = {24'd0, spi_comms_err_count}; 
+            7'h16: spi_tx_data = {31'd0, err_audio_clip}; 
+            7'h17: spi_tx_data = {31'd0, err_i2s_frame}; 
+            7'h18: spi_tx_data = {16'd0, fpga_temp_raw}; 
+            7'h19: spi_tx_data = fpga_heartbeat; 
+            
+            // Advanced DSP Signal Taps & System Voltages
+            7'h20: spi_tx_data = safe_audio_data; // Raw Rx
+            7'h21: spi_tx_data = volumed_audio_data; // Post-Volume
+            7'h22: spi_tx_data = interpolated_audio_48b[47:16]; // Post-FIR (Upper 32 bits)
+            7'h23: spi_tx_data = {26'd0, dem_drive_command}; // Post-Noise Shaper
+            7'h24: spi_tx_data = {29'd0, err_wdog_spi, err_wdog_lrclk, err_wdog_bclk}; // Watchdogs
+            7'h25: spi_tx_data = {16'd0, vccint_raw}; // 1.0V Core
+            7'h26: spi_tx_data = {16'd0, vccaux_raw}; // 1.8V Aux
+            7'h27: spi_tx_data = {16'd0, vccbram_raw}; // 1.0V BRAM
+            
             default: spi_tx_data = 32'hDEADBEEF; 
         endcase
     end
