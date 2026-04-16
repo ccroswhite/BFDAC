@@ -26,7 +26,7 @@ module fir_polyphase_interpolator #(
     logic [6:0]  tap_counter;      // 0 to 127
     logic        phase_sync;
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             master_coef_addr <= '0;
             phase_counter    <= '0;
@@ -68,7 +68,7 @@ module fir_polyphase_interpolator #(
     (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_rev [0:65535];
 
     // --- A. The Pointer Logic ---
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             write_ptr <= '0;
         end else if (new_sample_valid) begin

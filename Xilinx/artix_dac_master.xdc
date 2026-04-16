@@ -142,7 +142,7 @@ set_property PACKAGE_PIN B21 [get_ports spi_sclk]
 set_property PACKAGE_PIN F15 [get_ports i2s_lrclk]
 set_property PACKAGE_PIN F14 [get_ports i2s_data]
 set_property PACKAGE_PIN E21 [get_ports ext_rst_n]
-set_property PACKAGE_PIN Y19 [get_ports clk_45m]
+set_property PACKAGE_PIN Y18 [get_ports clk_45m]
 set_property PACKAGE_PIN U20 [get_ports clk_49m]
 set_property PACKAGE_PIN Y14 [get_ports {blade_detect_pins[7]}]
 set_property PACKAGE_PIN AA14 [get_ports {blade_detect_pins[5]}]
@@ -157,3 +157,4 @@ set_property PACKAGE_PIN Y16 [get_ports relay_gain_6v]
 set_property DRIVE 12 [get_ports relay_gain_6v]
 
 set_property PACKAGE_PIN E19 [get_ports i2s_bclk]
+

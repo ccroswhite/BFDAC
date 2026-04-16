@@ -16,7 +16,8 @@ module volume_multiplier #(
 
     // Downstream Audio (To DSP Master Controller)
     output logic signed [DATA_WIDTH-1:0] audio_out,
-    output logic                      audio_valid_out
+    output logic                      audio_valid_out,
+    output logic                      audio_clip_out // NEW: Clip flag
 );
 
     // DSP48 Pipeline Registers
@@ -25,10 +26,9 @@ module volume_multiplier #(
     logic                         valid_reg1, valid_reg2;
     
     // 65-bit product to safely hold signed 32-bit * unsigned 32-bit
-    // Forced into dedicated DSP48E1 silicon (will cascade 4 slices)
     (* use_dsp = "yes" *) logic signed [64:0] full_product;
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             sample_reg      <= '0;
             vol_reg         <= '0;
@@ -37,6 +37,7 @@ module volume_multiplier #(
             full_product    <= '0;
             audio_out       <= '0;
             audio_valid_out <= 1'b0;
+            audio_clip_out  <= 1'b0;
         end else begin
             // -------------------------------------------------------------
             // Stage 1: Input Registration
@@ -48,20 +49,35 @@ module volume_multiplier #(
             // -------------------------------------------------------------
             // Stage 2: Multiplication 
             // -------------------------------------------------------------
-            // $signed({1'b0, vol_reg}) safely casts the fraction to positive
             if (valid_reg1) begin
                 full_product <= $signed(sample_reg) * $signed({1'b0, vol_reg});
             end
             valid_reg2 <= valid_reg1;
 
             // -------------------------------------------------------------
-            // Stage 3: Rounding & Extraction 
+            // Stage 3: Saturation, Rounding & Extraction 
             // -------------------------------------------------------------
-            // Instead of truncating (which causes harmonic distortion), 
-            // we add the MSB of the discarded fraction (bit 31) to round to nearest.
             if (valid_reg2) begin
-                audio_out <= full_product[63:32] + full_product[31];
+                // Use a 34-bit signed intermediate to safely catch any overflow
+                // during the rounding addition.
+                automatic logic signed [33:0] rounded;
+                rounded = full_product[64:32] + full_product[31];
+
+                // Hard clamp (Saturate) to 32-bit MAX/MIN bounds
+                if (rounded > 34'sd2147483647) begin
+                    audio_out      <= 32'sd2147483647; // 32'h7FFFFFFF
+                    audio_clip_out <= 1'b1;
+                end else if (rounded < -34'sd2147483648) begin
+                    audio_out      <= -32'sd2147483648; // 32'h80000000
+                    audio_clip_out <= 1'b1;
+                end else begin
+                    audio_out      <= rounded[31:0];
+                    audio_clip_out <= 1'b0;
+                end
+            end else begin
+                audio_clip_out <= 1'b0;
             end
+            
             audio_valid_out <= valid_reg2;
         end
     end
