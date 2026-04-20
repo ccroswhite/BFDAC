@@ -21,6 +21,7 @@ module artix_dac_top (
     input  logic [7:0] blade_detect_pins, 
     output logic       relay_iv_filter,   
     output logic       relay_gain_6v,     
+    output logic       relay_audio_out,
 
     // Moat I2S Interface 
     input  logic       i2s_bclk,
@@ -88,6 +89,7 @@ module artix_dac_top (
     logic [31:0] sys_volume;
     logic        cmd_gain_6v;
     logic        base_rate_sel; 
+    logic        cmd_unmute;
 
     // Flash Control Nets
     logic [7:0]  flash_cmd_opcode;
@@ -105,6 +107,9 @@ module artix_dac_top (
     logic [31:0] volumed_audio_data;
     logic        volumed_audio_valid;
     logic        volumed_clip_detect;
+
+    logic               force_zero;
+    logic [31:0]        clean_audio_data;
 
     logic signed [47:0] interpolated_audio_48b; 
     logic               interpolated_valid;
@@ -268,6 +273,7 @@ module artix_dac_top (
             cmd_gain_6v       <= 1'b0;
             relay_gain_6v     <= 1'b0;
             base_rate_sel     <= 1'b0; 
+            cmd_unmute        <= 1'b0;
             read_addr_reg     <= 7'h00;
             flash_cmd_trigger <= 1'b0;
             flash_fifo_we     <= 1'b0;
@@ -282,6 +288,7 @@ module artix_dac_top (
                         7'h01: sys_volume    <= {8'h00, ctrl_bus_data[23:0]};
                         7'h02: cmd_gain_6v   <= ctrl_bus_data[0];             
                         7'h03: base_rate_sel <= ctrl_bus_data[0]; 
+                        7'h04: cmd_unmute    <= ctrl_bus_data[0];
                         // Flash Commands
                         7'h30: begin 
                                flash_cmd_opcode  <= ctrl_bus_data[7:0];
@@ -334,6 +341,9 @@ module artix_dac_top (
 
     assign relay_iv_filter = (blade_detect_pins > 8'd1) ? 1'b1 : 1'b0;
 
+    // Hardware Zero-Clamp
+    assign clean_audio_data = force_zero ? 32'd0 : volumed_audio_data;
+
     // ==============================================================
     // Module Instantiations
     // ==============================================================
@@ -370,7 +380,7 @@ module artix_dac_top (
         .fifo_wdata  (flash_fifo_wdata),
         .fifo_we     (flash_fifo_we),
         .fifo_waddr  (flash_fifo_waddr),
-        .flash_clk   (internal_flash_clk), // Routes implicitly via STARTUPE2
+        .flash_clk   (internal_flash_clk),
         .flash_cs_n  (qspi_cs_n),
         .flash_mosi  (qspi_mosi),
         .flash_miso  (qspi_miso)
@@ -421,7 +431,7 @@ module artix_dac_top (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
         .new_sample_valid   (volumed_audio_valid),
-        .new_sample_data    (volumed_audio_data[31:8]), 
+        .new_sample_data    (clean_audio_data[31:8]), 
         .interpolated_out   (interpolated_audio_48b),
         .interpolated_valid (interpolated_valid)
     );
@@ -465,6 +475,16 @@ module artix_dac_top (
         .lvds_clk_n     (lvds_clk_n),
         .lvds_frame_p   (lvds_frame_p),
         .lvds_frame_n   (lvds_frame_n)
+    );
+
+    automute_controller u_automute (
+        .clk           (dsp_clk),
+        .rst_n         (sys_rst_n),
+        .spi_unmute    (cmd_unmute),
+        .base_rate_sel (base_rate_sel),
+        .i2s_err       (err_wdog_bclk | err_wdog_lrclk | err_i2s_frame),
+        .relay_drive   (relay_audio_out),
+        .force_zero    (force_zero)
     );
 
     assign hyper_ck = 1'b0;

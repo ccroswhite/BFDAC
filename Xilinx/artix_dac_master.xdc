@@ -1,3 +1,10 @@
+set_property IOSTANDARD LVCMOS33 [get_ports qspi_*_n]
+set_property IOSTANDARD LVCMOS33 [get_ports qspi_mosi*]
+set_property IOSTANDARD LVCMOS33 [get_ports {hyper_dq[*]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {blade_detect_pins[*]}]
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_data_p[*]}]
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_clk_p[*]}]
+set_property IOSTANDARD LVDS_25 [get_ports {lvds_frame_p[*]}]
 # ==============================================================================
 # ARTIX-7 (XC7A200T-FBG484) - SYNTHESIS ONLY CONSTRAINTS
 # ==============================================================================
@@ -15,7 +22,9 @@ set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]
 set_property BITSTREAM.CONFIG.SPI_FALL_EDGE YES [current_design]
 
 set_property BITSTREAM.CONFIG.CONFIGFALLBACK ENABLE [current_design]
-set_property BITSTREAM.CONFIG.NEXT_CONFIG_ADDR 0x00400000 [current_design]
+set_property BITSTREAM.CONFIG.NEXT_CONFIG_ADDR 32'h00400000 [current_design]
+
+set_property IOSTANDARD LVCMOS33 [get_ports qspi_miso]
 
 # ------------------------------------------------------------------------------
 # 1. I/O STANDARDS (3.3V DOMAIN)
@@ -28,7 +37,6 @@ set_property IOSTANDARD LVCMOS33 [get_ports clk_45m]
 set_property IOSTANDARD LVCMOS33 [get_ports hyper_ck]
 set_property IOSTANDARD LVCMOS33 [get_ports hyper_cs_n]
 set_property IOSTANDARD LVCMOS33 [get_ports hyper_rwds]
-set_property IOSTANDARD LVCMOS33 [get_ports {hyper_dq[*]}]
 set_property IOSTANDARD LVCMOS33 [get_ports hyper_reset_n]
 
 # SPI & I2S & Reset
@@ -44,7 +52,6 @@ set_property IOSTANDARD LVCMOS33 [get_ports ext_rst_n]
 # Relays & Sensors
 set_property IOSTANDARD LVCMOS33 [get_ports relay_iv_filter]
 set_property IOSTANDARD LVCMOS33 [get_ports relay_gain_6v]
-set_property IOSTANDARD LVCMOS33 [get_ports {blade_detect_pins[*]}]
 set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[7]}]
 set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[6]}]
 set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[5]}]
@@ -58,9 +65,6 @@ set_property PULLTYPE PULLDOWN [get_ports {blade_detect_pins[0]}]
 # 2. I/O STANDARDS (2.5V DOMAIN)
 # ------------------------------------------------------------------------------
 # LVDS Egress
-set_property IOSTANDARD LVDS_25 [get_ports {lvds_data_p[*]}]
-set_property IOSTANDARD LVDS_25 [get_ports {lvds_clk_p[*]}]
-set_property IOSTANDARD LVDS_25 [get_ports {lvds_frame_p[*]}]
 
 # ------------------------------------------------------------------------------
 # 3. TIMING ASSERTIONS
@@ -79,6 +83,11 @@ set_clock_groups -asynchronous -group [get_clocks spi_sclk] -group [get_clocks -
 set_false_path -from [get_ports {blade_detect_pins[*]}]
 set_false_path -to [get_ports relay_iv_filter]
 set_false_path -to [get_ports relay_gain_6v]
+
+set_property IOSTANDARD LVCMOS33 [get_ports relay_audio_out]
+set_property DRIVE 12 [get_ports relay_audio_out]
+# Replace 'XX' with your actual chosen pin:
+# set_property PACKAGE_PIN XX [get_ports relay_audio_out]
 
 set_property PACKAGE_PIN B1 [get_ports {lvds_clk_p[0]}]
 set_property PACKAGE_PIN A1 [get_ports {lvds_clk_n[0]}]
@@ -163,3 +172,8 @@ set_property PACKAGE_PIN Y16 [get_ports relay_gain_6v]
 set_property DRIVE 12 [get_ports relay_gain_6v]
 
 set_property PACKAGE_PIN E19 [get_ports i2s_bclk]
+
+set_property PACKAGE_PIN M16 [get_ports qspi_mosi]
+set_property PACKAGE_PIN L16 [get_ports qspi_cs_n]
+set_property PACKAGE_PIN K14 [get_ports qspi_miso]
+set_property PACKAGE_PIN P16 [get_ports relay_audio_out]

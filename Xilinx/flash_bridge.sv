@@ -22,13 +22,13 @@ module flash_bridge (
     input  logic        flash_miso
 );
 
-    // 256-Byte Page Buffer (Inferred as Distributed RAM or BRAM)
+    // 256-Byte Page Buffer
     logic [7:0] page_buffer [0:255];
     always_ff @(posedge clk) begin
         if (fifo_we) page_buffer[fifo_waddr] <= fifo_wdata;
     end
 
-    // 45 MHz Clock Divider (Divide by 2)
+    // 45 MHz Clock Divider
     logic clk_en_45m;
     logic clk_div;
     always_ff @(posedge clk) begin
@@ -48,9 +48,8 @@ module flash_bridge (
     state_t state;
 
     // SPI Transactor Logic
-    logic [31:0] shift_reg;
+    logic [31:0] header_data; // Driven by FSM
     logic [8:0]  bit_count; 
-    logic [7:0]  byte_count;
     logic        spi_start;
     logic        spi_busy;
     logic [7:0]  spi_rx_data;
@@ -63,6 +62,7 @@ module flash_bridge (
             flash_cs_n      <= 1'b1;
             spi_start       <= 1'b0;
             target_is_write <= 1'b0;
+            header_data     <= '0;
         end else if (clk_en_45m) begin
             spi_start <= 1'b0;
 
@@ -71,11 +71,9 @@ module flash_bridge (
                     if (cmd_trigger) begin
                         cmd_busy <= 1'b1;
                         if (cmd_opcode == 8'h01 || cmd_opcode == 8'h02) begin
-                            // Erase and Write require Write Enable first
                             state <= WREN_CMD;
                             target_is_write <= (cmd_opcode == 8'h02);
                         end else begin
-                            // Direct execution (e.g., Read)
                             state <= EXEC_CMD;
                         end
                     end else begin
@@ -84,11 +82,11 @@ module flash_bridge (
                 end
 
                 WREN_CMD: begin
-                    flash_cs_n <= 1'b0;
-                    shift_reg  <= {8'h06, 24'd0}; // WREN Opcode
-                    bit_count  <= 9'd8;
-                    spi_start  <= 1'b1;
-                    state      <= WREN_CMD;
+                    flash_cs_n  <= 1'b0;
+                    header_data <= {8'h06, 24'd0}; 
+                    bit_count   <= 9'd8;
+                    spi_start   <= 1'b1;
+                    state       <= WREN_CMD;
                     if (spi_start) state <= WREN_WAIT;
                 end
 
@@ -101,11 +99,10 @@ module flash_bridge (
 
                 EXEC_CMD: begin
                     flash_cs_n <= 1'b0;
-                    // Assemble standard 32-bit header [Opcode + 24-bit Addr]
-                    if (target_is_write) shift_reg <= {8'h02, cmd_addr}; // Page Prog
-                    else                 shift_reg <= {8'hD8, cmd_addr}; // Sector Erase
+                    if (target_is_write) header_data <= {8'h02, cmd_addr}; 
+                    else                 header_data <= {8'hD8, cmd_addr}; 
                     
-                    bit_count <= target_is_write ? 9'd2056 : 9'd32; // 32 bits + 256 bytes
+                    bit_count <= target_is_write ? 9'd2056 : 9'd32; 
                     spi_start <= 1'b1;
                     state     <= EXEC_CMD;
                     if (spi_start) state <= EXEC_WAIT;
@@ -120,11 +117,11 @@ module flash_bridge (
                 end
 
                 STATUS_CMD: begin
-                    flash_cs_n <= 1'b0;
-                    shift_reg  <= {8'h05, 24'd0}; // Read Status Register
-                    bit_count  <= 9'd16;          // 8 bit command + 8 bit read
-                    spi_start  <= 1'b1;
-                    state      <= STATUS_CMD;
+                    flash_cs_n  <= 1'b0;
+                    header_data <= {8'h05, 24'd0}; 
+                    bit_count   <= 9'd16;          
+                    spi_start   <= 1'b1;
+                    state       <= STATUS_CMD;
                     if (spi_start) state <= STATUS_WAIT;
                 end
 
@@ -136,8 +133,7 @@ module flash_bridge (
                 end
 
                 STATUS_EVAL: begin
-                    // Bit 0 of Status Register is Write-In-Progress (WIP)
-                    if (spi_rx_data[0] == 1'b1) state <= STATUS_CMD; // Keep polling
+                    if (spi_rx_data[0] == 1'b1) state <= STATUS_CMD; 
                     else                        state <= DONE;
                 end
 
@@ -150,20 +146,25 @@ module flash_bridge (
     end
 
     // Low-Level SPI Shift Engine (45MHz)
-    logic [8:0] tx_bits_left;
+    logic [8:0]  tx_bits_left;
+    logic [7:0]  byte_count;
+    logic [31:0] shift_reg; // Driven exclusively by Shift Engine
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            flash_clk  <= 1'b0;
-            flash_mosi <= 1'b0;
-            spi_busy   <= 1'b0;
+            flash_clk    <= 1'b0;
+            flash_mosi   <= 1'b0;
+            spi_busy     <= 1'b0;
             tx_bits_left <= '0;
-            byte_count <= '0;
+            byte_count   <= '0;
+            shift_reg    <= '0;
         end else if (clk_en_45m) begin
             if (spi_start) begin
                 tx_bits_left <= bit_count;
                 spi_busy     <= 1'b1;
                 byte_count   <= '0;
                 flash_clk    <= 1'b0;
+                shift_reg    <= header_data; // Load payload from FSM
             end else if (spi_busy) begin
                 flash_clk <= ~flash_clk;
                 
@@ -174,9 +175,8 @@ module flash_bridge (
                             flash_mosi <= shift_reg[31];
                             shift_reg  <= {shift_reg[30:0], 1'b0};
                         end else begin
-                            // Shift Payload Data from FIFO
-                            flash_mosi <= page_buffer[byte_count][7];
-                            page_buffer[byte_count] <= {page_buffer[byte_count][6:0], 1'b0};
+                            // Shift Payload Data
+                            flash_mosi <= page_buffer[byte_count][(tx_bits_left - 1) % 8];
                             if ((tx_bits_left - 1) % 8 == 0) byte_count <= byte_count + 1;
                         end
                         tx_bits_left <= tx_bits_left - 1;
