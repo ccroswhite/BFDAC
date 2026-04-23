@@ -2,46 +2,46 @@
 
 module artix_dac_top (
     // 3.3V Domain (Single-Ended Clocks per XDC)
-    input  logic       clk_45m, 
-    input  logic       clk_49m, 
-    input  logic       ext_rst_n,
+    input  logic        clk_45m, 
+    input  logic        clk_49m, 
+    input  logic        ext_rst_n,
 
     // ARM SPI Interface (Control Plane)
-    input  logic       spi_sclk,
-    input  logic       spi_cs_n,
-    input  logic       spi_mosi,
-    output logic       spi_miso,
+    input  logic        spi_sclk,
+    input  logic        spi_cs_n,
+    input  logic        spi_mosi,
+    output logic        spi_miso,
 
     // Dedicated Flash SPI Interface (Storage Plane)
-    output logic       qspi_cs_n,
-    output logic       qspi_mosi,
-    input  logic       qspi_miso,
+    output logic        qspi_cs_n,
+    output logic        qspi_mosi,
+    input  logic        qspi_miso,
 
     // Hardware Control & Sensing Plane
-    input  logic [7:0] blade_detect_pins, 
-    output logic       relay_iv_filter,   
-    output logic       relay_gain_6v,     
-    output logic       relay_audio_out,
+    input  logic [7:0]  blade_detect_pins, 
+    output logic        relay_iv_filter,   
+    output logic        relay_gain_6v,     
+    output logic        relay_audio_out,
 
     // Moat I2S Interface 
-    input  logic       i2s_bclk,
-    input  logic       i2s_lrclk,
-    input  logic       i2s_data,
+    input  logic        i2s_bclk,
+    input  logic        i2s_lrclk,
+    input  logic        i2s_data,
 
     // HyperRAM Interface
-    output logic       hyper_ck,
-    output logic       hyper_cs_n,
-    inout  logic       hyper_rwds,
-    inout  logic [7:0] hyper_dq,
-    output logic       hyper_reset_n,
+    output logic        hyper_ck,
+    output logic        hyper_cs_n,
+    inout  logic        hyper_rwds,
+    inout  logic [7:0]  hyper_dq,
+    output logic        hyper_reset_n,
 
     // High-Speed LVDS Outputs to 8 Converter Blades
-    output logic [7:0] lvds_data_p,
-    output logic [7:0] lvds_data_n,
-    output logic [7:0] lvds_clk_p,
-    output logic [7:0] lvds_clk_n,
-    output logic [7:0] lvds_frame_p,
-    output logic [7:0] lvds_frame_n
+    output logic [7:0]  lvds_data_p,
+    output logic [7:0]  lvds_data_n,
+    output logic [7:0]  lvds_clk_p,
+    output logic [7:0]  lvds_clk_n,
+    output logic [7:0]  lvds_frame_p,
+    output logic [7:0]  lvds_frame_n
 );
 
     // ==============================================================
@@ -111,7 +111,8 @@ module artix_dac_top (
     logic               force_zero;
     logic [31:0]        clean_audio_data;
 
-    logic signed [47:0] interpolated_audio_48b; 
+    // UPDATED: 96-Bit Accumulator Net
+    logic signed [95:0] interpolated_audio_96b; 
     logic               interpolated_valid;
     logic [5:0]         dem_drive_command;
     logic [63:0]        resistor_ring_bus; 
@@ -286,7 +287,7 @@ module artix_dac_top (
                     // WRITE OPERATION
                     case (ctrl_bus_data[30:24])
                         7'h01: sys_volume    <= {8'h00, ctrl_bus_data[23:0]};
-                        7'h02: cmd_gain_6v   <= ctrl_bus_data[0];             
+                        7'h02: cmd_gain_6v   <= ctrl_bus_data[0];              
                         7'h03: base_rate_sel <= ctrl_bus_data[0]; 
                         7'h04: cmd_unmute    <= ctrl_bus_data[0];
                         // Flash Commands
@@ -325,7 +326,8 @@ module artix_dac_top (
             7'h19: spi_tx_data = fpga_heartbeat; 
             7'h20: spi_tx_data = safe_audio_data; 
             7'h21: spi_tx_data = volumed_audio_data; 
-            7'h22: spi_tx_data = interpolated_audio_48b[47:16]; 
+            // UPDATED: Shifted telemetry to read the upper sector of the new 96-bit word
+            7'h22: spi_tx_data = interpolated_audio_96b[95:64]; 
             7'h23: spi_tx_data = {26'd0, dem_drive_command}; 
             7'h24: spi_tx_data = {29'd0, err_wdog_spi, err_wdog_lrclk, err_wdog_bclk}; 
             7'h25: spi_tx_data = {16'd0, vccint_raw}; 
@@ -422,29 +424,32 @@ module artix_dac_top (
         .audio_clip_out  (volumed_clip_detect) 
     );
 
+    // UPDATED: Extended ACC_WIDTH to 96
     fir_polyphase_interpolator #(
         .NUM_MACS   (256),
         .DATA_WIDTH (24),
         .COEF_WIDTH (18),
-        .ACC_WIDTH  (48)  
+        .ACC_WIDTH  (96)  
     ) u_1m_tap_fir (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
         .new_sample_valid   (volumed_audio_valid),
         .new_sample_data    (clean_audio_data[31:8]), 
-        .interpolated_out   (interpolated_audio_48b),
+        .interpolated_out   (interpolated_audio_96b),
         .interpolated_valid (interpolated_valid)
     );
 
-    localparam int FIR_GAIN_SHIFT = 16; 
+    // UPDATED: Shift adjusted to catch the top 48 bits of the new 96-bit word
+    localparam int FIR_GAIN_SHIFT = 48; 
     
-    noise_shaper_2nd_order #(
-        .INPUT_WIDTH(32), .FRAC_WIDTH(26)
+    // UPDATED: Upgraded to 5th-Order Modulator (takes 48-bit input)
+    noise_shaper_5th_order #(
+        .INPUT_WIDTH(48), .FRAC_WIDTH(42)
     ) u_noise_shaper (
         .clk            (dsp_clk),
         .rst_n          (sys_rst_n),
         .enable         (interpolated_valid),
-        .data_in        (interpolated_audio_48b[FIR_GAIN_SHIFT + 31 : FIR_GAIN_SHIFT]),
+        .data_in        (interpolated_audio_96b[FIR_GAIN_SHIFT + 47 : FIR_GAIN_SHIFT]),
         .dem_drive_out  (dem_drive_command)
     );
 
