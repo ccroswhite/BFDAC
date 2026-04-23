@@ -1,39 +1,43 @@
 `timescale 1ns / 1ps
 
 module polyphase_mac_engine #(
-    parameter int DATA_WIDTH = 24, 
+    parameter int DATA_WIDTH = 24,
     parameter int COEF_WIDTH = 18,
-    parameter int ACC_WIDTH  = 96, // Upgraded to 96-bit
-    parameter int MAC_ID     = 0   
+    parameter int ACC_WIDTH  = 96,
+    parameter int MAC_ID     = 0
 )(
-    input  logic                      clk,
-    input  logic                      rst_n,
-
+    input  logic                  clk,
+    input  logic                  rst_n,
+    
     // Phase Control
-    input  logic                      phase_sync, 
-    input  logic [10:0]               coef_addr,  
-
+    input  logic                  phase_sync,
+    input  logic [10:0]           coef_addr,
+    
     // The Folded Audio Cascade
     input  logic signed [DATA_WIDTH-1:0] audio_fwd_in,
     input  logic signed [DATA_WIDTH-1:0] audio_rev_in,
-    
     output logic signed [DATA_WIDTH-1:0] audio_fwd_out,
     output logic signed [DATA_WIDTH-1:0] audio_rev_out,
-
+    
     // The Systolic Accumulator Chain
     input  logic signed [ACC_WIDTH-1:0]  acc_in,
     output logic signed [ACC_WIDTH-1:0]  acc_out
 );
 
     // =================================---------------------------------------
-    // 1. Local Coefficient ROM 
+    // 1. Local Coefficient ROM
     // =================================---------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_rom [0:2047];
+
+    // Dummy initialization to force Block RAM inference until .mem files are ready
     initial begin
-        for (int k = 0; k < 2048; k++) coef_rom[k] = '0;
+        for (int k = 0; k < 2048; k++) begin
+            coef_rom[k] = '0;
+        end
     end
     
-    logic signed [COEF_WIDTH-1:0] local_coef;
+    logic signed [COEF_WIDTH-1:0] local_coef = '0;
+
     always_ff @(posedge clk) begin
         local_coef <= coef_rom[coef_addr];
     end
@@ -41,7 +45,9 @@ module polyphase_mac_engine #(
     // =================================---------------------------------------
     // 2. Audio Cascade Registration
     // =================================---------------------------------------
-    logic signed [DATA_WIDTH-1:0] fwd_reg, rev_reg;
+    logic signed [DATA_WIDTH-1:0] fwd_reg = '0;
+    logic signed [DATA_WIDTH-1:0] rev_reg = '0;
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             fwd_reg <= '0;
@@ -56,104 +62,53 @@ module polyphase_mac_engine #(
     assign audio_rev_out = rev_reg;
 
     // =================================---------------------------------------
-    // 3. Dual DSP48E1 Instantiation (96-Bit Cascade)
+    // 3. The Math Core (DSP Multiplier + Fabric Accumulator)
     // =================================---------------------------------------
     
-    // Internal cascade wires
-    logic [47:0] pcout_lower_to_upper;
-    logic        carry_lower_to_upper;
+    // Force the heavy multiplication into a single DSP48E1 slice
+    (* use_dsp = "yes" *) logic signed [DATA_WIDTH:0]  pre_adder = '0;
+    (* use_dsp = "yes" *) logic signed [47:0]          product_reg = '0;
     
-    // Output wires from DSPs
-    logic [47:0] p_out_lower;
-    logic [47:0] p_out_upper;
+    // Force the 96-bit accumulation OUT of the DSP and into the CARRY4 fabric
+    // to completely eliminate column-boundary routing failures.
+    (* use_dsp = "no" *)  logic signed [ACC_WIDTH-1:0] local_acc = '0;
 
-    // OpMode Control logic based on phase_sync
-    // When phase_sync is HIGH, load current product (OpMode = 0000101)
-    // When phase_sync is LOW, accumulate (OpMode = 0100101 for lower, 1010000 for upper)
-    logic [6:0] opmode_lower;
-    logic [6:0] opmode_upper;
-    
-    always_comb begin
-        if (phase_sync) begin
-            opmode_lower = 7'b0000101; // Mult + 0
-            opmode_upper = 7'b0000000; // Pass 0
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            pre_adder   <= '0;
+            product_reg <= '0;
+            local_acc   <= '0;
         end else begin
-            opmode_lower = 7'b0100101; // Mult + P
-            opmode_upper = 7'b1010000; // P + PCIN (Cascade)
+            // STAGE 1: The Pre-Adder
+            pre_adder <= $signed(fwd_reg) + $signed(rev_reg);
+            
+            // STAGE 2: The Multiplier (Yields 48-bit product)
+            product_reg <= pre_adder * local_coef;
+            
+            // STAGE 3: Local Accumulation (96-bit Fabric LUTs)
+            if (phase_sync) begin
+                // Seed the accumulator with the new product (automatically sign-extends to 96 bits)
+                local_acc <= product_reg;
+            end else begin
+                // Standard internal accumulation
+                local_acc <= local_acc + product_reg;
+            end
         end
     end
 
-    // --- DSP A: Lower 48 Bits (Pre-Adder & Multiplier) ---
-    DSP48E1 #(
-        .A_INPUT("DIRECT"), .B_INPUT("DIRECT"), .USE_DPORT("TRUE"),
-        .USE_MULT("MULTIPLY"), .USE_SIMD("ONE48"),
-        .ADREG(1), .ALUMODEREG(1), .AREG(1), .BREG(1), .CREG(1), .DREG(1), .MREG(1), .PREG(1), .OPMODEREG(1)
-    ) DSP_LOWER (
-        .CLK(clk),
-        .ALUMODE(4'b0000),    // Add
-        .OPMODE(opmode_lower),
-        .INMODE(5'b10100),    // D + A (Pre-adder enabled)
-        
-        // Data Ports (Sign extended to match primitive widths)
-        .A({ {6{fwd_reg[DATA_WIDTH-1]}}, fwd_reg }), // 30-bit A
-        .D({ {1{rev_reg[DATA_WIDTH-1]}}, rev_reg }), // 25-bit D
-        .B(local_coef),                              // 18-bit B
-        .C(48'h0),
-        
-        // Cascade & Outputs
-        .P(p_out_lower),
-        .PCOUT(pcout_lower_to_upper),
-        .CARRYCASCOUT(carry_lower_to_upper),
-        
-        // Tie-offs and Enables
-        .CEA1(1'b0), .CEA2(1'b1), .CEAD(1'b1), .CEALUMODE(1'b1), .CEB1(1'b0), .CEB2(1'b1),
-        .CEC(1'b0), .CECARRYIN(1'b0), .CECTRL(1'b1), .CED(1'b1), .CEINMODE(1'b0), .CEM(1'b1), .CEP(1'b1),
-        .RSTA(~rst_n), .RSTALLCARRYIN(~rst_n), .RSTALUMODE(~rst_n), .RSTB(~rst_n), .RSTC(~rst_n),
-        .RSTCTRL(~rst_n), .RSTD(~rst_n), .RSTINMODE(~rst_n), .RSTM(~rst_n), .RSTP(~rst_n),
-        .CARRYIN(1'b0), .CARRYCASCIN(1'b0), .MULTSIGNIN(1'b0), .PCIN(48'h0)
-    );
-
-    // --- DSP B: Upper 48 Bits (ALU Extension) ---
-    DSP48E1 #(
-        .A_INPUT("DIRECT"), .B_INPUT("DIRECT"), .USE_DPORT("FALSE"),
-        .USE_MULT("NONE"), .USE_SIMD("ONE48"), // No multiplication here
-        .ALUMODEREG(1), .AREG(0), .BREG(0), .CREG(1), .MREG(0), .PREG(1), .OPMODEREG(1)
-    ) DSP_UPPER (
-        .CLK(clk),
-        .ALUMODE(4'b0000),     // Add
-        .OPMODE(opmode_upper), // PCIN + P
-        .INMODE(5'b00000),
-        
-        // Data Ports (Not used for math, tied off)
-        .A(30'h0), .D(25'h0), .B(18'h0), .C(48'h0),
-        
-        // Cascade Inputs from DSP A
-        .PCIN(pcout_lower_to_upper),
-        .CARRYCASCIN(carry_lower_to_upper),
-        .MULTSIGNIN(p_out_lower[47]), // Sign extension cascade
-        
-        // Outputs
-        .P(p_out_upper),
-        .PCOUT(), .CARRYCASCOUT(),
-        
-        // Tie-offs and Enables
-        .CEA1(1'b0), .CEA2(1'b0), .CEAD(1'b0), .CEALUMODE(1'b1), .CEB1(1'b0), .CEB2(1'b0),
-        .CEC(1'b0), .CECARRYIN(1'b0), .CECTRL(1'b1), .CED(1'b0), .CEINMODE(1'b0), .CEM(1'b0), .CEP(1'b1),
-        .RSTA(~rst_n), .RSTALLCARRYIN(~rst_n), .RSTALUMODE(~rst_n), .RSTB(~rst_n), .RSTC(~rst_n),
-        .RSTCTRL(~rst_n), .RSTD(~rst_n), .RSTINMODE(~rst_n), .RSTM(~rst_n), .RSTP(~rst_n),
-        .CARRYIN(1'b0)
-    );
-
     // =================================---------------------------------------
-    // 4. Fabric Cascade Addition
+    // 4. Fabric Cascade Addition (The Systolic Highway)
     // =================================---------------------------------------
-    logic signed [ACC_WIDTH-1:0] cascade_sum;
-    assign cascade_sum = {p_out_upper, p_out_lower} + acc_in;
+    (* use_dsp = "no" *) logic signed [ACC_WIDTH-1:0] cascade_sum;
+
+    // Add the local 96-bit sum to the 96-bit sum passed down from the previous MAC
+    assign cascade_sum = local_acc + acc_in;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             acc_out <= '0;
         end else if (phase_sync) begin
+            // Dump the final cascade addition safely down the chain
             acc_out <= cascade_sum;
         end
     end
