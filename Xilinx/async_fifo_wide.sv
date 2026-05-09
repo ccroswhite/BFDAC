@@ -19,43 +19,82 @@ module async_fifo_wide #(
     output logic                  r_empty
 );
 
-    logic [DATA_WIDTH-1:0] mem [(1<<ADDR_WIDTH)-1:0];
-    logic [ADDR_WIDTH:0]   w_ptr = '0, w_ptr_gray = '0, w_ptr_gray_sync1 = '0, w_ptr_gray_sync2 = '0;
-    logic [ADDR_WIDTH:0]   r_ptr = '0, r_ptr_gray = '0, r_ptr_gray_sync1 = '0, r_ptr_gray_sync2 = '0;
+    localparam int DEPTH = 1 << ADDR_WIDTH;
 
-    // --- Write Domain ---
+    // Force BRAM inference to clear Distributed RAM routing congestion
+    (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
+
+    // Pointers
+    logic [ADDR_WIDTH:0] w_bin, w_bin_next;
+    logic [ADDR_WIDTH:0] w_gray, w_gray_next;
+    logic [ADDR_WIDTH:0] r_bin, r_bin_next;
+    logic [ADDR_WIDTH:0] r_gray, r_gray_next;
+
+    // Synchronizers
+    logic [ADDR_WIDTH:0] wq1_r_gray, wq2_r_gray;
+    logic [ADDR_WIDTH:0] rq1_w_gray, rq2_w_gray;
+
+    // ------------------------------------------------------------------------
+    // 1. Write Domain (345 MHz)
+    // ------------------------------------------------------------------------
+    assign w_bin_next  = w_bin + (w_en & ~w_full);
+    assign w_gray_next = w_bin_next ^ (w_bin_next >> 1);
+
     always_ff @(posedge w_clk) begin
         if (!w_rst_n) begin
-            w_ptr <= '0; w_ptr_gray <= '0;
-        end else if (w_en && !w_full) begin
-            mem[w_ptr[ADDR_WIDTH-1:0]] <= w_data;
-            w_ptr <= w_ptr + 1'b1;
-            w_ptr_gray <= (w_ptr + 1'b1) ^ ((w_ptr + 1'b1) >> 1);
+            w_bin  <= '0;
+            w_gray <= '0;
+            w_full <= 1'b0;
+        end else begin
+            w_bin  <= w_bin_next;
+            w_gray <= w_gray_next;
+            // Registered full flag (Drops Logic Levels to 0 for the output pin)
+            w_full <= (w_gray_next == {~wq2_r_gray[ADDR_WIDTH:ADDR_WIDTH-1], wq2_r_gray[ADDR_WIDTH-2:0]});
         end
     end
 
+    // Memory Write Port
     always_ff @(posedge w_clk) begin
-        if (!w_rst_n) {r_ptr_gray_sync2, r_ptr_gray_sync1} <= '0;
-        else          {r_ptr_gray_sync2, r_ptr_gray_sync1} <= {r_ptr_gray_sync1, r_ptr_gray};
+        if (w_en && !w_full) begin
+            mem[w_bin[ADDR_WIDTH-1:0]] <= w_data;
+        end
     end
-    assign w_full = (w_ptr_gray == {~r_ptr_gray_sync2[ADDR_WIDTH:ADDR_WIDTH-1], r_ptr_gray_sync2[ADDR_WIDTH-2:0]});
 
-    // --- Read Domain ---
+    // Synchronize r_gray into w_clk domain
+    always_ff @(posedge w_clk) begin
+        if (!w_rst_n) {wq2_r_gray, wq1_r_gray} <= '0;
+        else          {wq2_r_gray, wq1_r_gray} <= {wq1_r_gray, r_gray};
+    end
+
+    // ------------------------------------------------------------------------
+    // 2. Read Domain (196.6 MHz)
+    // ------------------------------------------------------------------------
+    assign r_bin_next  = r_bin + (r_en & ~r_empty);
+    assign r_gray_next = r_bin_next ^ (r_bin_next >> 1);
+
     always_ff @(posedge r_clk) begin
         if (!r_rst_n) begin
-            r_ptr <= '0; r_ptr_gray <= '0;
-        end else if (r_en && !r_empty) begin
-            r_ptr <= r_ptr + 1'b1;
-            r_ptr_gray <= (r_ptr + 1'b1) ^ ((r_ptr + 1'b1) >> 1);
+            r_bin   <= '0;
+            r_gray  <= '0;
+            r_empty <= 1'b1;
+        end else begin
+            r_bin   <= r_bin_next;
+            r_gray  <= r_gray_next;
+            // Registered empty flag (Drops Logic Levels to 0 for the output pin)
+            r_empty <= (r_gray_next == rq2_w_gray);
         end
     end
 
-    assign r_data = mem[r_ptr[ADDR_WIDTH-1:0]];
-
+    // BRAM Compatible Synchronous Read with Look-Ahead
+    // Using r_bin_next pre-fetches the data, acting as a First-Word Fall-Through (FWFT)
     always_ff @(posedge r_clk) begin
-        if (!r_rst_n) {w_ptr_gray_sync2, w_ptr_gray_sync1} <= '0;
-        else          {w_ptr_gray_sync2, w_ptr_gray_sync1} <= {w_ptr_gray_sync1, w_ptr_gray};
+        r_data <= mem[r_bin_next[ADDR_WIDTH-1:0]];
     end
-    assign r_empty = (r_ptr_gray == w_ptr_gray_sync2);
+
+    // Synchronize w_gray into r_clk domain
+    always_ff @(posedge r_clk) begin
+        if (!r_rst_n) {rq2_w_gray, rq1_w_gray} <= '0;
+        else          {rq2_w_gray, rq1_w_gray} <= {rq1_w_gray, w_gray};
+    end
 
 endmodule
