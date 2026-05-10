@@ -107,6 +107,13 @@ module polyphase_mac_engine #(
     // exist purely so the cascade has a 1-cycle delay per MAC without
     // contaminating the AREG/DREG fanout. Synthesis cost is 2 x DATA_WIDTH
     // flops per MAC -- trivial relative to the DSP slice we recover.
+    //
+    // keep_equivalent_registers is REQUIRED here. fwd_cascade_q has the same
+    // D-input/clock/reset as fwd_q1, so Vivado's default equivalent-register
+    // removal pass will merge them into one register, restoring the dual-
+    // fanout problem on fwd_q1 and forcing the (fwd*coef)+(rev*coef) split
+    // across two DSP slices. The attribute pins these flops as distinct.
+    (* keep_equivalent_registers = "yes" *)
     logic signed [DATA_WIDTH-1:0] fwd_cascade_q, rev_cascade_q;
 
     always_ff @(posedge clk) begin
