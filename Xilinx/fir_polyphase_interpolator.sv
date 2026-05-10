@@ -55,7 +55,14 @@ module fir_polyphase_interpolator #(
     // 2. The Baseband Audio Memory (With Read/Write Fanout Distribution)
     // =================================---------------------------------------
     logic [15:0] write_ptr;
-    logic signed [DATA_WIDTH-1:0] fwd_seed, rev_seed;
+    // Optimization firewall: the DDR3 MIG is synthesized Out-of-Context as a
+    // blackbox, so Vivado treats its outputs as static during synthesis. That
+    // static value propagates through the audio_bram_fwd/rev cache and proves
+    // the FIR audio inputs constant-zero, which collapses every DSP48E1 in
+    // the 256 polyphase MACs. Pinning fwd_seed / rev_seed with dont_touch
+    // blinds the constant propagator and forces volatile-data inference.
+    (* keep = "true", dont_touch = "true" *) logic signed [DATA_WIDTH-1:0] fwd_seed;
+    (* keep = "true", dont_touch = "true" *) logic signed [DATA_WIDTH-1:0] rev_seed;
     
     (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_fwd [0:65535];
     (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_rev [0:65535];
