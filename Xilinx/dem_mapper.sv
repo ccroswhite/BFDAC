@@ -69,20 +69,53 @@ module dem_mapper #(
     end
 
     // -----------------------------------------------------
-    // PIPELINE STAGE 3: Circular Barrel Shifter Synthesis
+    // PIPELINE STAGE 3a: Coarse Barrel Rotation (stride 16, 16 positions)
+    //
+    // The original single-cycle 256-position rotate produced a 256:1 mux
+    // per output bit (4 levels of LUT6). With ARRAY_SIZE=256 destinations
+    // pulling from ARRAY_SIZE=256 sources via a full cross-bar, the placer
+    // cannot avoid long routes, producing routing-dominated timing
+    // failures. We split the single rotate into two cascaded 16-position
+    // rotates: coarse (this stage, stride 16) and fine (next stage,
+    // stride 1). Each stage is one 16:1 mux = 1 level of LUT6, with a
+    // register in between giving the placer freedom to localise each half.
+    // Mathematically: N = 16 * rot_offset[7:4] + rot_offset[3:0], so the
+    // composition is bit-exact to the original rotate-by-N.
     // -----------------------------------------------------
-    logic [2*ARRAY_SIZE-1:0] barrel_comb;
-    
-    // Map double-width vector for indexed slicing
-    assign barrel_comb = {therm_code_s2, therm_code_s2};
+    logic [ARRAY_SIZE-1:0]                  therm_code_s3a;
+    logic [$clog2(ARRAY_SIZE/16)-1:0]       rot_offset_fine_s3a; // 4 bits
+
+    logic [2*ARRAY_SIZE-1:0]                barrel_s3a_comb;
+    assign barrel_s3a_comb = {therm_code_s2, therm_code_s2};
+
+    // Coarse index = rot_offset_s2[7:4] * 16 (zero LSBs).
+    logic [$clog2(ARRAY_SIZE)-1:0] coarse_index;
+    assign coarse_index = {rot_offset_s2[$clog2(ARRAY_SIZE)-1 : $clog2(ARRAY_SIZE/16)],
+                           {$clog2(ARRAY_SIZE/16){1'b0}}};
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            therm_code_s3a      <= '0;
+            rot_offset_fine_s3a <= '0;
+        end else if (enable) begin
+            therm_code_s3a      <= barrel_s3a_comb[coarse_index +: ARRAY_SIZE];
+            rot_offset_fine_s3a <= rot_offset_s2[$clog2(ARRAY_SIZE/16)-1 : 0];
+        end
+    end
+
+    // -----------------------------------------------------
+    // PIPELINE STAGE 3b: Fine Barrel Rotation (stride 1, 16 positions)
+    // -----------------------------------------------------
+    logic [2*ARRAY_SIZE-1:0] barrel_s3b_comb;
+    assign barrel_s3b_comb = {therm_code_s3a, therm_code_s3a};
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             resistor_out <= '0;
         end else if (enable) begin
-            // Safely slice exactly ARRAY_SIZE bits using the LFSR random offset.
+            // Safely slice exactly ARRAY_SIZE bits using the fine offset.
             // No inversion needed. The analog ECL switch handles the differential!
-            resistor_out <= barrel_comb[rot_offset_s2 +: ARRAY_SIZE];
+            resistor_out <= barrel_s3b_comb[rot_offset_fine_s3a +: ARRAY_SIZE];
         end
     end
 

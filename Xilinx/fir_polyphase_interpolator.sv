@@ -1,5 +1,18 @@
 `timescale 1ns / 1ps
 
+// Mono polyphase FIR interpolator.
+//
+// Audio history depth is 2K (2048 samples), exactly matching the
+// master_coef_addr sweep range (0..2047). Every BRAM slot is read exactly
+// once per FIR sweep, with no starvation. The 2K depth (vs the prior 64K)
+// saves ~46 RAMB36E1 per audio bank, which is what makes the stereo build
+// fit on the A7-200T after un-sharing coefficients.
+//
+// Two instances of this module (u_l_1m_tap_fir, u_r_1m_tap_fir) form the
+// stereo DSP core in artix_dac_top.sv. Each is fully self-contained:
+// independent state machine, independent audio history, independent
+// per-MAC coefficient ROMs placed local to their DSP48E1s -- so L and R
+// are TRULY physically independent and do not compete for routing.
 module fir_polyphase_interpolator #(
     parameter int NUM_MACS   = 256,
     parameter int DATA_WIDTH = 24,
@@ -19,11 +32,11 @@ module fir_polyphase_interpolator #(
 );
 
     // =================================---------------------------------------
-    // 1. The 2048-Cycle State Machine 
+    // 1. The 2048-Cycle State Machine
     // =================================---------------------------------------
-    logic [10:0] master_coef_addr;  
-    logic [3:0]  phase_counter;    
-    logic [6:0]  tap_counter;      
+    logic [10:0] master_coef_addr;
+    logic [3:0]  phase_counter;
+    logic [6:0]  tap_counter;
     logic        phase_sync;
 
     always_ff @(posedge clk) begin
@@ -44,10 +57,10 @@ module fir_polyphase_interpolator #(
             end else begin
                 master_coef_addr <= master_coef_addr + 11'b1;
                 tap_counter      <= tap_counter + 7'b1;
-                
+
                 if (tap_counter == 7'd127) begin
-                    phase_sync <= 1'b1;
-                    phase_counter <= phase_counter + 4'b1;
+                    phase_sync         <= 1'b1;
+                    phase_counter      <= phase_counter + 4'b1;
                     interpolated_valid <= 1'b1;
                 end
             end
@@ -55,26 +68,26 @@ module fir_polyphase_interpolator #(
     end
 
     // =================================---------------------------------------
-    // 2. The Baseband Audio Memory (With Read/Write nnout Distribution)
+    // 2. The Baseband Audio Memory -- 2K depth (matches master_coef_addr range)
     // =================================---------------------------------------
-    logic [15:0] write_ptr;
+    logic [10:0] write_ptr;
     logic signed [DATA_WIDTH-1:0] fwd_seed, rev_seed;
-    
-    (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_fwd [0:65535];
-    (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_rev [0:65535];
 
-    // Master Write Pointer
+    (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_fwd [0:2047];
+    (* ram_style = "block" *) logic signed [DATA_WIDTH-1:0] audio_bram_rev [0:2047];
+
+    // Master Write Pointer (11-bit, wraps modulo 2048 naturally)
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             write_ptr <= '0;
         end else if (new_sample_valid) begin
-            write_ptr <= write_ptr + 16'b1;
+            write_ptr <= write_ptr + 11'b1;
         end
     end
 
     // --- Write-Path Fanout Distribution ---
-    // Forces Vivado to clone these registers to kill the write routing delay
-    (* max_fanout = 4 *)  logic [15:0] write_ptr_reg;
+    // Cloned registers kill the write routing delay
+    (* max_fanout = 4 *)  logic [10:0] write_ptr_reg;
     (* max_fanout = 16 *) logic        write_en_reg;
     (* max_fanout = 16 *) logic signed [DATA_WIDTH-1:0] write_data_reg;
 
@@ -85,13 +98,14 @@ module fir_polyphase_interpolator #(
     end
 
     // --- Read-Path Fanout Distribution ---
-    // Forces Vivado to clone these registers to kill the read routing delay
-    (* max_fanout = 16 *) logic [15:0] fwd_addr_reg;
-    (* max_fanout = 16 *) logic [15:0] rev_addr_reg;
-    
-    // Pipeline Stage 1: Math (Isolated from routing)
+    // Cloned registers kill the read routing delay
+    (* max_fanout = 16 *) logic [10:0] fwd_addr_reg;
+    (* max_fanout = 16 *) logic [10:0] rev_addr_reg;
+
+    // Pipeline Stage 1: Address math (isolated from BRAM array)
+    // 11-bit arithmetic wraps modulo 2048, giving us a circular buffer.
     always_ff @(posedge clk) begin
-        fwd_addr_reg <= write_ptr - 16'b1 - master_coef_addr;
+        fwd_addr_reg <= write_ptr - 11'b1 - master_coef_addr;
         rev_addr_reg <= write_ptr + master_coef_addr;
     end
 
@@ -101,8 +115,8 @@ module fir_polyphase_interpolator #(
             audio_bram_fwd[write_ptr_reg] <= write_data_reg;
             audio_bram_rev[write_ptr_reg] <= write_data_reg;
         end
-        fwd_seed <= audio_bram_fwd[fwd_addr_reg];       
-        rev_seed <= audio_bram_rev[rev_addr_reg];       
+        fwd_seed <= audio_bram_fwd[fwd_addr_reg];
+        rev_seed <= audio_bram_rev[rev_addr_reg];
     end
 
     // =================================---------------------------------------
@@ -114,8 +128,7 @@ module fir_polyphase_interpolator #(
     logic [10:0]                  cascade_coef_addr  [0:NUM_MACS];
     logic                         cascade_phase_sync [0:NUM_MACS];
 
-    // Because the BRAM address is delayed by 1 clock cycle, we MUST delay 
-    // the control signals by 1 clock cycle to keep everything perfectly aligned.
+    // Delay master_coef_addr / phase_sync by 1 cycle to match BRAM read latency
     logic [10:0] master_coef_addr_d1;
     logic        phase_sync_d1;
 
@@ -124,25 +137,34 @@ module fir_polyphase_interpolator #(
         phase_sync_d1       <= phase_sync;
     end
 
-    assign cascade_fwd[0] = fwd_seed;
-    assign cascade_rev[0] = rev_seed;
-    assign cascade_acc[0] = '0; 
-    assign cascade_coef_addr[0]  = master_coef_addr_d1; 
-    assign cascade_phase_sync[0] = phase_sync_d1;       
+    assign cascade_fwd[0]        = fwd_seed;
+    assign cascade_rev[0]        = rev_seed;
+    assign cascade_acc[0]        = '0;
+    assign cascade_coef_addr[0]  = master_coef_addr_d1;
+    assign cascade_phase_sync[0] = phase_sync_d1;
 
     // =================================---------------------------------------
-    // 4. The 256-Engine Polyphase Instantiation (Safe Vivado Generate)
+    // 4. The 256-Engine Polyphase Instantiation
     // =================================---------------------------------------
     genvar i;
     generate
         for (i = 0; i < NUM_MACS; i++) begin : gen_poly_mac
-            
+
+            // Per-MAC chain pipelining: 2 cycles/hop on coef_addr and
+            // phase_sync to match the 2-cycle/hop audio (fwd_reg_2 output)
+            // and cascade accumulator (CREG-enabled) latencies. All four
+            // chain signals advance at the same per-hop rate so the relative
+            // timing inside each MAC is identical to the pre-CREG design.
+            logic [10:0] coef_addr_mid;
+            logic        phase_sync_mid;
+
             always_ff @(posedge clk) begin
-                cascade_coef_addr[i+1]  <= cascade_coef_addr[i];
-                cascade_phase_sync[i+1] <= cascade_phase_sync[i];
+                coef_addr_mid           <= cascade_coef_addr[i];
+                phase_sync_mid          <= cascade_phase_sync[i];
+                cascade_coef_addr[i+1]  <= coef_addr_mid;
+                cascade_phase_sync[i+1] <= phase_sync_mid;
             end
 
-            // Explicit split resolves constant evaluation errors inside Vivado
             if (i == 0) begin : mac_first
                 polyphase_mac_engine #(
                     .DATA_WIDTH(DATA_WIDTH),
@@ -158,7 +180,7 @@ module fir_polyphase_interpolator #(
                     .audio_rev_in (cascade_rev[i]),
                     .audio_fwd_out(cascade_fwd[i+1]),
                     .audio_rev_out(cascade_rev[i+1]),
-                    .pcin         (48'sd0),            // Master Feed is 0
+                    .pcin         (48'sd0),
                     .pcout        (cascade_acc[i+1])
                 );
             end else begin : mac_chain
@@ -176,7 +198,7 @@ module fir_polyphase_interpolator #(
                     .audio_rev_in (cascade_rev[i]),
                     .audio_fwd_out(cascade_fwd[i+1]),
                     .audio_rev_out(cascade_rev[i+1]),
-                    .pcin         (cascade_acc[i]),    // Cascade from previous
+                    .pcin         (cascade_acc[i]),
                     .pcout        (cascade_acc[i+1])
                 );
             end
