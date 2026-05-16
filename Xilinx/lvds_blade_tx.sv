@@ -64,23 +64,22 @@ module lvds_blade_tx (
 
             // -----------------------------------------------------------
             // Hardware Clock Forwarding (The Golden Rule)
-            // Each output pin gets its own dedicated ODDR block physically 
+            // Each output pin gets its own dedicated ODDRE1 block physically
             // located in the I/O ring to ensure perfect clock mirroring.
             // -----------------------------------------------------------
             logic local_forwarded_clk;
-            
-            ODDR #(
-                .DDR_CLK_EDGE ("OPPOSITE_EDGE"), 
-                .INIT         (1'b0),
-                .SRTYPE       ("SYNC")
+
+            ODDRE1 #(
+                .SRVAL(1'b0),
+                .IS_C_INVERTED(1'b0),
+                .IS_D1_INVERTED(1'b0),
+                .IS_D2_INVERTED(1'b0)
             ) u_clk_forwarder (
                 .Q  (local_forwarded_clk),
                 .C  (bit_clk),
-                .CE (1'b1),
                 .D1 (1'b1), // Drives High on rising edge
                 .D2 (1'b0), // Drives Low on falling edge
-                .R  (1'b0),
-                .S  (1'b0)
+                .SR (1'b0)
             );
 
             // Broadcast Continuous Clock

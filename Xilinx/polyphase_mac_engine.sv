@@ -1,14 +1,13 @@
 `timescale 1ns / 1ps
 
-// Per-MAC polyphase engine. Each instance owns its own 2K x 18b coefficient
-// ROM, which Vivado will place physically adjacent to this MAC's DSP48E1 --
-// giving dedicated short routes from BRAM to DSP B-input. This locality is
-// what allows the 256-deep cascade to meet 357 MHz timing.
+// Per-MAC polyphase engine. The coefficient value is supplied each cycle
+// as a direct input (coef_in) from the shared coefficient BRAMs that live
+// in the fir_polyphase_stereo wrapper. Both L and R channels read the same
+// 256 BRAMs, halving BRAM utilization vs the per-channel-RAM design.
 //
-// NOTE: This is the baseline architecture. The "shared coef BRAM" variant
-// (fir_polyphase_stereo with coef_rom_shared at the wrapper level) was tried
-// and rejected because shared BRAMs introduced cross-channel routing
-// tension that prevented timing closure (WNS -10 ns).
+// Coefficient bank switching is handled at the wrapper level: the
+// coef_bank_loader writes to the shared BRAMs via port A while the FIR
+// reads via port B. Audio is muted by coef_mute_envelope during loads.
 module polyphase_mac_engine #(
     parameter int DATA_WIDTH = 24,
     parameter int COEF_WIDTH = 18,
@@ -16,9 +15,8 @@ module polyphase_mac_engine #(
     parameter int MAC_ID     = 0
 )(
     input  logic                          clk,
-    input  logic                          rst_n,
     input  logic                          phase_sync,
-    input  logic [10:0]                   coef_addr,
+    input  logic signed [COEF_WIDTH-1:0]  coef_in,
     input  logic signed [DATA_WIDTH-1:0]  audio_fwd_in,
     input  logic signed [DATA_WIDTH-1:0]  audio_rev_in,
     output logic signed [DATA_WIDTH-1:0]  audio_fwd_out,
@@ -28,7 +26,17 @@ module polyphase_mac_engine #(
 );
 
     // =================================---------------------------------------
-    // 1. Pipeline Delay Taps (6 cycles to guarantee BRAM & DSP isolation)
+    // 1. Pipeline Delay Taps (4 cycles: BRAM read latency now external)
+    //    The shared coef BRAM in the wrapper already registered the output
+    //    (DO_REG=1), so coef_in arrives 2 cycles after the address was
+    //    issued. We need phase_sync delayed by 4 cycles to match:
+    //      cycle 0 : address issued at wrapper
+    //      cycle 1 : BRAM read latency
+    //      cycle 2 : DO_REG in BRAM
+    //      cycle 3 : fwd_reg_1 / coef_out_1 registration here (Stage 1)
+    //      cycle 4 : fwd_reg_2 / coef_out_2 registration here (Stage 2)
+    //      cycle 5 : dsp_a1 / dsp_b1 (Stage 3)
+    //      cycle 6 : dsp_adreg / dsp_b2 (Stage 4) -- phase_sync_d6 fires
     // =================================---------------------------------------
     (* shreg_extract = "no" *) logic phase_sync_d1, phase_sync_d2, phase_sync_d3;
     (* shreg_extract = "no" *) logic phase_sync_d4, phase_sync_d5, phase_sync_d6;
@@ -43,44 +51,32 @@ module polyphase_mac_engine #(
     end
 
     // =================================---------------------------------------
-    // 2. STAGE 1: Local Coef ROM Read & Audio Registration (Fabric)
-    //    The coef_rom is local to this MAC -- Vivado will place it
-    //    immediately adjacent to the DSP48E1 for short, dedicated routes.
+    // 2. STAGE 1: Coef & Audio Registration
+    //    coef_in arrives already read from the shared BRAM in the wrapper.
     // =================================---------------------------------------
-    (* rom_style = "block" *) logic signed [COEF_WIDTH-1:0] coef_rom [0:2047];
-
-    initial begin
-        for (int k = 0; k < 2048; k++) coef_rom[k] = '0;
-    end
-
     logic signed [COEF_WIDTH-1:0] coef_out_1;
     logic signed [DATA_WIDTH-1:0] fwd_reg_1, rev_reg_1;
 
     always_ff @(posedge clk) begin
         fwd_reg_1  <= audio_fwd_in;
         rev_reg_1  <= audio_rev_in;
-        coef_out_1 <= coef_rom[coef_addr]; // Local ROM read
+        coef_out_1 <= coef_in;
     end
-
-    // ------------------------------------------------------------------------
-    // NOTE (CREG alignment, 2026-05-11):
-    //   The cascade input below goes through a register (pcin_creg) which
-    //   Vivado packs into the DSP48E1's internal CREG. That makes the cascade
-    //   propagate at 2 cycles/hop instead of 1. The audio shift register must
-    //   match -- so audio_fwd_out / audio_rev_out are sourced from the SECOND
-    //   audio pipeline register (fwd_reg_2 / rev_reg_2) rather than the first.
-    //   The companion change in fir_polyphase_interpolator.sv doubles the
-    //   per-hop pipeline depth of cascade_coef_addr and cascade_phase_sync to
-    //   keep all four chain signals at 2 cycles per MAC.
-    // ------------------------------------------------------------------------
-    assign audio_fwd_out = fwd_reg_2;
-    assign audio_rev_out = rev_reg_2;
 
     // =================================---------------------------------------
     // 3. STAGE 2: BRAM DO_REG & Audio Delay (Fabric)
     // =================================---------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_out_2;
     logic signed [DATA_WIDTH-1:0] fwd_reg_2, rev_reg_2;
+
+    // ------------------------------------------------------------------------
+    // NOTE (CREG alignment, 2026-05-11):
+    //   audio_fwd_out / audio_rev_out are sourced from the SECOND audio
+    //   pipeline register to match the 2-cycle/hop cascade propagation rate
+    //   when Vivado packs pcin_creg into the DSP's internal CREG.
+    // ------------------------------------------------------------------------
+    assign audio_fwd_out = fwd_reg_2;
+    assign audio_rev_out = rev_reg_2;
 
     always_ff @(posedge clk) begin
         fwd_reg_2  <= fwd_reg_1;
@@ -121,17 +117,18 @@ module polyphase_mac_engine #(
     end
 
     // =================================---------------------------------------
-    // 7a. STAGE 6a: DSP48 C-Input Register (CREG)
+    // 7a. STAGE 6a: DSP C-Input Register (CREG)
     //
     //   This register pipelines the cascade input. Vivado packs it into the
-    //   DSP48E1's internal CREG (zero fabric cost) when the C-input cascade
+    //   DSP's internal CREG (zero fabric cost) when the C-input cascade
     //   path is used -- which happens whenever consecutive DSPs are not
     //   placed PCIN/PCOUT-adjacent (e.g., across clock-region boundaries).
     //   With 256 DSPs per chain spanning ~12 clock regions, ~10-15 cascade
     //   hops MUST cross region boundaries, and without CREG those C-input
-    //   paths cannot meet timing (C->P arc alone is 1.325 ns on Artix-7).
-    //   With CREG, the long C-input route now terminates at a flop inside
-    //   the destination DSP, which has ~0.1 ns setup -- guaranteed close.
+    //   paths cannot meet timing (C->P arc alone is 1.325 ns on Artix-7,
+    //   ~1.0 ns on AU+ DSP58). With CREG, the long C-input route now
+    //   terminates at a flop inside the destination DSP, which has ~0.1 ns
+    //   setup -- guaranteed close.
     // =================================---------------------------------------
     (* use_dsp = "yes" *) logic signed [ACC_WIDTH-1:0] pcin_creg;
 

@@ -50,18 +50,23 @@ module lvds_serial_tx (
     end
 
     // ==============================================================
-    // 2. Hardware I/O Buffers (OBUFDS & ODDR)
+    // 2. Hardware I/O Buffers (OBUFDS & ODDRE1)
     //
     //   Source-synchronous output: forwarded clock + data must leave the
     //   FPGA with matched delay. All four outputs (bclk, data_l, data_r,
-    //   sync) go through ODDR -> OBUFDS so they share identical Tco /
-    //   OBUFDS / OLOGIC-net characteristics. For data/sync the ODDR is
-    //   used as a single-rate flop (D1 = D2 = data); for bclk it is used
-    //   as an INVERTED clock forwarder (D1 = 0, D2 = 1) to give a
+    //   sync) go through ODDRE1 -> OBUFDS so they share identical Tco /
+    //   OBUFDS / OLOGIC-net characteristics. For data/sync the ODDRE1
+    //   is used as a single-rate flop (D1 = D2 = data); for bclk it is
+    //   used as an INVERTED clock forwarder (D1 = 0, D2 = 1) to give a
     //   center-aligned forwarded clock relative to the data eye.
+    //
+    //   ODDRE1 vs the 7-series ODDR: no CE/S pins, R renamed to SR,
+    //   and DDR_CLK_EDGE removed (UltraScale+ ODDRE1 is implicitly
+    //   OPPOSITE_EDGE / SAME_EDGE-irrelevant since both data inputs are
+    //   captured on the same internal mux clock).
     // ==============================================================
 
-    // Forward the Bit Clock using a dedicated ODDR.
+    // Forward the Bit Clock using a dedicated ODDRE1.
     //
     //   IMPORTANT: D1=0, D2=1 (inverted relative to a "normal" clock forwarder).
     //   This produces a forwarded clock whose RISING edge falls at the FALLING
@@ -74,43 +79,59 @@ module lvds_serial_tx (
     //   the lvds_bclk_p port, so Vivado's timing analysis correctly accounts
     //   for the half-period phase relationship.
     logic bclk_fwd;
-    ODDR #(
-        .DDR_CLK_EDGE("OPPOSITE_EDGE"),
-        .INIT(1'b0), .SRTYPE("SYNC")
+    ODDRE1 #(
+        .SRVAL(1'b0),
+        .IS_C_INVERTED(1'b0),
+        .IS_D1_INVERTED(1'b0),
+        .IS_D2_INVERTED(1'b0)
     ) u_oddr_bclk (
-        .Q(bclk_fwd), .C(bit_clk), .CE(1'b1),
-        .D1(1'b0), .D2(1'b1),   // Inverted: center-aligned forwarded clock
-        .R(~rst_n), .S(1'b0)
+        .Q  (bclk_fwd),
+        .C  (bit_clk),
+        .D1 (1'b0),
+        .D2 (1'b1),             // Inverted: center-aligned forwarded clock
+        .SR (~rst_n)
     );
 
     // Matched-delay data and sync forwarding.
     logic data_l_oddr, data_r_oddr, sync_oddr;
 
-    ODDR #(
-        .DDR_CLK_EDGE("OPPOSITE_EDGE"),
-        .INIT(1'b0), .SRTYPE("SYNC")
+    ODDRE1 #(
+        .SRVAL(1'b0),
+        .IS_C_INVERTED(1'b0),
+        .IS_D1_INVERTED(1'b0),
+        .IS_D2_INVERTED(1'b0)
     ) u_oddr_data_l (
-        .Q(data_l_oddr), .C(bit_clk), .CE(1'b1),
-        .D1(shift_l[255]), .D2(shift_l[255]),
-        .R(~rst_n), .S(1'b0)
+        .Q  (data_l_oddr),
+        .C  (bit_clk),
+        .D1 (shift_l[255]),
+        .D2 (shift_l[255]),
+        .SR (~rst_n)
     );
 
-    ODDR #(
-        .DDR_CLK_EDGE("OPPOSITE_EDGE"),
-        .INIT(1'b0), .SRTYPE("SYNC")
+    ODDRE1 #(
+        .SRVAL(1'b0),
+        .IS_C_INVERTED(1'b0),
+        .IS_D1_INVERTED(1'b0),
+        .IS_D2_INVERTED(1'b0)
     ) u_oddr_data_r (
-        .Q(data_r_oddr), .C(bit_clk), .CE(1'b1),
-        .D1(shift_r[255]), .D2(shift_r[255]),
-        .R(~rst_n), .S(1'b0)
+        .Q  (data_r_oddr),
+        .C  (bit_clk),
+        .D1 (shift_r[255]),
+        .D2 (shift_r[255]),
+        .SR (~rst_n)
     );
 
-    ODDR #(
-        .DDR_CLK_EDGE("OPPOSITE_EDGE"),
-        .INIT(1'b0), .SRTYPE("SYNC")
+    ODDRE1 #(
+        .SRVAL(1'b0),
+        .IS_C_INVERTED(1'b0),
+        .IS_D1_INVERTED(1'b0),
+        .IS_D2_INVERTED(1'b0)
     ) u_oddr_sync (
-        .Q(sync_oddr), .C(bit_clk), .CE(1'b1),
-        .D1(sync_pulse), .D2(sync_pulse),
-        .R(~rst_n), .S(1'b0)
+        .Q  (sync_oddr),
+        .C  (bit_clk),
+        .D1 (sync_pulse),
+        .D2 (sync_pulse),
+        .SR (~rst_n)
     );
 
     OBUFDS u_buf_clk   (.I(bclk_fwd),    .O(lvds_bclk_p),   .OB(lvds_bclk_n));

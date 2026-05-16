@@ -4,20 +4,16 @@
 //
 // Audio history depth is 2K (2048 samples), exactly matching the
 // master_coef_addr sweep range (0..2047). Every BRAM slot is read exactly
-// once per FIR sweep, with no starvation. The 2K depth (vs the prior 64K)
-// saves ~46 RAMB36E1 per audio bank, which is what makes the stereo build
-// fit on the A7-200T after un-sharing coefficients.
+// once per FIR sweep, with no starvation.
 //
-// Two instances of this module (u_l_1m_tap_fir, u_r_1m_tap_fir) form the
-// stereo DSP core in artix_dac_top.sv. Each is fully self-contained:
-// independent state machine, independent audio history, independent
-// per-MAC coefficient ROMs placed local to their DSP48E1s -- so L and R
-// are TRULY physically independent and do not compete for routing.
+// Coefficient BRAMs are NOT owned here -- they are shared between L and R
+// channels at the fir_polyphase_stereo wrapper level. Each MAC receives its
+// coefficient value each cycle via the coef_in[] array input.
 module fir_polyphase_interpolator #(
     parameter int NUM_MACS   = 256,
     parameter int DATA_WIDTH = 24,
     parameter int COEF_WIDTH = 18,
-    parameter int ACC_WIDTH  = 48 // STRICTLY 48 BITS to guarantee DSP48E1 PCIN/PCOUT routing
+    parameter int ACC_WIDTH  = 48 // STRICTLY 48 BITS to guarantee DSP PCIN/PCOUT routing
 )(
     input  logic                                 clk,
     input  logic                                 rst_n,
@@ -28,7 +24,13 @@ module fir_polyphase_interpolator #(
 
     // Oversampled Output
     output logic signed [ACC_WIDTH-1:0]          interpolated_out,
-    output logic                                 interpolated_valid
+    output logic                                 interpolated_valid,
+
+    // -- Coefficient input from shared BRAMs (one value per MAC per cycle) --
+    input  logic signed [COEF_WIDTH-1:0]         coef_in [0:NUM_MACS-1],
+
+    // -- Coefficient address output (to drive shared BRAM read port) --------
+    output logic [10:0]                          coef_addr_out
 );
 
     // =================================---------------------------------------
@@ -125,10 +127,10 @@ module fir_polyphase_interpolator #(
     logic signed [DATA_WIDTH-1:0] cascade_fwd [0:NUM_MACS];
     logic signed [DATA_WIDTH-1:0] cascade_rev [0:NUM_MACS];
     logic signed [ACC_WIDTH-1:0]  cascade_acc [0:NUM_MACS];
-    logic [10:0]                  cascade_coef_addr  [0:NUM_MACS];
     logic                         cascade_phase_sync [0:NUM_MACS];
 
-    // Delay master_coef_addr / phase_sync by 1 cycle to match BRAM read latency
+    // Export coef address for the shared BRAM in the wrapper.
+    // Delay by 1 cycle to match audio BRAM read latency.
     logic [10:0] master_coef_addr_d1;
     logic        phase_sync_d1;
 
@@ -137,10 +139,10 @@ module fir_polyphase_interpolator #(
         phase_sync_d1       <= phase_sync;
     end
 
+    assign coef_addr_out         = master_coef_addr_d1;
     assign cascade_fwd[0]        = fwd_seed;
     assign cascade_rev[0]        = rev_seed;
     assign cascade_acc[0]        = '0;
-    assign cascade_coef_addr[0]  = master_coef_addr_d1;
     assign cascade_phase_sync[0] = phase_sync_d1;
 
     // =================================---------------------------------------
@@ -155,13 +157,10 @@ module fir_polyphase_interpolator #(
             // and cascade accumulator (CREG-enabled) latencies. All four
             // chain signals advance at the same per-hop rate so the relative
             // timing inside each MAC is identical to the pre-CREG design.
-            logic [10:0] coef_addr_mid;
-            logic        phase_sync_mid;
+            logic phase_sync_mid;
 
             always_ff @(posedge clk) begin
-                coef_addr_mid           <= cascade_coef_addr[i];
                 phase_sync_mid          <= cascade_phase_sync[i];
-                cascade_coef_addr[i+1]  <= coef_addr_mid;
                 cascade_phase_sync[i+1] <= phase_sync_mid;
             end
 
@@ -173,9 +172,8 @@ module fir_polyphase_interpolator #(
                     .MAC_ID    (i)
                 ) u_mac (
                     .clk          (clk),
-                    .rst_n        (rst_n),
                     .phase_sync   (cascade_phase_sync[i]),
-                    .coef_addr    (cascade_coef_addr[i]),
+                    .coef_in      (coef_in[i]),
                     .audio_fwd_in (cascade_fwd[i]),
                     .audio_rev_in (cascade_rev[i]),
                     .audio_fwd_out(cascade_fwd[i+1]),
@@ -191,9 +189,8 @@ module fir_polyphase_interpolator #(
                     .MAC_ID    (i)
                 ) u_mac (
                     .clk          (clk),
-                    .rst_n        (rst_n),
                     .phase_sync   (cascade_phase_sync[i]),
-                    .coef_addr    (cascade_coef_addr[i]),
+                    .coef_in      (coef_in[i]),
                     .audio_fwd_in (cascade_fwd[i]),
                     .audio_rev_in (cascade_rev[i]),
                     .audio_fwd_out(cascade_fwd[i+1]),
