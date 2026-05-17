@@ -218,12 +218,25 @@ set_false_path -fall_from [get_clocks lvds_clk_unbuf] -to [get_ports {lvds_data_
 #set_multicycle_path -setup 128 -from [get_cells -hierarchical -filter {IS_SEQUENTIAL == 1} -regexp {.*u_dem_mapper.*}] -to [get_cells -hierarchical -filter {IS_SEQUENTIAL == 1} -regexp {.*u_output_fifo.*}]
 #set_multicycle_path -hold 127 -from [get_cells -hierarchical -filter {IS_SEQUENTIAL == 1} -regexp {.*u_dem_mapper.*}] -to [get_cells -hierarchical -filter {IS_SEQUENTIAL == 1} -regexp {.*u_output_fifo.*}]
 
+
 # ==============================================================================
 # 8. EXCLUSIVE CLOCK DOMAINS (BUFGMUX Isolation)
 # ==============================================================================
 # The 45.1584 MHz and 49.152 MHz families are physically mutually exclusive.
 # This prevents Vivado from analyzing impossible inter-clock paths.
 set_clock_groups -physically_exclusive -group [get_clocks -include_generated_clocks clk_45m] -group [get_clocks -include_generated_clocks clk_49m]
+
+# ==============================================================================
+# 8b. PBLOCK — Co-locate Coefficient Logic with FIR
+# ==============================================================================
+# The coef_waddr path from u_coef_subsys (X26Y35) to u_stereo_fir (X84Y149)
+# has 3.35ns of pure routing delay — crossing the entire chip height.
+# Constraining both modules to the same clock region eliminates this route.
+# Expected improvement: ~2ns slack gain (0.397ns -> ~2.4ns)
+create_pblock pblock_coef_fir
+add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells -hierarchical u_coef_subsys]
+add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells -hierarchical u_dsp_core/u_stereo_fir]
+resize_pblock [get_pblocks pblock_coef_fir] -add {CLOCKREGION_X1Y1:CLOCKREGION_X1Y2}
 
 # 9. PACKAGE PIN ASSIGNMENTS
 #

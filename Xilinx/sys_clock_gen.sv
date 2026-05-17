@@ -50,9 +50,10 @@ module sys_clock_gen (
         .CLKFBOUT_MULT_F(20.000),    // VCO = 49.152 × 20 = 983.04 MHz
         .CLKIN1_PERIOD(20.345),      // 49.152 MHz period (worst case)
 
-        // DSP Clock: 983.04 / 2.750 = 357.46 MHz
-        // Cycles per 768k sample: 465.4 cycles (plenty of margin)
-        .CLKOUT0_DIVIDE_F(2.750),
+        // DSP Clock: 983.04 / 3.5 = 280.87 MHz (49M mode), 258.05 MHz (45M mode)
+        // Cycles per 768k sample: 366/336 cycles — still plenty for 768 kHz
+        // Reduced from 357/328 MHz to add ~600-900ps timing slack for production
+        .CLKOUT0_DIVIDE_F(3.500),
 
         // LVDS Clock: 983.04 / 5 = 196.608 MHz
         // 196.608 MHz = 768 kHz × 256 (exact frame alignment)

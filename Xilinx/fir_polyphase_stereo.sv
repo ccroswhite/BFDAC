@@ -61,18 +61,24 @@ module fir_polyphase_stereo #(
     // -------------------------------------------------------------------------
 
     // Write-bus pipeline register (fanout relief to 256 BRAMs)
-    (* max_fanout = 8 *)  logic                         coef_we_r;
     (* max_fanout = 32 *) logic [10:0]                  coef_waddr_r;
     (* max_fanout = 32 *) logic signed [COEF_WIDTH-1:0] coef_wdata_r;
-    (* max_fanout = 32 *) logic [7:0]                   coef_wmac_r;
     (* max_fanout = 32 *) logic                         bank_load_target_q;
 
+    // Pre-decoded one-hot WEA per MAC: registered to eliminate the high-fanout
+    // LUT decode tree (coef_wmac_r == 8'(m)) on the critical path to BRAM WEA.
+    // Each bit drives exactly one BRAM's WEA — fanout=1 per bit, zero long routes.
+    (* max_fanout = 1 *) logic [NUM_MACS-1:0] mac_we_oh;   // one-hot, Bank A
+    (* max_fanout = 1 *) logic [NUM_MACS-1:0] mac_we_oh_b; // one-hot, Bank B
+
     always_ff @(posedge clk) begin
-        coef_we_r           <= coef_we;
         coef_waddr_r        <= coef_waddr;
         coef_wdata_r        <= coef_wdata;
-        coef_wmac_r         <= coef_wmac;
         bank_load_target_q  <= bank_load_target;
+        for (int i = 0; i < NUM_MACS; i++) begin
+            mac_we_oh[i]   <= coef_we && !bank_load_target && (coef_wmac == 8'(i));
+            mac_we_oh_b[i] <= coef_we &&  bank_load_target && (coef_wmac == 8'(i));
+        end
     end
 
     // Coefficient address from L interpolator (R is lockstep identical)
@@ -107,9 +113,10 @@ module fir_polyphase_stereo #(
                                    ? {coef_wdata_r[17:0], 14'b0}  // Bank B → [31:14]
                                    : {14'b0, coef_wdata_r[17:0]}; // Bank A → [17:0]
 
-            wire [3:0] we = (coef_we_r && (coef_wmac_r == 8'(m)))
-                            ? (bank_load_target_q ? 4'b1100 : 4'b0011)
-                            : 4'b0000;
+            // WEA from pre-decoded one-hot registers — fanout=1, no routing penalty.
+            wire [3:0] we = mac_we_oh[m]   ? 4'b0011 :   // Bank A
+                            mac_we_oh_b[m] ? 4'b1100 :   // Bank B
+                                             4'b0000;
 
             wire [31:0] rdata_do;
 

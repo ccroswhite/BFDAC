@@ -112,31 +112,38 @@ module dac_dsp_core (
         combined_volume = (sys_volume * {16'h0, boot_envelope_gain}) >> 16;
     end
 
+    // Volume DSP pipeline — fully pipelined to enable AREG=BREG=MREG=PREG=1:
+    //   Cycle 0: fir_l/r_reg, combined_volume arrive
+    //   Cycle 1: vol_a_r1 (AREG), vol_b_r1 (BREG) — input registers
+    //   Cycle 2: vol_m_r2 (MREG) — multiplier output register
+    //   Cycle 3: vol_p_r3 (PREG) — accumulator/P output register
+    //   Cycle 4: volumed (shift+truncate register)
+    // Total latency = 4 cycles (was 3), compensated by vol_valid_pipe length.
     logic signed [47:0] vol_a_l_r1, vol_a_r_r1;
     logic        [31:0] vol_b_r1;
-    (* use_dsp = "yes" *) logic signed [79:0] vol_p_l_r2, vol_p_r_r2;
-    logic signed [79:0] vol_p_l_r3, vol_p_r_r3;
+    (* use_dsp = "yes" *) logic signed [79:0] vol_m_l_r2, vol_m_r_r2; // MREG
+    (* use_dsp = "yes" *) logic signed [79:0] vol_p_l_r3, vol_p_r_r3; // PREG
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             vol_a_l_r1 <= '0;  vol_a_r_r1 <= '0;
             vol_b_r1   <= '0;
-            vol_p_l_r2 <= '0;  vol_p_r_r2 <= '0;
+            vol_m_l_r2 <= '0;  vol_m_r_r2 <= '0;
             vol_p_l_r3 <= '0;  vol_p_r_r3 <= '0;
         end else begin
             vol_a_l_r1 <= fir_l_reg;
             vol_a_r_r1 <= fir_r_reg;
             vol_b_r1   <= combined_volume;
-            vol_p_l_r2 <= vol_a_l_r1 * $signed({1'b0, vol_b_r1});
-            vol_p_r_r2 <= vol_a_r_r1 * $signed({1'b0, vol_b_r1});
-            vol_p_l_r3 <= vol_p_l_r2;
-            vol_p_r_r3 <= vol_p_r_r2;
+            vol_m_l_r2 <= vol_a_l_r1 * $signed({1'b0, vol_b_r1});
+            vol_m_r_r2 <= vol_a_r_r1 * $signed({1'b0, vol_b_r1});
+            vol_p_l_r3 <= vol_m_l_r2;
+            vol_p_r_r3 <= vol_m_r_r2;
         end
     end
 
     logic signed [63:0] volumed_l, volumed_r;
     logic               volumed_valid;
-    logic [3:0]         vol_valid_pipe;
+    logic [4:0]         vol_valid_pipe;
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
@@ -144,13 +151,13 @@ module dac_dsp_core (
             volumed_l      <= '0;
             volumed_r      <= '0;
         end else begin
-            vol_valid_pipe <= {vol_valid_pipe[2:0], fir_l_valid_reg};
+            vol_valid_pipe <= {vol_valid_pipe[3:0], fir_l_valid_reg};
             volumed_l      <= vol_p_l_r3[79:16];
             volumed_r      <= vol_p_r_r3[79:16];
         end
     end
 
-    assign volumed_valid = vol_valid_pipe[3];
+    assign volumed_valid = vol_valid_pipe[4];
 
     // ----------------------------------------------------------------
     // 4. Stable-hold registers
