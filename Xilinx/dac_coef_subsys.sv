@@ -66,20 +66,30 @@ module dac_coef_subsys (
     logic signed [17:0] coef_wdata_ui;
     logic [7:0]   coef_wmac_ui;
 
-    // Simple CDC for load_start: pulse synchronizer ui->dsp is not needed here.
-    // coef_bank_manager drives mgr_load_start in dsp_clk; we use it directly
-    // as the loader trigger after syncing to ui_clk.
+    // CDC for load_start: toggle synchronizer (dsp_clk -> ui_clk).
+    // mgr_load_start_dsp is a single-cycle pulse at dsp_clk (~3.9ns).
+    // A direct 2FF sync would miss it since ui_clk period (5ns) > pulse width.
+    // Toggle sync converts the pulse to an edge that ui_clk can reliably catch.
     logic mgr_load_start_dsp;
+    logic load_start_toggle_dsp;
     logic [2:0] load_start_sync_ui;
+
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n)
+            load_start_toggle_dsp <= 1'b0;
+        else if (mgr_load_start_dsp)
+            load_start_toggle_dsp <= ~load_start_toggle_dsp;
+    end
 
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst)
             load_start_sync_ui <= '0;
         else
-            load_start_sync_ui <= {load_start_sync_ui[1:0], mgr_load_start_dsp};
+            load_start_sync_ui <= {load_start_sync_ui[1:0], load_start_toggle_dsp};
     end
 
-    wire mgr_load_start_ui_sync = load_start_sync_ui[2];
+    // Rising or falling edge on synced toggle = load_start pulse in ui_clk domain
+    wire mgr_load_start_ui_sync = load_start_sync_ui[2] ^ load_start_sync_ui[1];
 
     coef_bank_loader u_coef_loader (
         .clk             (ui_clk),

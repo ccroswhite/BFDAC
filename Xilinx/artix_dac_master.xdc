@@ -234,8 +234,8 @@ set_clock_groups -physically_exclusive -group [get_clocks -include_generated_clo
 # Constraining both modules to the same clock region eliminates this route.
 # Expected improvement: ~2ns slack gain (0.397ns -> ~2.4ns)
 create_pblock pblock_coef_fir
-add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells -hierarchical u_coef_subsys]
-add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells -hierarchical u_dsp_core/u_stereo_fir]
+add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_coef_subsys]
+add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_dsp_core/u_stereo_fir]
 resize_pblock [get_pblocks pblock_coef_fir] -add {CLOCKREGION_X1Y1:CLOCKREGION_X1Y2}
 
 # 9. PACKAGE PIN ASSIGNMENTS
