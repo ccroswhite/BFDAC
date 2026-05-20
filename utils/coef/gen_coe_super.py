@@ -5,22 +5,15 @@ import sys
 import os
 
 # =====================================================================
-# 1. ARCHITECTURE LIMITS (Artix UltraScale+ AU25P)
+# ARCHITECTURE LIMITS (Artix UltraScale+ AU25P)
 # =====================================================================
-# The physical constraints of your 357 MHz systolic array.
-UPSAMPLE_FACTOR = 81
 CYCLES_PER_SAMPLE = 100
 DSP_SLICES = 128
-
-# Total taps = 100 * 128 * 81 = 1,036,800 Taps
-TAPS_PER_PHASE = CYCLES_PER_SAMPLE * DSP_SLICES
-NUM_TAPS = TAPS_PER_PHASE * UPSAMPLE_FACTOR  
+TAPS_PER_PHASE = CYCLES_PER_SAMPLE * DSP_SLICES  # 12,800
 BIT_DEPTH = 18
-FS_IN = 44100
-FS_OUT = FS_IN * UPSAMPLE_FACTOR
 
 # =====================================================================
-# 2. FRACTIONAL DELAY MODULE (The "Chord" Transient Alignment)
+# FRACTIONAL DELAY MODULE (The "Chord" Transient Alignment)
 # =====================================================================
 def apply_fft_fractional_delay(taps, delay_fraction):
     """
@@ -30,105 +23,115 @@ def apply_fft_fractional_delay(taps, delay_fraction):
     high-frequency phase warping.
     """
     print(f"Applying Ideal FFT fractional delay of {delay_fraction} samples...")
-    
-    # Step A: Move the entire 1-million tap filter into the frequency domain
     TAPS_FFT = np.fft.rfft(taps)
     frequencies = np.fft.rfftfreq(len(taps))
-    
-    # Step B: Apply a linear phase rotation to every frequency bin.
-    # This alters the timing (phase) without changing the volume (magnitude).
     phase_shift = np.exp(-1j * 2 * np.pi * frequencies * delay_fraction)
     TAPS_FFT_SHIFTED = TAPS_FFT * phase_shift
-    
-    # Step C: Return the shifted coefficients back to the time domain
     return np.fft.irfft(TAPS_FFT_SHIFTED, n=len(taps))
 
 # =====================================================================
-# 3. CORE FILTER GENERATION & CHAINING MODULE
+# CORE FILTER GENERATION & CHAINING MODULE
 # =====================================================================
-def generate_megafilter(args):
+def generate_megafilter(args, fs_in):
+    # Dynamic parameter calculation
+    # 44.1k Family vs 48k Family target selection
+    if fs_in % 44100 == 0:
+        fs_out = 705600
+    else:
+        fs_out = 768000
+        
+    UPSAMPLE_FACTOR = fs_out // fs_in
+    NUM_TAPS = TAPS_PER_PHASE * UPSAMPLE_FACTOR
+    
     print("=========================================================")
-    print(f" Generating {NUM_TAPS}-tap FIR filter (SUPER SCRIPT)")
-    print(f" Output Rate: {FS_OUT / 1e6:.3f} MHz")
+    print(f" Generating Coefficients for Input Rate: {fs_in} Hz")
+    print(f" Style: {args.method.upper()} | Upsample Factor: {UPSAMPLE_FACTOR}x")
+    print(f" Target Output Rate: {fs_out / 1e3:.1f} kHz | Taps: {NUM_TAPS}")
     print("=========================================================\n")
+
+    # Scale the filter cutoffs and transition bandwidths based on fs_in.
+    # Baseline presets were originally designed for fs_in = 44100 Hz.
+    scale_ratio = fs_in / 44100.0
 
     taps = None
 
-    # --- PRESET 1: CHORD DAVE (The "Perfect Timing" Approach) ---
-    # Uses a massive linear-phase Windowed Sinc filter. 
-    # High Kaiser beta (14.0) guarantees >110dB stop-band attenuation.
-    if args.method == 'chord':
-        print("Profile: CHORD DAVE (Linear Phase, Transient Aligned)")
-        taps = firwin(NUM_TAPS, 20000, fs=FS_OUT, window=('kaiser', 14.0))
+    if UPSAMPLE_FACTOR == 1:
+        # Unity bypass filter: single unity impulse coefficient at the center tap, others zero
+        print("UPSAMPLE_FACTOR is 1: Generating unity impulse bypass filter...")
+        taps = np.zeros(NUM_TAPS)
+        taps[NUM_TAPS // 2] = 1.0
+    else:
+        # Predefined Styles
+        if args.method == 'chord':
+            cutoff = 20000.0 * scale_ratio
+            print(f"Profile: CHORD DAVE (Linear Phase, Transient Aligned) | Scaled Cutoff: {cutoff:.1f} Hz")
+            taps = firwin(NUM_TAPS, cutoff, fs=fs_out, window=('kaiser', 14.0))
 
-    # --- PRESET 2: MSB REFERENCE (The "Analog" Approach) ---
-    # Mathematically shifts impulse energy to the right to completely 
-    # eliminate pre-ringing, yielding a warmer, less fatiguing sound.
-    elif args.method == 'msb':
-        print("Profile: MSB REFERENCE (Minimum Phase, Zero Pre-Ringing)")
-        base_taps = firwin(NUM_TAPS, 20000, fs=FS_OUT, window='hann')
-        taps = minimum_phase(base_taps, method='hilbert')
+        elif args.method == 'msb':
+            cutoff = 20000.0 * scale_ratio
+            print(f"Profile: MSB REFERENCE (Minimum Phase, Zero Pre-Ringing) | Scaled Cutoff: {cutoff:.1f} Hz")
+            base_taps = firwin(NUM_TAPS, cutoff, fs=fs_out, window='hann')
+            taps = minimum_phase(base_taps, method='hilbert')
 
-    # --- PRESET 3: dCS VIVALDI (The "Relaxed Apodizing" Approach) ---
-    # Drops the cutoff to 20.5kHz to round off harsh transient edges and 
-    # mask the pre-ringing from the studio's ADC.
-    elif args.method == 'dcs':
-        print("Profile: dCS VIVALDI (Apodizing, Relaxed Roll-off)")
-        taps = firwin(NUM_TAPS, 20500, fs=FS_OUT, window=('kaiser', 8.0))
+        elif args.method == 'dcs':
+            cutoff = 20500.0 * scale_ratio
+            print(f"Profile: dCS VIVALDI (Apodizing, Relaxed Roll-off) | Scaled Cutoff: {cutoff:.1f} Hz")
+            taps = firwin(NUM_TAPS, cutoff, fs=fs_out, window=('kaiser', 8.0))
 
-    # --- PRESET 4: BERKELEY ALPHA 3 (The "Aggressive Apodizing" Approach) ---
-    # Aggressive cutoff at 18.5kHz using a Blackman-Harris window for maximum 
-    # masking of studio ringing.
-    elif args.method == 'berkeley':
-        print("Profile: BERKELEY ALPHA 3 (Aggressive Apodizing)")
-        taps = firwin(NUM_TAPS, 18500, fs=FS_OUT, window='blackmanharris')
+        elif args.method == 'berkeley':
+            cutoff = 18500.0 * scale_ratio
+            print(f"Profile: BERKELEY ALPHA 3 (Aggressive Apodizing) | Scaled Cutoff: {cutoff:.1f} Hz")
+            taps = firwin(NUM_TAPS, cutoff, fs=fs_out, window='blackmanharris')
 
-    # --- PRESET 5: THE HYBRID CHAIN (dCS + Chord Ideal) ---
-    # This chains two advanced techniques together for the ultimate profile.
-    elif args.method == 'dcs-chord-ideal':
-        print("Profile: dCS-CHORD HYBRID (Apodizing + Ideal Transient Alignment)")
-        
-        # Step 1: Generate the relaxed dCS apodizing curve via Least-Squares optimization
-        print("Step 1: Generating relaxed dCS apodizing curve (firls at 20.5kHz)...")
-        cutoff = 20500
-        transition_width = 1500  
-        bands = [0, cutoff, cutoff + transition_width, FS_OUT / 2]
-        desired = [1, 0]
-        
-        # DIAL: [Passband_Weight, Stopband_Weight]. 
-        # [1, 100] forces massive noise floor crushing over perfect passband flatness.
-        weights = [1, 100] 
-        taps = firls(NUM_TAPS, bands, desired, weight=weights, fs=FS_OUT)
-        
-        # Step 2: Apply Chord-style sub-sample alignment via Ideal FFT
-        # DIAL: 0.5 shifts the transient mathematically directly between integer grid lines
-        print("Step 2: Applying Chord-style sub-sample alignment via Ideal FFT...")
-        taps = apply_fft_fractional_delay(taps, 0.5)
+        elif args.method == 'dcs-chord-ideal':
+            cutoff = 20500.0 * scale_ratio
+            transition_width = 1500.0 * scale_ratio
+            print(f"Profile: dCS-CHORD HYBRID (Apodizing + Ideal Transient Alignment)")
+            print(f"Scaled Cutoff: {cutoff:.1f} Hz | Scaled Transition Width: {transition_width:.1f} Hz")
+            
+            # Step 1: Generate the relaxed dCS apodizing curve via Least-Squares optimization
+            bands = [0, cutoff, cutoff + transition_width, fs_out / 2]
+            desired = [1, 0]
+            weights = [1, 100] 
+            taps = firls(NUM_TAPS, bands, desired, weight=weights, fs=fs_out)
+            
+            # Step 2: Apply Chord-style sub-sample alignment via Ideal FFT
+            taps = apply_fft_fractional_delay(taps, 0.5)
 
-    # --- OPTIONAL: CUSTOM EXTERNAL CSV ---
-    elif args.method == 'csv':
-        if not args.csv_path or not os.path.exists(args.csv_path):
-            print("Error: --csv_path is required.")
-            sys.exit(1)
-        taps = np.loadtxt(args.csv_path)
-        if len(taps) != NUM_TAPS:
-            taps = np.resize(taps, NUM_TAPS)
+        elif args.method == 'csv':
+            if not args.csv_path or not os.path.exists(args.csv_path):
+                print("Error: --csv_path is required.")
+                sys.exit(1)
+            taps = np.loadtxt(args.csv_path)
+            if len(taps) != NUM_TAPS:
+                taps = np.resize(taps, NUM_TAPS)
 
-    # =====================================================================
-    # 4. POST-PROCESSING & HARDWARE EXPORT
-    # =====================================================================
-    print("\nApplying Polyphase DC Gain Correction...")
-    taps = taps * (UPSAMPLE_FACTOR / np.sum(taps))
+    # Apply Polyphase DC Gain Correction
+    print("Applying Polyphase DC Gain Correction...")
+    taps_sum = np.sum(taps)
+    if abs(taps_sum) > 1e-9:
+        taps = taps * (UPSAMPLE_FACTOR / taps_sum)
+    else:
+        # Avoid division by zero for exotic center-impulse or zero-sum filters
+        taps = taps * UPSAMPLE_FACTOR
 
+    # Scale to 18-bit Two's Complement
     print(f"Quantizing to {BIT_DEPTH}-bit Two's Complement...")
     max_val = (1 << (BIT_DEPTH - 1)) - 1
-    scale_factor = max_val / np.max(np.abs(taps))
-    taps_quantized = np.round(taps * scale_factor).astype(int)
+    max_abs_tap = np.max(np.abs(taps))
+    if max_abs_tap > 1e-9:
+        scale_factor = max_val / max_abs_tap
+        taps_quantized = np.round(taps * scale_factor).astype(int)
+    else:
+        taps_quantized = np.zeros(NUM_TAPS, dtype=int)
 
-    # Export to 128 shards for the AU25P dual-port UltraRAM
-    print("\nWriting 128 shards to disk for dual-port ROM...")
+    # Write files organized by rate & method
+    target_dir = os.path.join(args.out_dir, f"{args.method}_{fs_in}")
+    os.makedirs(target_dir, exist_ok=True)
+    
+    print(f"Writing 128 dual-port BRAM coefficient files to {target_dir}...")
     for i in range(DSP_SLICES):
-        filename = f"shard_{i:03d}.mem"
+        filename = os.path.join(target_dir, f"coef_{i:03d}.mem")
         with open(filename, "w") as f:
             for c in range(CYCLES_PER_SAMPLE):
                 for p in range(UPSAMPLE_FACTOR):
@@ -138,13 +141,38 @@ def generate_megafilter(args):
                         val = (1 << BIT_DEPTH) + val
                     f.write(f"{val:05X}\n")
 
-    print(f"\nSuccess! {NUM_TAPS} sharded coefficients written.")
+    print(f"Success! {NUM_TAPS} coefficients written to {target_dir}.\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DAC Super Script for Audio Exploration")
     parser.add_argument('--method', type=str, 
                         choices=['chord', 'msb', 'dcs', 'berkeley', 'dcs-chord-ideal', 'csv'], 
-                        required=True)
-    parser.add_argument('--csv_path', type=str)
+                        required=True,
+                        help="Filter preset style to generate")
+    parser.add_argument('--fs_in', type=str, default='all',
+                        help="Input sample rate (e.g. 44100, 96000) or 'all' to generate all supported rates")
+    parser.add_argument('--out_dir', type=str, default='coeffs',
+                        help="Top-level output directory for generated coefficient folders")
+    parser.add_argument('--csv_path', type=str,
+                        help="Path to external CSV filter taps (only if method is 'csv')")
     args = parser.parse_args()
-    generate_megafilter(args)
+
+    # Parse and validate fs_in rates
+    supported_rates = [44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000]
+    
+    if args.fs_in.lower() == 'all':
+        rates_to_generate = supported_rates
+    else:
+        try:
+            rate = int(args.fs_in)
+            if rate not in supported_rates:
+                print(f"Error: {rate} is not a supported input sample rate.")
+                print(f"Supported rates: {supported_rates}")
+                sys.exit(1)
+            rates_to_generate = [rate]
+        except ValueError:
+            print(f"Error: Invalid --fs_in value '{args.fs_in}'. Must be an integer or 'all'.")
+            sys.exit(1)
+            
+    for fs_in in rates_to_generate:
+        generate_megafilter(args, fs_in)
