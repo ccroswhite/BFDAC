@@ -82,8 +82,8 @@ module tb_system_ddr4_to_fir;
     // -------------------------------------------------------------------------
     //  Bank Control (dsp_clk domain)
     //  -------------------------------------------------------------------------
-    logic                      bank_select;
-    logic                      bank_load_target;
+    wire                       bank_select;
+    wire                       bank_load_target;
     logic [3:0]                current_bank_id;
     logic                      mgr_busy;
     logic                      coef_load_done;
@@ -96,8 +96,10 @@ module tb_system_ddr4_to_fir;
     logic                      new_sample;
     logic [47:0]               fir_l_out;  // ACC_WIDTH from interpolator
     logic [47:0]               fir_r_out;
-    logic                      fir_l_valid;
-    logic                      fir_r_valid;
+    wire                       fir_l_valid;
+    wire                       fir_r_valid;
+    logic                      fir_valid_seen;  // sticky latch — set on any fir_l_valid pulse
+    logic                      fir_rst_n;       // held low during coef loading
     logic                      sample_768k_tick;
     
     // -------------------------------------------------------------------------
@@ -155,7 +157,7 @@ module tb_system_ddr4_to_fir;
     //  -------------------------------------------------------------------------
     fir_polyphase_stereo u_stereo_fir (
         .clk                    (dsp_clk),
-        .rst_n                  (dsp_rst_n),
+        .rst_n                  (fir_rst_n),
         .new_sample_valid       (new_sample),
         .new_sample_l           (audio_l_in),
         .new_sample_r           (audio_r_in),
@@ -294,14 +296,39 @@ module tb_system_ddr4_to_fir;
             $display("[DIAG @%0t] mgr_load_start_dsp pulsed (bank_manager issued load)", $time);
     end
 
+    // Monitor bank_select_pulse directly on every cycle it is high
     always @(posedge dsp_clk) begin
-        if (u_coef_subsys.load_start_toggle_dsp !== u_coef_subsys.load_start_toggle_dsp)
-            ; // force reference
+        if (u_coef_subsys.u_coef_mgr.bank_select_pulse)
+            $display("[DIAG @%0t] bank_select_pulse seen inside manager, req=%0d state=%0d",
+                $time,
+                u_coef_subsys.u_coef_mgr.bank_select_req,
+                u_coef_subsys.u_coef_mgr.state);
+    end
+
+    // Monitor queued_valid going high
+    always @(posedge dsp_clk) begin
+        if (u_coef_subsys.u_coef_mgr.queued_valid)
+            $display("[DIAG @%0t] queued_valid asserted, queued_bank=%0d",
+                $time, u_coef_subsys.u_coef_mgr.queued_bank);
     end
 
     always @(posedge ui_clk) begin
         if (u_coef_subsys.mgr_load_start_ui_sync)
             $display("[DIAG @%0t] mgr_load_start_ui_sync pulsed (reached loader)", $time);
+    end
+
+    // Monitor loader FSM state transitions only
+    logic [2:0] loader_state_prev;
+    always @(posedge ui_clk) begin
+        loader_state_prev <= u_coef_subsys.u_coef_loader.state;
+        if (u_coef_subsys.u_coef_loader.state !== loader_state_prev)
+            $display("[DIAG @%0t] loader state %0d->%0d mac=%0d half=%0b arvalid=%0b arready=%0b",
+                $time,
+                loader_state_prev,
+                u_coef_subsys.u_coef_loader.state,
+                u_coef_subsys.u_coef_loader.mac_idx,
+                u_coef_subsys.u_coef_loader.burst_half,
+                axi_arvalid, axi_arready);
     end
 
     always @(posedge ui_clk) begin
@@ -319,6 +346,44 @@ module tb_system_ddr4_to_fir;
             $display("[DIAG @%0t] coef_load_done pulsed", $time);
     end
 
+    // Sticky latch: capture any fir_l_valid pulse
+    always @(posedge dsp_clk) begin
+        if (!dsp_rst_n)         fir_valid_seen <= 1'b0;
+        else if (fir_l_valid)   fir_valid_seen <= 1'b1;
+    end
+
+    // FIR diagnostics — log every new_sample pulse and every interpolated_valid
+    always @(posedge dsp_clk) begin
+        if (new_sample)
+            $display("[FIR @%0t] new_sample pulsed, tap_ctr=%0d phase_ctr=%0d",
+                $time,
+                u_stereo_fir.u_l_fir.tap_counter,
+                u_stereo_fir.u_l_fir.phase_counter);
+    end
+    always @(posedge dsp_clk) begin
+        if (fir_l_valid)
+            $display("[FIR @%0t] interpolated_valid! phase=%0d out=%0h coef0=%0h bram_rdo=%0h bank_sel=%0b",
+                $time,
+                u_stereo_fir.u_l_fir.phase_counter,
+                fir_l_out,
+                u_stereo_fir.coef_out[0],
+                u_stereo_fir.gen_dual_coef_bram[0].rdata_do,
+                bank_select);
+    end
+    // Log tap_counter every 50 cycles after coef load done to see if it's running
+    logic fir_mon_en = 1'b0;
+    always @(posedge dsp_clk) begin
+        if (coef_load_done) fir_mon_en <= 1'b1;
+    end
+    always @(posedge dsp_clk) begin
+        if (fir_mon_en && (u_stereo_fir.u_l_fir.tap_counter % 7'd50 == 7'd49))
+            $display("[FIR @%0t] tap_ctr=%0d phase_ctr=%0d nsv=%0b",
+                $time,
+                u_stereo_fir.u_l_fir.tap_counter,
+                u_stereo_fir.u_l_fir.phase_counter,
+                new_sample);
+    end
+
     // -------------------------------------------------------------------------
     //  Test sequence
     //  -------------------------------------------------------------------------
@@ -334,9 +399,10 @@ module tb_system_ddr4_to_fir;
         // Apply reset  (no memory pre-init needed - AXI slave generates data on-the-fly)
         ui_rst_n = 1'b0;
         dsp_rst_n = 1'b0;
-        bank_select = 1'b0;
+        // NOTE: bank_select is driven by dac_coef_subsys output - do not override here
         coef_bank_id_tb    = 4'd0;
         coef_load_start_tb = 1'b0;
+        fir_rst_n          = 1'b0;  // Hold FIR in reset during coef loading
         
         repeat(20) @(posedge ui_clk);
         ui_rst_n = 1'b1;
@@ -353,10 +419,10 @@ module tb_system_ddr4_to_fir;
             u_coef_subsys.u_coef_mgr.current_bank_r);
         
         // Trigger coefficient load via SPI-side pulse (dsp_clk domain).
-        // After boot, bank manager sets current_bank_id=0. Requesting bank 1
-        // is different so ST_IDLE will accept it and fire load_start.
+        // Set bank_id ONE cycle before the pulse so the manager's bank_select_req
+        // input is stable at 1 when bank_select_pulse is sampled.
+        coef_bank_id_tb = 4'd1;
         @(posedge dsp_clk);
-        coef_bank_id_tb    = 4'd1;
         coef_load_start_tb = 1'b1;
         @(posedge dsp_clk);
         coef_load_start_tb = 1'b0;
@@ -374,7 +440,7 @@ module tb_system_ddr4_to_fir;
                 disable wait_timeout;
             end
             begin: wait_timeout
-                repeat(4_000_000) @(posedge dsp_clk);
+                repeat(10_000_000) @(posedge dsp_clk);
                 $display("ERROR: Timeout waiting for coef_load_done");
                 error_count++;
                 disable wait_done;
@@ -393,36 +459,50 @@ module tb_system_ddr4_to_fir;
         
         // --- Test 2: Run audio samples through FIR ---
         $display("\n--- Test 2: FIR processing with loaded coefficients ---");
-        
-        // Send impulse response
-        audio_l_in = 24'h800000;  // Impulse (negative max for signed)
-        audio_r_in = 24'h000001;  // Small positive
-        new_sample = 1'b0;
-        
+
+        // Release FIR reset now that coefficients are loaded and bank has switched.
+        // Holding reset during loading prevents X-propagation from BRAM collisions.
+        fir_rst_n = 1'b1;
+        repeat(10) @(posedge dsp_clk);  // let FIR pipeline flush reset state
+        $display("[FIR] bank_select=%0b (0=Bank A active, 1=Bank B active)", bank_select);
+
+        // Wait for a 768k tick boundary before sending impulse
+        @(posedge sample_768k_tick);
         @(posedge dsp_clk);
+
+        // Send impulse on L — 1-cycle pulse only.
+        // new_sample_valid=1 RESETS the FIR tap counter; it must be low for
+        // 128 cycles so tap_counter counts 0..127 and fires interpolated_valid.
+        audio_l_in = 24'h7FFFFF;  // Max positive impulse
+        audio_r_in = 24'h000000;
         new_sample = 1'b1;
         @(posedge dsp_clk);
         new_sample = 1'b0;
-        
-        // Wait for FIR output (should be ~257 cycles for 256-tap FIR with pipeline)
-        repeat(300) @(posedge dsp_clk);
-        
-        if (fir_l_valid) begin
-            $display("FIR output valid. L=%h R=%h", fir_l_out[23:0], fir_r_out[23:0]);
-            // With impulse input, output should match coefficient[0]
-            // (subject to scaling and bit-width adjustments)
-        end else begin
-            $display("WARNING: FIR valid not asserted");
-        end
-        
-        // Send more samples
-        repeat(10) begin
+        audio_l_in = 24'h000000;
+        audio_r_in = 24'h000000;
+
+        // Drive 300 sample periods with 1-cycle pulses at 768k tick boundaries.
+        // Each tick period = 336 dsp_clk cycles; FIR needs 128 free cycles to
+        // complete one phase and assert interpolated_valid.
+        repeat(300) begin
             @(posedge sample_768k_tick);
-            audio_l_in = $urandom;
-            audio_r_in = $urandom;
             new_sample = 1'b1;
             @(posedge dsp_clk);
             new_sample = 1'b0;
+            // Wait for interpolated_valid within this tick period
+            repeat(200) @(posedge dsp_clk);
+            if (fir_l_valid)
+                $display("FIR output valid. L=%h R=%h", fir_l_out[23:0], fir_r_out[23:0]);
+        end
+
+        if (!fir_valid_seen) begin
+            $display("ERROR: FIR interpolated_valid never asserted after 300 sample periods");
+            error_count++;
+        end else if (^fir_l_out === 1'bx) begin
+            $display("ERROR: FIR output is X (coef BRAM X-propagation)");
+            error_count++;
+        end else begin
+            $display("FIR output valid. Final: L=%h R=%h", fir_l_out[23:0], fir_r_out[23:0]);
         end
         
         // --- Summary ---

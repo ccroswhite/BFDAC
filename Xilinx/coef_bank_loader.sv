@@ -219,13 +219,15 @@ module coef_bank_loader #(
                 end
 
                 // ----- ISSUE AR -----
+                // Drive arvalid=1 and hold until slave asserts arready
+                // while arvalid is already high (proper AXI handshake).
                 ST_ISSUE_AR: begin
                     m_axi_araddr  <= burst_addr;
                     m_axi_arlen   <= 8'(BEATS_PER_BURST - 1);   // 255 -> 256 beats
                     m_axi_arsize  <= 3'd4;                       // 16 bytes/beat (128b)
                     m_axi_arburst <= 2'b01;                      // INCR
                     m_axi_arvalid <= 1'b1;
-                    if (m_axi_arready) begin
+                    if (m_axi_arvalid && m_axi_arready) begin
                         m_axi_arvalid <= 1'b0;
                         m_axi_rready  <= 1'b1;
                         beat_count    <= '0;

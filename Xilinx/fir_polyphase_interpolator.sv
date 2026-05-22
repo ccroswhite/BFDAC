@@ -172,6 +172,7 @@ module fir_polyphase_interpolator #(
                     .MAC_ID    (i)
                 ) u_mac (
                     .clk          (clk),
+                    .rst_n        (rst_n),
                     .phase_sync   (cascade_phase_sync[i]),
                     .coef_in      (coef_in[i]),
                     .audio_fwd_in (cascade_fwd[i]),
@@ -189,6 +190,7 @@ module fir_polyphase_interpolator #(
                     .MAC_ID    (i)
                 ) u_mac (
                     .clk          (clk),
+                    .rst_n        (rst_n),
                     .phase_sync   (cascade_phase_sync[i]),
                     .coef_in      (coef_in[i]),
                     .audio_fwd_in (cascade_fwd[i]),
@@ -203,5 +205,23 @@ module fir_polyphase_interpolator #(
     endgenerate
 
     assign interpolated_out = cascade_acc[NUM_MACS];
+
+    // DEBUG: log every interpolated_valid pulse unconditionally
+    int dbg_fir_cnt;
+    initial dbg_fir_cnt = 0;
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            dbg_fir_cnt <= 0;
+        end else begin
+            if (interpolated_valid) begin
+                dbg_fir_cnt <= dbg_fir_cnt + 1;
+                if (dbg_fir_cnt < 10) begin
+                    $display("[FIR_DBG @%0t] valid_cnt=%0d rst_n=%0b out=%0h c0=%0h c1=%0h c255=%0h c256=%0h",
+                        $time, dbg_fir_cnt, rst_n, interpolated_out,
+                        cascade_acc[0], cascade_acc[1], cascade_acc[255], cascade_acc[256]);
+                end
+            end
+        end
+    end
 
 endmodule

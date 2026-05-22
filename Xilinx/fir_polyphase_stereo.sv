@@ -127,7 +127,8 @@ module fir_polyphase_stereo #(
                 .WRITE_WIDTH_B      (0),
                 .DOB_REG            (1),
                 .WRITE_MODE_A       ("NO_CHANGE"),
-                .CLOCK_DOMAINS      ("COMMON")
+                .CLOCK_DOMAINS      ("COMMON"),
+                .SIM_COLLISION_CHECK("NONE")
             ) u_bram (
                 // Port A — write only
                 .CLKARDCLK          (clk),
@@ -197,6 +198,22 @@ module fir_polyphase_stereo #(
 
         end
     endgenerate
+
+    // --- DEBUG: log first 8 coef reads after rst_n releases ---
+    // synthesis translate_off
+    int dbg_coef_read_cnt = 0;
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            dbg_coef_read_cnt <= 0;
+        end else if (dbg_coef_read_cnt < 8) begin
+            dbg_coef_read_cnt <= dbg_coef_read_cnt + 1;
+            $display("[BRAM_DBG @%0t] cnt=%0d bank_sel=%0b rdata_do[0]=%08h coef_out[0]=%0h coef_out[1]=%0h",
+                $time, dbg_coef_read_cnt, bank_select,
+                gen_dual_coef_bram[0].rdata_do,
+                coef_out[0], coef_out[1]);
+        end
+    end
+    // synthesis translate_on
 
     // -------------------------------------------------------------------------
     //  Left channel interpolator

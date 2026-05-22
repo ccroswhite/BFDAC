@@ -15,6 +15,7 @@ module polyphase_mac_engine #(
     parameter int MAC_ID     = 0
 )(
     input  logic                          clk,
+    input  logic                          rst_n,
     input  logic                          phase_sync,
     input  logic signed [COEF_WIDTH-1:0]  coef_in,
     input  logic signed [DATA_WIDTH-1:0]  audio_fwd_in,
@@ -42,12 +43,17 @@ module polyphase_mac_engine #(
     (* shreg_extract = "no" *) logic phase_sync_d4, phase_sync_d5, phase_sync_d6;
 
     always_ff @(posedge clk) begin
-        phase_sync_d1 <= phase_sync;
-        phase_sync_d2 <= phase_sync_d1;
-        phase_sync_d3 <= phase_sync_d2;
-        phase_sync_d4 <= phase_sync_d3;
-        phase_sync_d5 <= phase_sync_d4;
-        phase_sync_d6 <= phase_sync_d5;
+        if (!rst_n) begin
+            {phase_sync_d1,phase_sync_d2,phase_sync_d3,
+             phase_sync_d4,phase_sync_d5,phase_sync_d6} <= '0;
+        end else begin
+            phase_sync_d1 <= phase_sync;
+            phase_sync_d2 <= phase_sync_d1;
+            phase_sync_d3 <= phase_sync_d2;
+            phase_sync_d4 <= phase_sync_d3;
+            phase_sync_d5 <= phase_sync_d4;
+            phase_sync_d6 <= phase_sync_d5;
+        end
     end
 
     // =================================---------------------------------------
@@ -58,9 +64,13 @@ module polyphase_mac_engine #(
     logic signed [DATA_WIDTH-1:0] fwd_reg_1, rev_reg_1;
 
     always_ff @(posedge clk) begin
-        fwd_reg_1  <= audio_fwd_in;
-        rev_reg_1  <= audio_rev_in;
-        coef_out_1 <= coef_in;
+        if (!rst_n) begin
+            fwd_reg_1 <= '0; rev_reg_1 <= '0; coef_out_1 <= '0;
+        end else begin
+            fwd_reg_1  <= audio_fwd_in;
+            rev_reg_1  <= audio_rev_in;
+            coef_out_1 <= coef_in;
+        end
     end
 
     // =================================---------------------------------------
@@ -79,9 +89,13 @@ module polyphase_mac_engine #(
     assign audio_rev_out = rev_reg_2;
 
     always_ff @(posedge clk) begin
-        fwd_reg_2  <= fwd_reg_1;
-        rev_reg_2  <= rev_reg_1;
-        coef_out_2 <= coef_out_1; // Vivado maps this safely to BRAM DO_REG
+        if (!rst_n) begin
+            fwd_reg_2 <= '0; rev_reg_2 <= '0; coef_out_2 <= '0;
+        end else begin
+            fwd_reg_2  <= fwd_reg_1;
+            rev_reg_2  <= rev_reg_1;
+            coef_out_2 <= coef_out_1;
+        end
     end
 
     // =================================---------------------------------------
@@ -91,9 +105,13 @@ module polyphase_mac_engine #(
     logic signed [DATA_WIDTH-1:0] dsp_a1, dsp_d;
 
     always_ff @(posedge clk) begin
-        dsp_a1 <= fwd_reg_2;
-        dsp_d  <= rev_reg_2;
-        dsp_b1 <= coef_out_2;
+        if (!rst_n) begin
+            dsp_a1 <= '0; dsp_d <= '0; dsp_b1 <= '0;
+        end else begin
+            dsp_a1 <= fwd_reg_2;
+            dsp_d  <= rev_reg_2;
+            dsp_b1 <= coef_out_2;
+        end
     end
 
     // =================================---------------------------------------
@@ -103,8 +121,12 @@ module polyphase_mac_engine #(
     logic signed [COEF_WIDTH-1:0] dsp_b2;
 
     always_ff @(posedge clk) begin
-        dsp_adreg <= $signed(dsp_a1) + $signed(dsp_d); // ADREG
-        dsp_b2    <= dsp_b1;                           // B2
+        if (!rst_n) begin
+            dsp_adreg <= '0; dsp_b2 <= '0;
+        end else begin
+            dsp_adreg <= $signed(dsp_a1) + $signed(dsp_d);
+            dsp_b2    <= dsp_b1;
+        end
     end
 
     // =================================---------------------------------------
@@ -113,7 +135,8 @@ module polyphase_mac_engine #(
     (* use_dsp = "yes" *) logic signed [47:0] dsp_mreg;
 
     always_ff @(posedge clk) begin
-        dsp_mreg <= dsp_adreg * dsp_b2; // MREG
+        if (!rst_n) dsp_mreg <= '0;
+        else        dsp_mreg <= dsp_adreg * dsp_b2;
     end
 
     // =================================---------------------------------------
@@ -133,7 +156,8 @@ module polyphase_mac_engine #(
     (* use_dsp = "yes" *) logic signed [ACC_WIDTH-1:0] pcin_creg;
 
     always_ff @(posedge clk) begin
-        pcin_creg <= pcin;
+        if (!rst_n) pcin_creg <= '0;
+        else        pcin_creg <= pcin;
     end
 
     // =================================---------------------------------------
@@ -148,7 +172,9 @@ module polyphase_mac_engine #(
     (* use_dsp = "yes" *) logic signed [47:0] dsp_preg;
 
     always_ff @(posedge clk) begin
-        if (phase_sync_d6) begin
+        if (!rst_n) begin
+            dsp_preg <= '0;
+        end else if (phase_sync_d6) begin
             dsp_preg <= dsp_mreg;
         end else begin
             dsp_preg <= dsp_mreg + pcin_creg;
@@ -156,5 +182,20 @@ module polyphase_mac_engine #(
     end
 
     assign pcout = dsp_preg;
+
+    // DEBUG: MAC_ID=0 only - log on first few phase_sync_d6
+    int dbg_mac_cnt;
+    initial dbg_mac_cnt = 0;
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            dbg_mac_cnt <= 0;
+        end else if (MAC_ID == 0 && phase_sync_d6) begin
+            dbg_mac_cnt <= dbg_mac_cnt + 1;
+            if (dbg_mac_cnt < 5) begin
+                $display("[MAC0_DBG @%0t] psync6_cnt=%0d coef=%0h audio=%0h mreg=%0h pcin=%0h preg=%0h",
+                    $time, dbg_mac_cnt, dsp_b2, dsp_adreg, dsp_mreg, pcin_creg, dsp_preg);
+            end
+        end
+    end
 
 endmodule

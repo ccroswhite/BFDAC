@@ -140,21 +140,39 @@ module dac_coef_subsys (
 
     // ----------------------------------------------------------------
     // 3. CDC: coef write bus ui_clk -> dsp_clk
-    //    ui_clk (~200 MHz) is slower than dsp_clk (~357 MHz).
-    //    A single register stage is safe: dsp_clk captures the stable
-    //    200 MHz signals within ~3 dsp_clk cycles of assertion.
+    //    ui_clk (~200 MHz) is slower than dsp_clk (~258 MHz).
+    //    coef_we_ui is a 1-cycle pulse at ui_clk (5 ns wide).
+    //    Direct level-sampling by dsp_clk (3.875 ns) double-counts
+    //    ~29% of pulses. Use toggle sync so each pulse maps to exactly
+    //    one dsp_clk coef_we pulse.
+    //    addr/data/mac are held stable for the full ui_clk cycle so
+    //    they are safe to sample on the dsp_clk rising edge of coef_we.
     // ----------------------------------------------------------------
+    logic        coef_we_toggle_ui;
+    logic [2:0]  coef_we_sync_dsp;
+
+    always_ff @(posedge ui_clk) begin
+        if (ui_clk_sync_rst)
+            coef_we_toggle_ui <= 1'b0;
+        else if (coef_we_ui)
+            coef_we_toggle_ui <= ~coef_we_toggle_ui;
+    end
+
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            coef_we    <= 1'b0;
-            coef_waddr <= '0;
-            coef_wdata <= '0;
-            coef_wmac  <= '0;
+            coef_we_sync_dsp <= '0;
+            coef_we          <= 1'b0;
+            coef_waddr       <= '0;
+            coef_wdata       <= '0;
+            coef_wmac        <= '0;
         end else begin
-            coef_we    <= coef_we_ui;
-            coef_waddr <= coef_waddr_ui;
-            coef_wdata <= coef_wdata_ui;
-            coef_wmac  <= coef_wmac_ui;
+            coef_we_sync_dsp <= {coef_we_sync_dsp[1:0], coef_we_toggle_ui};
+            coef_we          <= coef_we_sync_dsp[2] ^ coef_we_sync_dsp[1];
+            if (coef_we_sync_dsp[2] ^ coef_we_sync_dsp[1]) begin
+                coef_waddr <= coef_waddr_ui;
+                coef_wdata <= coef_wdata_ui;
+                coef_wmac  <= coef_wmac_ui;
+            end
         end
     end
 
