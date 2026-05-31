@@ -112,9 +112,9 @@ module artix_dac_top (
 
     // Coefficient write bus (dsp_clk domain)
     logic        coef_we;
-    logic [10:0] coef_waddr;
+    logic [11:0] coef_waddr;
     logic signed [17:0] coef_wdata;
-    logic [7:0]  coef_wmac;
+    logic [6:0]  coef_wmac;
 
     // Bank switching (dsp_clk domain)
     logic        bank_select;

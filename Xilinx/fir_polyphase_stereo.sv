@@ -16,7 +16,7 @@
 //  receive the same new_sample_valid and rst_n).
 // =============================================================================
 module fir_polyphase_stereo #(
-    parameter int NUM_MACS   = 256,
+    parameter int NUM_MACS   = 128,
     parameter int DATA_WIDTH = 24,
     parameter int COEF_WIDTH = 18,
     parameter int ACC_WIDTH  = 48
@@ -37,9 +37,9 @@ module fir_polyphase_stereo #(
 
     // Coefficient write bus (from coef_bank_loader)
     input  logic                          coef_we,
-    input  logic [10:0]                   coef_waddr,
+    input  logic [11:0]                   coef_waddr,
     input  logic signed [COEF_WIDTH-1:0]  coef_wdata,
-    input  logic [7:0]                    coef_wmac,
+    input  logic [6:0]                    coef_wmac,
 
     // Dual-bank gapless switching control
     input  logic                          bank_select,      // 0=Bank A (active), 1=Bank B (shadow)
@@ -61,7 +61,7 @@ module fir_polyphase_stereo #(
     // -------------------------------------------------------------------------
 
     // Write-bus pipeline register (fanout relief to 256 BRAMs)
-    (* max_fanout = 32 *) logic [10:0]                  coef_waddr_r;
+    (* max_fanout = 32 *) logic [11:0]                  coef_waddr_r;
     (* max_fanout = 32 *) logic signed [COEF_WIDTH-1:0] coef_wdata_r;
     (* max_fanout = 32 *) logic                         bank_load_target_q;
 
@@ -76,14 +76,45 @@ module fir_polyphase_stereo #(
         coef_wdata_r        <= coef_wdata;
         bank_load_target_q  <= bank_load_target;
         for (int i = 0; i < NUM_MACS; i++) begin
-            mac_we_oh[i]   <= coef_we && !bank_load_target && (coef_wmac == 8'(i));
-            mac_we_oh_b[i] <= coef_we &&  bank_load_target && (coef_wmac == 8'(i));
+            mac_we_oh[i]   <= coef_we && !bank_load_target && (coef_wmac == 7'(i));
+            mac_we_oh_b[i] <= coef_we &&  bank_load_target && (coef_wmac == 7'(i));
         end
     end
+    
+    // synthesis translate_off
+    // DEBUG: Trace coefficient writes and verify readback
+    int dbg_write_cnt = 0;
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            dbg_write_cnt <= 0;
+        end else if (coef_we) begin
+            dbg_write_cnt <= dbg_write_cnt + 1;
+`ifdef SIM_DEBUG
+            $display("[COEF_DBG @%0t] we=1 wmac=%0d waddr=%0d wdata=%0d target=%0b mac0_we=%0b wcnt=%0d",
+                $time, coef_wmac, coef_waddr, coef_wdata, bank_load_target, mac_we_oh[0], dbg_write_cnt);
+`endif
+        end else if (!coef_we && dbg_write_cnt > 0 && dbg_write_cnt < 20) begin
+            dbg_write_cnt <= dbg_write_cnt + 1;
+`ifdef SIM_DEBUG
+            if (coef_addr == 0)
+                $display("[COEF_CHECK @%0t] After write: addr=0 coef_out[0]=%0d", $time, coef_out[0]);
+`endif
+        end
+    end
+    
+    // NEGEDGE debug to verify combinational mac_we_oh settles correctly
+    always_ff @(negedge clk) begin
+`ifdef SIM_DEBUG
+        if (rst_n && coef_we && coef_wmac == 0)
+            $display("[WE_NEGEDGE @%0t] coef_we=%0b wmac=%0d mac0_we=%0b (should be 1)",
+                $time, coef_we, coef_wmac, mac_we_oh[0]);
+`endif
+    end
+    // synthesis translate_on
 
     // Coefficient address from L interpolator (R is lockstep identical)
-    logic [10:0] coef_addr;
-
+    logic [11:0] coef_addr;
+    
     // Muxed coefficient output to FIR engines
     logic signed [COEF_WIDTH-1:0] coef_out [0:NUM_MACS-1];
 
@@ -109,111 +140,81 @@ module fir_polyphase_stereo #(
             //   Bank B: coef[17:0] → DIADI[31:14] (WE[3:2], parity DIPADIP[3:2]=0)
             // Note: DIADI[13:0] overlap is fine — WEs gate independently per half.
 
-            wire [31:0] wdata_di = bank_load_target_q
-                                   ? {coef_wdata_r[17:0], 14'b0}  // Bank B → [31:14]
-                                   : {14'b0, coef_wdata_r[17:0]}; // Bank A → [17:0]
-
-            // WEA from pre-decoded one-hot registers — fanout=1, no routing penalty.
-            wire [3:0] we = mac_we_oh[m]   ? 4'b0011 :   // Bank A
-                            mac_we_oh_b[m] ? 4'b1100 :   // Bank B
-                                             4'b0000;
-
-            wire [31:0] rdata_do;
-
-            RAMB36E2 #(
-                .READ_WIDTH_A       (0),
-                .READ_WIDTH_B       (36),
-                .WRITE_WIDTH_A      (36),
-                .WRITE_WIDTH_B      (0),
-                .DOB_REG            (1),
-                .WRITE_MODE_A       ("NO_CHANGE"),
-                .CLOCK_DOMAINS      ("COMMON"),
-                .SIM_COLLISION_CHECK("NONE")
-            ) u_bram (
-                // Port A — write only
-                .CLKARDCLK          (clk),
-                .ENARDEN            (1'b1),
-                .REGCEAREGCE        (1'b0),
-                .RSTRAMARSTRAM      (1'b0),
-                .RSTREGARSTREG      (1'b0),
-                .ADDRARDADDR        ({1'b1, coef_waddr_r, 5'b11111}),
-                .DINADIN            (wdata_di),
-                .DINPADINP          (4'b0),
-                .WEA                (we),
-                .DOUTADOUT          (),
-                .DOUTPADOUTP        (),
-
-                // Port B — read only
-                .CLKBWRCLK          (clk),
-                .ENBWREN            (1'b1),
-                .REGCEB             (1'b1),
-                .RSTRAMB            (1'b0),
-                .RSTREGB            (1'b0),
-                .ADDRBWRADDR        ({1'b1, coef_addr, 5'b11111}),
-                .DINBDIN            (32'b0),
-                .DINPBDINP          (4'b0),
-                .WEBWE              (8'b0),
-                .DOUTBDOUT          (rdata_do),
-                .DOUTPBDOUTP        (),
-
-                // Unused cascade/ECC ports
-                .ADDRENA            (1'b0),
-                .ADDRENB            (1'b0),
-                .CASDIMUXA          (1'b0),
-                .CASDIMUXB          (1'b0),
-                .CASDINA            (32'b0),
-                .CASDINB            (32'b0),
-                .CASDINPA           (4'b0),
-                .CASDINPB           (4'b0),
-                .CASDOMUXA          (1'b0),
-                .CASDOMUXB          (1'b0),
-                .CASDOMUXEN_A       (1'b0),
-                .CASDOMUXEN_B       (1'b0),
-                .CASINDBITERR       (1'b0),
-                .CASINSBITERR       (1'b0),
-                .CASOREGIMUXA       (1'b0),
-                .CASOREGIMUXB       (1'b0),
-                .CASOREGIMUXEN_A    (1'b0),
-                .CASOREGIMUXEN_B    (1'b0),
-                .ECCPIPECE          (1'b0),
-                .INJECTDBITERR      (1'b0),
-                .INJECTSBITERR      (1'b0),
-                .SLEEP              (1'b0),
-                .CASDOUTA           (),
-                .CASDOUTB           (),
-                .CASDOUTPA          (),
-                .CASDOUTPB          (),
-                .CASOUTDBITERR      (),
-                .CASOUTSBITERR      (),
-                .DBITERR            (),
-                .ECCPARITY          (),
-                .RDADDRECC          (),
-                .SBITERR            ()
-            );
+            // Inferred simple dual-port BRAM for simulation (4096 deep: 2 banks of 2048)
+            (* ram_style = "block" *) logic [31:0] bram_mem [0:4095];
+            logic [31:0] rdata_do;
+            
+            // Initialize BRAM to 0
+            initial begin
+                for (int i = 0; i < 4096; i++) begin
+                    bram_mem[i] = 32'h0;
+                end
+            end
+            
+            // Write port - use full 32-bit assignments to avoid partial select issues
+            always_ff @(posedge clk) begin
+                if (mac_we_oh[m]) begin
+                    bram_mem[coef_waddr_r] <= {14'b0, coef_wdata_r};
+                end
+                if (mac_we_oh_b[m]) begin
+                    bram_mem[coef_waddr_r] <= {coef_wdata_r, 14'b0};
+                end
+            end
+            
+            // Read port with 2-cycle registered output to match RAMB36E2 DOB_REG=1
+            // Stage 1: BRAM array output register
+            // Stage 2: DOB_REG output register
+            logic [31:0] rdata_do_stage1;
+            always_ff @(posedge clk) begin
+                rdata_do_stage1 <= bram_mem[coef_addr];
+                rdata_do        <= rdata_do_stage1;
+            end
 
             // Bank select mux on registered read output (DOB_REG=1, 2-cycle latency)
             assign coef_out[m] = bank_select
                                  ? signed'(rdata_do[31:14])   // Bank B
                                  : signed'(rdata_do[17:0]);   // Bank A
+                                 
+            // synthesis translate_off
+            // DEBUG: Trace coef_out[0] and coef_addr during active FIR sweeps
+            if (m == 0) begin : gen_bram_dbg
+                int dbg_sweep_cnt = 0;
+                logic dbg_coef_nonzero_seen = 0;
+                always_ff @(posedge clk) begin
+                    if (!rst_n) begin
+                        dbg_sweep_cnt    <= 0;
+                        dbg_coef_nonzero_seen <= 0;
+                    end else begin
+                        // Trace every write to MAC[0]
+`ifdef SIM_DEBUG
+                        if (mac_we_oh[m] || mac_we_oh_b[m])
+                            $display("[BRAM_WRITE @%0t] addr=%0d wdata_r=%0h we_a=%0b we_b=%0b",
+                                $time, coef_waddr_r, coef_wdata_r, mac_we_oh[m], mac_we_oh_b[m]);
+`endif
+                        // Track when coef_addr wraps to 0 (start of sweep)
+                        if (coef_addr == 0) begin
+                            dbg_sweep_cnt <= dbg_sweep_cnt + 1;
+`ifdef SIM_DEBUG
+                            $display("[SWEEP_START @%0t] sweep=%0d bram_mem[0]=%0h rdata_do_s1=%0h rdata_do=%0h coef_out=%0d",
+                                $time, dbg_sweep_cnt, bram_mem[0], rdata_do_stage1, rdata_do, coef_out[m]);
+`endif
+                        end
+                        // First time coef_out[0] goes non-zero
+                        if (coef_out[m] != 0 && !dbg_coef_nonzero_seen) begin
+                            dbg_coef_nonzero_seen <= 1;
+`ifdef SIM_DEBUG
+                            $display("[COEF_NONZERO @%0t] coef_addr=%0d coef_out=%0d rdata_do=%0h",
+                                $time, coef_addr, coef_out[m], rdata_do);
+`endif
+                        end
+                    end
+                end
+            end
+            // synthesis translate_on
 
         end
     endgenerate
 
-    // --- DEBUG: log first 8 coef reads after rst_n releases ---
-    // synthesis translate_off
-    int dbg_coef_read_cnt = 0;
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            dbg_coef_read_cnt <= 0;
-        end else if (dbg_coef_read_cnt < 8) begin
-            dbg_coef_read_cnt <= dbg_coef_read_cnt + 1;
-            $display("[BRAM_DBG @%0t] cnt=%0d bank_sel=%0b rdata_do[0]=%08h coef_out[0]=%0h coef_out[1]=%0h",
-                $time, dbg_coef_read_cnt, bank_select,
-                gen_dual_coef_bram[0].rdata_do,
-                coef_out[0], coef_out[1]);
-        end
-    end
-    // synthesis translate_on
 
     // -------------------------------------------------------------------------
     //  Left channel interpolator
@@ -239,7 +240,7 @@ module fir_polyphase_stereo #(
     //  coef_in is the same coef_out[] array -- shared BRAMs.
     //  coef_addr_out is ignored (lockstep with L).
     // -------------------------------------------------------------------------
-    logic [10:0] coef_addr_r_unused;
+    logic [11:0] coef_addr_r_unused;
 
     fir_polyphase_interpolator #(
         .NUM_MACS   (NUM_MACS),

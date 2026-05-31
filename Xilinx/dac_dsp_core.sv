@@ -25,9 +25,9 @@ module dac_dsp_core (
 
     // Coefficient write bus (from dac_coef_subsys, dsp_clk domain)
     input  logic        coef_we,
-    input  logic [10:0] coef_waddr,
+    input  logic [11:0] coef_waddr,
     input  logic signed [17:0] coef_wdata,
-    input  logic [7:0]  coef_wmac,
+    input  logic [6:0]  coef_wmac,
 
     // Bank switching (from dac_coef_subsys, dsp_clk domain)
     input  logic        bank_select,

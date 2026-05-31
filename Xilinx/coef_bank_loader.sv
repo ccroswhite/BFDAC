@@ -50,9 +50,9 @@
 //  current 5.3 ms fade budget.
 // =============================================================================
 module coef_bank_loader #(
-    parameter int            NUM_MACS         = 256,
+    parameter int            NUM_MACS         = 128,
     parameter int            COEF_WIDTH       = 18,
-    parameter int            COEF_DEPTH       = 2048,
+    parameter int            COEF_DEPTH       = 4096,
     parameter int            BANK_BITS        = 4,                // up to 16 banks
     parameter int            AXI_DATA_WIDTH   = 128,
     parameter int            AXI_ADDR_WIDTH   = 32,
@@ -83,9 +83,9 @@ module coef_bank_loader #(
 
     // -- Coefficient write broadcast bus (to fir_polyphase_interpolator) -
     output logic                          coef_we,
-    output logic [10:0]                   coef_waddr,
+    output logic [11:0]                   coef_waddr,
     output logic signed [COEF_WIDTH-1:0]  coef_wdata,
-    output logic [7:0]                    coef_wmac
+    output logic [6:0]                    coef_wmac
 );
 
     // -------------------------------------------------------------------------
@@ -110,7 +110,9 @@ module coef_bank_loader #(
     logic [FIFO_AW:0]           fifo_count;
     wire                        fifo_empty = (fifo_count == 0);
     wire                        fifo_full  = (fifo_count == FIFO_DEPTH);
-    logic                       fifo_we, fifo_re;
+    logic                       fifo_re, fifo_re_d1;
+    logic                       fifo_we_d1;           // registered write-enable
+    logic [AXI_DATA_WIDTH-1:0]  fifo_din;             // data latched on handshake cycle
     logic [AXI_DATA_WIDTH-1:0]  fifo_rdata;
 
     always_ff @(posedge clk) begin
@@ -118,16 +120,17 @@ module coef_bank_loader #(
             fifo_wptr  <= '0;
             fifo_rptr  <= '0;
             fifo_count <= '0;
+            fifo_rdata <= '0;
         end else begin
-            if (fifo_we) begin
-                fifo_mem[fifo_wptr] <= m_axi_rdata;
+            if (fifo_we_d1) begin
+                fifo_mem[fifo_wptr] <= fifo_din;
                 fifo_wptr           <= fifo_wptr + 1'b1;
             end
             if (fifo_re) begin
                 fifo_rdata <= fifo_mem[fifo_rptr];
                 fifo_rptr  <= fifo_rptr + 1'b1;
             end
-            case ({fifo_we, fifo_re})
+            case ({fifo_we_d1, fifo_re})
                 2'b10:   fifo_count <= fifo_count + 1'b1;
                 2'b01:   fifo_count <= fifo_count - 1'b1;
                 default: ;
@@ -156,7 +159,7 @@ module coef_bank_loader #(
 
     state_t                      state;
     logic [BANK_BITS-1:0]        bank_id;
-    logic [7:0]                  mac_idx;       // 0..255
+    logic [6:0]                  mac_idx;       // 0..127
     logic                        burst_half;    // 0 = first 1024 coefs, 1 = second
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
     logic [9:0]                  drain_count;   // 0..1023 within a burst (4 per beat)
@@ -173,9 +176,10 @@ module coef_bank_loader #(
     //  a time and pulse coef_we for each.
     // -------------------------------------------------------------------------
     logic [1:0]                  beat_slice;     // which of the 4 coefs in current beat
-    logic                        beat_loaded;    // current fifo_rdata is valid
+    logic                        beat_loaded;    // current beat_buf is valid
+    logic [AXI_DATA_WIDTH-1:0]   beat_buf;       // registered copy of fifo_rdata, immune to NBA races
     wire signed [COEF_WIDTH-1:0] slice_coef =
-        signed'(fifo_rdata[(beat_slice * 32) +: COEF_WIDTH]);
+        signed'(beat_buf[(beat_slice * 32) +: COEF_WIDTH]);
 
     // -------------------------------------------------------------------------
     //  Sequential FSM
@@ -190,19 +194,23 @@ module coef_bank_loader #(
             drain_count    <= '0;
             beat_slice     <= '0;
             beat_loaded    <= 1'b0;
+            beat_buf       <= '0;
             m_axi_arvalid  <= 1'b0;
             m_axi_rready   <= 1'b0;
             coef_we        <= 1'b0;
             coef_waddr     <= '0;
             coef_wdata     <= '0;
             coef_wmac      <= '0;
-            fifo_we        <= 1'b0;
             fifo_re        <= 1'b0;
+            fifo_re_d1     <= 1'b0;
+            fifo_we_d1     <= 1'b0;
+            fifo_din       <= '0;
             load_done      <= 1'b0;
         end else begin
             // Default deasserts
-            fifo_we   <= 1'b0;
-            fifo_re   <= 1'b0;
+            fifo_re    <= 1'b0;
+            fifo_re_d1 <= fifo_re;
+            fifo_we_d1 <= 1'b0;
             coef_we   <= 1'b0;
             load_done <= 1'b0;
 
@@ -223,31 +231,41 @@ module coef_bank_loader #(
                 // while arvalid is already high (proper AXI handshake).
                 ST_ISSUE_AR: begin
                     m_axi_araddr  <= burst_addr;
-                    m_axi_arlen   <= 8'(BEATS_PER_BURST - 1);   // 255 -> 256 beats
-                    m_axi_arsize  <= 3'd4;                       // 16 bytes/beat (128b)
-                    m_axi_arburst <= 2'b01;                      // INCR
+                    m_axi_arlen   <= 8'(BEATS_PER_BURST - 1);
+                    m_axi_arsize  <= 3'd4;
+                    m_axi_arburst <= 2'b01;
                     m_axi_arvalid <= 1'b1;
                     if (m_axi_arvalid && m_axi_arready) begin
                         m_axi_arvalid <= 1'b0;
                         m_axi_rready  <= 1'b1;
                         beat_count    <= '0;
                         state         <= ST_RECV_R;
+                        $display("[AR_HS @%0t] mac=%0d half=%0d beat_count_now=%0d (resetting to 0)",
+                            $time, mac_idx, burst_half, beat_count);
                     end
                 end
 
                 // ----- RECV R into FIFO -----
                 ST_RECV_R: begin
                     if (m_axi_rvalid && m_axi_rready) begin
-                        fifo_we    <= 1'b1;
+                        if (beat_count == 0)
+                            $display("[BEAT0 @%0t] mac=%0d half=%0d first beat rvalid+rready", $time, mac_idx, burst_half);
+                        // Latch rdata now; fifo_we_d1 fires next cycle to write it.
+                        // This breaks any same-cycle dependency on m_axi_rdata.
+                        fifo_din   <= m_axi_rdata;
+                        fifo_we_d1 <= 1'b1;
+                        if (beat_count == 0)
+                            $display("[DIN_HS0 @%0t] beat0 handshake m_axi_rdata=%0h", $time, m_axi_rdata);
                         beat_count <= beat_count + 1'b1;
                         if (m_axi_rlast) begin
                             m_axi_rready <= 1'b0;
-                            // Kick off the drain pipeline by reading first beat
                             fifo_re      <= 1'b1;
                             beat_loaded  <= 1'b0;
                             beat_slice   <= '0;
                             drain_count  <= '0;
                             state        <= ST_DRAIN;
+                            $display("[RLAST @%0t] mac=%0d half=%0d beat_cnt=%0d fifo_wptr=%0d fifo_rptr=%0d fifo_cnt=%0d",
+                                $time, mac_idx, burst_half, beat_count+1, fifo_wptr, fifo_rptr, fifo_count+1);
                         end
                     end
                 end
@@ -259,20 +277,31 @@ module coef_bank_loader #(
                 // 4th slice we read the next beat (if any).
                 ST_DRAIN: begin
                     if (!beat_loaded) begin
-                        // First-time: initial fifo_re fired in prior state,
-                        // fifo_rdata now has beat 0.
-                        beat_loaded <= 1'b1;
-                        beat_slice  <= '0;
+                        // fifo_re_d1 indicates fifo_rdata NBA has committed.
+                        // Only latch beat_buf and assert beat_loaded once
+                        // fifo_rdata is guaranteed stable.
+                        if (fifo_re_d1) begin
+                            beat_buf    <= fifo_rdata;
+                            beat_loaded <= 1'b1;
+                            beat_slice  <= '0;
+                            if (drain_count == 0)
+                                $display("[BEATBUF0 @%0t] fifo_rdata=%0h (beat0 coef0 expected=%0h)",
+                                    $time, fifo_rdata, mac_idx * 2048);
+                        end
                     end
 
                     if (beat_loaded) begin
                         // Drive write to current MAC at the current depth address
                         coef_we    <= 1'b1;
                         coef_wmac  <= mac_idx;
-                        coef_waddr <= 11'((burst_half ? COEFS_PER_BURST : 0) +
+                        coef_waddr <= 12'((burst_half ? COEFS_PER_BURST : 0) +
                                           drain_count);
                         coef_wdata <= slice_coef;
+                        if (mac_idx == 127 && drain_count < 4)
+                            $display("[DRAIN255 @%0t] half=%0d drain=%0d wdata=%0h",
+                                $time, burst_half, drain_count, slice_coef);
 
+                        drain_count <= drain_count + 1'b1;
                         if (beat_slice == 2'd3) begin
                             // Done with this beat -- fetch the next, unless
                             // we just emitted the last coef of the burst.
@@ -282,12 +311,10 @@ module coef_bank_loader #(
                             end else begin
                                 fifo_re     <= 1'b1;
                                 beat_slice  <= '0;
-                                drain_count <= drain_count + 1'b1;
                                 beat_loaded <= 1'b0;   // reload on next cycle
                             end
                         end else begin
                             beat_slice  <= beat_slice + 1'b1;
-                            drain_count <= drain_count + 1'b1;
                         end
                     end
                 end

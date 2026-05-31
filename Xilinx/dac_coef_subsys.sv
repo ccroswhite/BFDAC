@@ -39,9 +39,9 @@ module dac_coef_subsys (
 
     // Coefficient write bus (dsp_clk domain, to fir_polyphase_stereo)
     output logic        coef_we,
-    output logic [10:0] coef_waddr,
+    output logic [11:0] coef_waddr,
     output logic signed [17:0] coef_wdata,
-    output logic [7:0]  coef_wmac,
+    output logic [6:0]  coef_wmac,
 
     // Bank switching outputs (dsp_clk domain, to fir_polyphase_stereo)
     output logic        bank_select,        // 0=Bank A active, 1=Bank B active
@@ -62,9 +62,9 @@ module dac_coef_subsys (
     logic         loader_done_ui;     // Single-cycle pulse in ui_clk domain
     logic         mgr_load_start_ui;  // From bank manager (dsp_clk -> ui_clk via handshake)
     logic         coef_we_ui;
-    logic [10:0]  coef_waddr_ui;
+    logic [11:0]  coef_waddr_ui;
     logic signed [17:0] coef_wdata_ui;
-    logic [7:0]   coef_wmac_ui;
+    logic [6:0]   coef_wmac_ui;
 
     // CDC for load_start: toggle synchronizer (dsp_clk -> ui_clk).
     // mgr_load_start_dsp is a single-cycle pulse at dsp_clk (~3.9ns).

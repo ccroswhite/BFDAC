@@ -32,9 +32,9 @@ module tb_coef_bank_loader;
     // -------------------------------------------------------------------------
     //  Parameters matching the DUT (keep in sync with coef_bank_loader.sv)
     // -------------------------------------------------------------------------
-    localparam int NUM_MACS          = 256;
+    localparam int NUM_MACS          = 128;
     localparam int COEF_WIDTH        = 18;
-    localparam int COEF_DEPTH        = 2048;
+    localparam int COEF_DEPTH        = 4096;
     localparam int BANK_BITS         = 4;
     localparam int AXI_DATA_WIDTH    = 128;
     localparam int AXI_ADDR_WIDTH    = 32;
@@ -80,9 +80,9 @@ module tb_coef_bank_loader;
     logic                         m_axi_rready;
 
     logic                         coef_we;
-    logic [10:0]                  coef_waddr;
+    logic [11:0]                  coef_waddr;
     logic signed [COEF_WIDTH-1:0] coef_wdata;
-    logic [7:0]                   coef_wmac;
+    logic [6:0]                   coef_wmac;
 
     // -------------------------------------------------------------------------
     //  DUT instantiation
@@ -154,7 +154,7 @@ module tb_coef_bank_loader;
         int mac_num, half_offset, coef_base, coef_idx;
         logic [AXI_DATA_WIDTH-1:0] beat;
 
-        offset      = base_addr - BASE;                     // strip bank (bank=0 for test)
+        offset      = base_addr - BASE - AXI_ADDR_WIDTH'(load_bank_id) * BANK_SZ;
         mac_num     = int'(offset / MAC_BYTES);
         half_offset = int'((offset % MAC_BYTES) / BURST_BYTES); // 0 or 1
         coef_base   = half_offset * COEFS_PER_BURST + beat_index * COEFS_PER_BEAT;
@@ -169,80 +169,105 @@ module tb_coef_bank_loader;
     // -------------------------------------------------------------------------
     //  AR-channel slave: accept with configurable stall
     // -------------------------------------------------------------------------
-    int ar_stall_cnt;
-    initial ar_stall_cnt = 0;
+    int  ar_stall_cnt;
+    logic ar_txn_pending;   // sticky: set when accepted, cleared when arvalid deasserts
 
     always_ff @(posedge clk) begin
         m_axi_arready <= 1'b0;
         ar_accepted   <= 1'b0;
+        if (!rst_n) begin
+            ar_stall_cnt  <= 0;
+            ar_txn_pending <= 1'b0;
+        end else begin
+            // Clear sticky once arvalid deasserts
+            if (!m_axi_arvalid)
+                ar_txn_pending <= 1'b0;
 
-        if (m_axi_arvalid) begin
-            if (ar_stall_cnt < AR_STALL_CYCLES) begin
-                ar_stall_cnt <= ar_stall_cnt + 1;
-            end else begin
-                ar_stall_cnt  <= 0;
-                m_axi_arready <= 1'b1;
-                ar_accepted   <= 1'b1;
-                slave_araddr  <= m_axi_araddr;
-                slave_arlen   <= m_axi_arlen;
+            if (m_axi_arvalid && !ar_txn_pending) begin
+                if (ar_stall_cnt < AR_STALL_CYCLES) begin
+                    ar_stall_cnt <= ar_stall_cnt + 1;
+                end else begin
+                    ar_stall_cnt   <= 0;
+                    ar_txn_pending <= 1'b1;
+                    m_axi_arready  <= 1'b1;
+                    ar_accepted    <= 1'b1;
+                    slave_araddr   <= m_axi_araddr;
+                    slave_arlen    <= m_axi_arlen;
+                end
             end
         end
     end
 
     // -------------------------------------------------------------------------
-    //  R-channel slave: push accepted ARs into a queue, drain with latency
+    //  R-channel slave: combinatorial outputs, registered queue/delay state
     // -------------------------------------------------------------------------
-    int r_delay_cnt;
-    initial begin
-        m_axi_rvalid = 1'b0;
-        m_axi_rdata  = '0;
-        m_axi_rlast  = 1'b0;
-        m_axi_rresp  = 2'b00;
-        r_delay_cnt  = 0;
-    end
+    int  r_delay_cnt;
+    int  r_hs_count;   // handshake counter per burst (debug)
+    // R-channel outputs driven directly as registered signals (no assign wires).
+    // r_bubble: when 1, we are in the 1-cycle gap after a handshake where
+    // m_axi_rvalid is deasserted so we can safely update m_axi_rdata.
+    logic r_bubble;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
+            r_delay_cnt <= 0;
+            r_hs_count  <= 0;
+            r_bubble    <= 1'b0;
             m_axi_rvalid <= 1'b0;
             m_axi_rlast  <= 1'b0;
-            r_delay_cnt  <= 0;
+            m_axi_rdata  <= '0;
+            m_axi_rresp  <= 2'b00;
             r_queue       = {};
         end else begin
-            // Enqueue newly accepted AR
+            m_axi_rvalid <= 1'b0;
+            m_axi_rlast  <= 1'b0;
+            r_bubble     <= 1'b0;
+
             if (ar_accepted) begin
                 r_txn_t txn;
                 txn.araddr          = slave_araddr;
                 txn.beats_remaining = int'(slave_arlen) + 1;
                 txn.beat_index      = 0;
                 r_queue.push_back(txn);
+                $display("[PUSH @%0t] addr=%0h beats=%0d READ_LATENCY=%0d",
+                    $time, slave_araddr, txn.beats_remaining, READ_LATENCY);
             end
 
-            // Drive R channel
             if (r_queue.size() > 0) begin
                 if (r_delay_cnt < READ_LATENCY) begin
-                    r_delay_cnt  <= r_delay_cnt + 1;
-                    m_axi_rvalid <= 1'b0;
+                    // Delay phase. On the last delay cycle, load beat 0.
+                    if (r_delay_cnt == READ_LATENCY - 1)
+                        m_axi_rdata <= gen_beat(r_queue[0].araddr, 0);
+                    r_delay_cnt <= r_delay_cnt + 1;
+
+                end else if (r_bubble) begin
+                    // Bubble cycle: rvalid=0. Update m_axi_rdata to next beat.
+                    // No handshake can occur here so no NBA collision.
+                    m_axi_rdata <= gen_beat(r_queue[0].araddr, r_queue[0].beat_index);
+
                 end else begin
+                    // Present phase: rvalid=1, data is stable in m_axi_rdata.
                     m_axi_rvalid <= 1'b1;
-                    m_axi_rdata  <= gen_beat(r_queue[0].araddr, r_queue[0].beat_index);
                     m_axi_rlast  <= (r_queue[0].beats_remaining == 1);
-                    m_axi_rresp  <= 2'b00;
 
                     if (m_axi_rready) begin
+                        // Handshake: consume beat, insert bubble to refresh data.
+                        r_hs_count <= r_hs_count + 1;
                         r_queue[0].beats_remaining--;
                         r_queue[0].beat_index++;
                         if (r_queue[0].beats_remaining == 0) begin
+                            $display("[SLAVE_DONE @%0t] hs_count=%0d (should=256)",
+                                $time, r_hs_count + 1);
                             void'(r_queue.pop_front());
-                            r_delay_cnt  <= 0;
-                            m_axi_rvalid <= 1'b0;
-                            m_axi_rlast  <= 1'b0;
+                            r_delay_cnt <= 0;
+                            r_hs_count  <= 0;
+                        end else begin
+                            r_bubble <= 1'b1;  // next cycle: update m_axi_rdata
                         end
                     end
                 end
             end else begin
-                m_axi_rvalid <= 1'b0;
-                m_axi_rlast  <= 1'b0;
-                r_delay_cnt  <= 0;
+                r_delay_cnt <= 0;
             end
         end
     end
@@ -258,12 +283,12 @@ module tb_coef_bank_loader;
     localparam int CHECK_MAC_HI = 1;
     localparam int CHECK_MAC_LAST = NUM_MACS - 1;
 
-    always_ff @(posedge clk) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
-            total_writes <= 0;
-            error_count  <= 0;
+            total_writes = 0;
+            error_count  = 0;
         end else if (coef_we) begin
-            total_writes <= total_writes + 1;
+            total_writes = total_writes + 1;
 
             // Check exhaustively for MAC 0, MAC 1, and MAC 255
             if (coef_wmac == CHECK_MAC_LO  ||
@@ -273,7 +298,6 @@ module tb_coef_bank_loader;
                 automatic int   mac_n    = int'(coef_wmac);
                 automatic int   cidx     = int'(coef_waddr);
                 automatic int   expected_raw = (mac_n * COEF_DEPTH + cidx) & 32'h3FFFF;
-                // Sign-extend from COEF_WIDTH
                 automatic logic signed [COEF_WIDTH-1:0] expected =
                     signed'(COEF_WIDTH'(expected_raw));
 
@@ -281,7 +305,7 @@ module tb_coef_bank_loader;
                     $display("ERROR @ %0t : mac=%0d addr=%0d  got=%0h  exp=%0h",
                              $time, coef_wmac, coef_waddr,
                              coef_wdata, expected);
-                    error_count <= error_count + 1;
+                    error_count = error_count + 1;
                 end
             end
 
@@ -289,13 +313,13 @@ module tb_coef_bank_loader;
             if (int'(coef_waddr) >= COEF_DEPTH) begin
                 $display("ERROR @ %0t : coef_waddr=%0d out of range (mac=%0d)",
                          $time, coef_waddr, coef_wmac);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
 
             // MAC index must always be in [0 .. NUM_MACS-1]
             if (int'(coef_wmac) >= NUM_MACS) begin
                 $display("ERROR @ %0t : coef_wmac=%0d out of range", $time, coef_wmac);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
         end
     end
@@ -304,9 +328,8 @@ module tb_coef_bank_loader;
     //  AR-channel checker: runs on every arvalid/arready handshake
     // -------------------------------------------------------------------------
     int   ar_burst_num;  // global burst number 0..511
-    initial ar_burst_num = 0;
 
-    always_ff @(posedge clk) begin
+    always @(posedge clk) begin
         if (rst_n && m_axi_arvalid && m_axi_arready) begin
             automatic int    mac_n       = ar_burst_num / BURSTS_PER_MAC;
             automatic int    half_n      = ar_burst_num % BURSTS_PER_MAC;
@@ -319,23 +342,23 @@ module tb_coef_bank_loader;
             if (m_axi_araddr !== exp_addr) begin
                 $display("AR ERROR burst=%0d : araddr=%08h  expected=%08h",
                          ar_burst_num, m_axi_araddr, exp_addr);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
             if (m_axi_arlen !== 8'(BEATS_PER_BURST - 1)) begin
                 $display("AR ERROR burst=%0d : arlen=%0d  expected=%0d",
                          ar_burst_num, m_axi_arlen, BEATS_PER_BURST - 1);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
             if (m_axi_arsize !== 3'd4) begin
                 $display("AR ERROR burst=%0d : arsize=%0d  expected=4", ar_burst_num, m_axi_arsize);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
             if (m_axi_arburst !== 2'b01) begin
                 $display("AR ERROR burst=%0d : arburst=%0b  expected=01", ar_burst_num, m_axi_arburst);
-                error_count <= error_count + 1;
+                error_count = error_count + 1;
             end
 
-            ar_burst_num <= ar_burst_num + 1;
+            ar_burst_num = ar_burst_num + 1;
         end
     end
 
@@ -346,7 +369,6 @@ module tb_coef_bank_loader;
         rst_n        <= 1'b0;
         load_start   <= 1'b0;
         load_bank_id <= '0;
-        m_axi_arready = 1'b0;
         repeat(8) @(posedge clk);
         rst_n <= 1'b1;
         @(posedge clk);

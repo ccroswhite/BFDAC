@@ -19,9 +19,9 @@ module tb_system_ddr4_to_fir;
     // -------------------------------------------------------------------------
     //  Parameters (must match DUTs)
     //  -------------------------------------------------------------------------
-    localparam int NUM_MACS       = 256;
+    localparam int NUM_MACS       = 128;
     localparam int COEF_WIDTH     = 18;
-    localparam int COEF_DEPTH     = 2048;
+    localparam int COEF_DEPTH     = 4096;
     localparam int BANK_BITS      = 4;
     localparam int AXI_DATA_WIDTH = 128;
     localparam int AXI_ADDR_WIDTH = 32;
@@ -75,9 +75,9 @@ module tb_system_ddr4_to_fir;
     //  Coefficient Write Bus (dsp_clk domain, from coef_subsys)
     //  -------------------------------------------------------------------------
     logic                      coef_we;
-    logic [10:0]               coef_waddr;
+    logic [11:0]               coef_waddr;
     logic signed [COEF_WIDTH-1:0] coef_wdata;
-    logic [7:0]                coef_wmac;
+    logic [6:0]                coef_wmac;
     
     // -------------------------------------------------------------------------
     //  Bank Control (dsp_clk domain)

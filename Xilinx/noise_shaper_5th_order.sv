@@ -80,6 +80,7 @@ module noise_shaper_5th_order #(
     // ------------------------------------------------------------------------
     logic signed [IW-1:0]         noise_shaped_r;     // Stage C1 output
     logic signed [FRAC_WIDTH-1:0] dither_c;           // Stage C1 dither hold
+    logic signed [IW-1:0]         noise_shaped_c2;    // Stage C2 pipeline hold of noise_shaped_r
     logic signed [IW-1:0]         dithered_r;         // Stage C2 output
 
     // Combinational helper for Stage C1 -- pulled out of the always_ff to
@@ -117,7 +118,7 @@ module noise_shaper_5th_order #(
             sum_pos_1_r <= '0;  sum_pos_2_r <= '0;  sum_neg_r <= '0;
             dither_b    <= '0;
 
-            noise_shaped_r <= '0;  dither_c <= '0;  dithered_r <= '0;
+            noise_shaped_r <= '0;  dither_c <= '0;  noise_shaped_c2 <= '0;  dithered_r <= '0;
 
             e_z1_cand_over_d1   <= '0;
             e_z1_cand_under_d1  <= '0;
@@ -155,18 +156,19 @@ module noise_shaper_5th_order #(
                 dither_c       <= dither_b;
             end
 
-            // --- Stage C2: add dither -- one carry chain in isolation -------
+            // --- Stage C2: dither add; also pipeline noise_shaped_r for D1 --
             if (en_pipe[2]) begin
-                dithered_r <= noise_shaped_r + $signed(dither_c);
+                dithered_r     <= noise_shaped_r + $signed(dither_c);
+                noise_shaped_c2 <= noise_shaped_r;  // hold for D1 same-sample use
             end
 
             // --- Stage D1: pre-compute candidate e_z1 values + range_sel ----
-            //   Each candidate is at most one 54-bit subtract (one carry
-            //   chain). The mux happens in D2 below, isolated by a register.
+            // noise_shaped_c2 and dithered_r are both written at en_pipe[2],
+            // so they hold matching values from the same sample here.
             if (en_pipe[3]) begin
-                e_z1_cand_over_d1   <= noise_shaped_r - CLAMP_OFFSET;
-                e_z1_cand_under_d1  <= noise_shaped_r;
-                e_z1_cand_normal_d1 <= noise_shaped_r -
+                e_z1_cand_over_d1   <= noise_shaped_c2 - CLAMP_OFFSET;
+                e_z1_cand_under_d1  <= noise_shaped_c2;
+                e_z1_cand_normal_d1 <= noise_shaped_c2 -
                                        $signed({dithered_r[FRAC_WIDTH + OUT_WIDTH - 1 : FRAC_WIDTH],
                                                 {FRAC_WIDTH{1'b0}}});
                 dem_drive_normal_d1 <= dithered_r[FRAC_WIDTH + OUT_WIDTH - 1 : FRAC_WIDTH];
