@@ -50,9 +50,9 @@
 //  current 5.3 ms fade budget.
 // =============================================================================
 module coef_bank_loader #(
-    parameter int            NUM_MACS         = 128,
+    parameter int            NUM_MACS         = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
     parameter int            COEF_WIDTH       = 18,
-    parameter int            COEF_DEPTH       = 4096,
+    parameter int            COEF_DEPTH       = 1024,  // 16 phases * 64 taps/phase
     parameter int            BANK_BITS        = 4,                // up to 16 banks
     parameter int            AXI_DATA_WIDTH   = 128,
     parameter int            AXI_ADDR_WIDTH   = 32,
@@ -83,9 +83,9 @@ module coef_bank_loader #(
 
     // -- Coefficient write broadcast bus (to fir_polyphase_interpolator) -
     output logic                          coef_we,
-    output logic [11:0]                   coef_waddr,
-    output logic signed [COEF_WIDTH-1:0]  coef_wdata,
-    output logic [6:0]                    coef_wmac
+    output logic [$clog2(COEF_DEPTH)-1:0]    coef_waddr,
+    output logic signed [COEF_WIDTH-1:0]     coef_wdata,
+    output logic [$clog2(NUM_MACS)-1:0]      coef_wmac
 );
 
     // -------------------------------------------------------------------------
@@ -159,7 +159,7 @@ module coef_bank_loader #(
 
     state_t                      state;
     logic [BANK_BITS-1:0]        bank_id;
-    logic [6:0]                  mac_idx;       // 0..127
+    logic [$clog2(NUM_MACS)-1:0] mac_idx;
     logic                        burst_half;    // 0 = first 1024 coefs, 1 = second
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
     logic [9:0]                  drain_count;   // 0..1023 within a burst (4 per beat)
@@ -286,7 +286,7 @@ module coef_bank_loader #(
                             beat_slice  <= '0;
                             if (drain_count == 0)
                                 $display("[BEATBUF0 @%0t] fifo_rdata=%0h (beat0 coef0 expected=%0h)",
-                                    $time, fifo_rdata, mac_idx * 2048);
+                                    $time, fifo_rdata, mac_idx * COEF_DEPTH);
                         end
                     end
 
@@ -294,10 +294,10 @@ module coef_bank_loader #(
                         // Drive write to current MAC at the current depth address
                         coef_we    <= 1'b1;
                         coef_wmac  <= mac_idx;
-                        coef_waddr <= 12'((burst_half ? COEFS_PER_BURST : 0) +
+                        coef_waddr <= $clog2(COEF_DEPTH)'((burst_half ? COEFS_PER_BURST : 0) +
                                           drain_count);
                         coef_wdata <= slice_coef;
-                        if (mac_idx == 127 && drain_count < 4)
+                        if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS-1) && drain_count < 4)
                             $display("[DRAIN255 @%0t] half=%0d drain=%0d wdata=%0h",
                                 $time, burst_half, drain_count, slice_coef);
 
@@ -326,7 +326,7 @@ module coef_bank_loader #(
                         state      <= ST_ISSUE_AR;
                     end else begin
                         burst_half <= 1'b0;
-                        if (mac_idx == 8'(NUM_MACS - 1)) begin
+                        if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS - 1)) begin
                             state <= ST_DONE;
                         end else begin
                             mac_idx <= mac_idx + 1'b1;

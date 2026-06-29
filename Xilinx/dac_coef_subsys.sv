@@ -8,7 +8,9 @@
 //   - coef_mute_envelope (boot-time fade-in, dsp_clk)
 //   - Boot sequence FSM
 
-module dac_coef_subsys (
+module dac_coef_subsys #(
+    parameter int NUM_MACS = 1024   // Production: 1024 (1M taps) or 2048 (2M taps)
+)(
     // ui_clk domain (~200 MHz, from MIG)
     input  logic        ui_clk,
     input  logic        ui_clk_sync_rst,    // Active-high sync reset
@@ -39,9 +41,9 @@ module dac_coef_subsys (
 
     // Coefficient write bus (dsp_clk domain, to fir_polyphase_stereo)
     output logic        coef_we,
-    output logic [11:0] coef_waddr,
-    output logic signed [17:0] coef_wdata,
-    output logic [6:0]  coef_wmac,
+    output logic [$clog2(16*64)-1:0]     coef_waddr,  // 10 bits: 1024 coefs/MAC
+    output logic signed [17:0]           coef_wdata,
+    output logic [$clog2(NUM_MACS)-1:0]  coef_wmac,
 
     // Bank switching outputs (dsp_clk domain, to fir_polyphase_stereo)
     output logic        bank_select,        // 0=Bank A active, 1=Bank B active
@@ -62,9 +64,9 @@ module dac_coef_subsys (
     logic         loader_done_ui;     // Single-cycle pulse in ui_clk domain
     logic         mgr_load_start_ui;  // From bank manager (dsp_clk -> ui_clk via handshake)
     logic         coef_we_ui;
-    logic [11:0]  coef_waddr_ui;
-    logic signed [17:0] coef_wdata_ui;
-    logic [6:0]   coef_wmac_ui;
+    logic [$clog2(16*64)-1:0]    coef_waddr_ui;
+    logic signed [17:0]          coef_wdata_ui;
+    logic [$clog2(NUM_MACS)-1:0] coef_wmac_ui;
 
     // CDC for load_start: toggle synchronizer (dsp_clk -> ui_clk).
     // mgr_load_start_dsp is a single-cycle pulse at dsp_clk (~3.9ns).
@@ -164,7 +166,7 @@ module dac_coef_subsys (
             coef_we          <= 1'b0;
             coef_waddr       <= '0;
             coef_wdata       <= '0;
-            coef_wmac        <= '0;
+            coef_wmac        <= '0;  // width driven by $clog2(NUM_MACS)
         end else begin
             coef_we_sync_dsp <= {coef_we_sync_dsp[1:0], coef_we_toggle_ui};
             coef_we          <= coef_we_sync_dsp[2] ^ coef_we_sync_dsp[1];

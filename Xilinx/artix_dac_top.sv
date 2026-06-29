@@ -45,6 +45,12 @@ module artix_dac_top (
     output logic        lvds_data_r_p,
     output logic        lvds_data_r_n,
 
+    // Inter-FPGA Frame Sync (LVDS, bidirectional role-selected)
+    output logic        frame_sync_p,
+    output logic        frame_sync_n,
+    input  logic        frame_sync_in_p,
+    input  logic        frame_sync_in_n,
+
     // DDR4 Interface (XEM8320 - Bank 64, pin assignments in XDC)
     inout  wire  [15:0] ddr4_dq,
     inout  wire  [1:0]  ddr4_dqs_c,
@@ -112,9 +118,9 @@ module artix_dac_top (
 
     // Coefficient write bus (dsp_clk domain)
     logic        coef_we;
-    logic [11:0] coef_waddr;
+    logic [10:0] coef_waddr;
     logic signed [17:0] coef_wdata;
-    logic [6:0]  coef_wmac;
+    logic [7:0]  coef_wmac;
 
     // Bank switching (dsp_clk domain)
     logic        bank_select;
@@ -140,6 +146,15 @@ module artix_dac_top (
 
     // Sample tick (dsp_clk domain)
     logic        sample_768k_tick;
+
+    // Role configuration (clk_49m domain, false-path to dsp_clk)
+    logic        channel_sel;
+    logic        frame_master;
+    logic        role_write_en;
+    logic [1:0]  role_data;
+
+    // Inter-FPGA frame sync (dsp_clk domain)
+    logic        sync_in_pulse;
 
     // ==============================================================
     // 1. DDR4 Memory Interface
@@ -231,7 +246,36 @@ module artix_dac_top (
         .base_rate_sel          (base_rate_sel),
         .clk_source_sel         (clk_source_sel),
         .coef_bank_id           (coef_bank_id),
-        .coef_load_start        (coef_load_start)
+        .coef_load_start        (coef_load_start),
+        .role_write_en          (role_write_en),
+        .role_data              (role_data)
+    );
+
+    // ==============================================================
+    // 3a. Role Configuration Register
+    // ==============================================================
+    dac_role_cfg u_role_cfg (
+        .clk            (clk_49m),
+        .rst_n          (ext_rst_n),
+        .write_en       (role_write_en),
+        .role_data      (role_data),
+        .channel_sel    (channel_sel),
+        .frame_master   (frame_master)
+    );
+
+    // ==============================================================
+    // 3b. Inter-FPGA Frame Sync Interface
+    // ==============================================================
+    fpga_sync_if u_fpga_sync (
+        .clk                (dsp_clk),
+        .rst_n              (sys_rst_n),
+        .frame_master       (frame_master),
+        .new_sample_valid   (new_sample),
+        .sync_in_pulse      (sync_in_pulse),
+        .frame_sync_p       (frame_sync_p),
+        .frame_sync_n       (frame_sync_n),
+        .frame_sync_in_p    (frame_sync_in_p),
+        .frame_sync_in_n    (frame_sync_in_n)
     );
 
     // ==============================================================
@@ -266,6 +310,9 @@ module artix_dac_top (
         .bank_load_target       (bank_load_target),
         .sys_volume             (sys_volume),
         .boot_envelope_gain     (boot_envelope_gain),
+        .channel_sel            (channel_sel),
+        .frame_master           (frame_master),
+        .sync_in_pulse          (sync_in_pulse),
         .sample_768k_tick       (sample_768k_tick),
         .lvds_bclk_p            (lvds_bclk_p),
         .lvds_bclk_n            (lvds_bclk_n),

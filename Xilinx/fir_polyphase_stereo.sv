@@ -1,25 +1,40 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-//  FIR_POLYPHASE_STEREO
+//  FIR_POLYPHASE_STEREO  —  XCVU13P single-FPGA stereo design
 //
 //  Stereo wrapper around two fir_polyphase_interpolator instances (L and R).
-//  The 256 coefficient BRAMs are owned HERE and shared between both channels:
-//    - Port A : bank-load writes from coef_bank_loader (one MAC at a time)
-//    - Port B : audio-rate reads, broadcast to both L and R MACs each cycle
 //
-//  This halves BRAM usage vs the prior per-channel design (256 instead of 512
-//  RAMB36E2 for coefficients), making the design fit on the AU25P.
+//  Coefficient storage: URAM288 (UltraRAM), 2 MACs packed per URAM.
+//  URAM288 SDP mode: 4096 × 72-bit.
+//  Layout per URAM (pair of MACs, indexed u = m/2):
+//    Bits [17: 0] = MAC(2u+0) Bank A coef  (18-bit signed)
+//    Bits [35:18] = MAC(2u+0) Bank B coef  (18-bit signed)
+//    Bits [53:36] = MAC(2u+1) Bank A coef  (18-bit signed)
+//    Bits [71:54] = MAC(2u+1) Bank B coef  (18-bit signed)
+//  Address [11:0]: lower COEF_DEPTH addresses = coef index (0..COEF_DEPTH-1).
 //
-//  Both channels share the same coef_addr (driven by the L interpolator's
-//  master_coef_addr -- the R interpolator is lockstep-identical since both
-//  receive the same new_sample_valid and rst_n).
+//  Write: coef_bank_loader supplies (coef_wmac, coef_waddr, coef_wdata, bank_load_target).
+//         Address into URAM = coef_waddr. URAM index = coef_wmac/2. Lane = coef_wmac[0].
+//         WEN[7:0] selects the 9-bit byte lanes for the target MAC+bank within the 72-bit word.
+//
+//  Read:  coef_addr driven by L interpolator (R lockstep identical).
+//         2-cycle registered URAM read latency (OUTPUT_REG=1).
+//         bank_select mux picks Bank A or Bank B slice from registered output.
+//
+//  Resource usage:
+//    NUM_MACS=1024: 512 URAMs (41% of 1,250)  — 1M taps/ch
+//    NUM_MACS=2048: 1024 URAMs (82% of 1,250) — 2M taps/ch
+//
+//  Both channels share the same coef array (coefficient sets are channel-independent
+//  for a symmetric linear-phase prototype filter).
 // =============================================================================
 module fir_polyphase_stereo #(
-    parameter int NUM_MACS   = 128,
-    parameter int DATA_WIDTH = 24,
-    parameter int COEF_WIDTH = 18,
-    parameter int ACC_WIDTH  = 48
+    parameter int NUM_MACS       = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int TAPS_PER_PHASE = 64,    // 16 phases × 64 = 1024 coefs/MAC
+    parameter int DATA_WIDTH     = 24,
+    parameter int COEF_WIDTH     = 18,
+    parameter int ACC_WIDTH      = 48
 )(
     input  logic                          clk,
     input  logic                          rst_n,
@@ -35,182 +50,194 @@ module fir_polyphase_stereo #(
     output logic signed [ACC_WIDTH-1:0]   interpolated_r,
     output logic                          interpolated_r_valid,
 
-    // Coefficient write bus (from coef_bank_loader)
-    input  logic                          coef_we,
-    input  logic [11:0]                   coef_waddr,
-    input  logic signed [COEF_WIDTH-1:0]  coef_wdata,
-    input  logic [6:0]                    coef_wmac,
+    // Coefficient write bus (from coef_bank_loader, dsp_clk domain)
+    input  logic                               coef_we,
+    input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,  // 10 bits for COEF_DEPTH=1024
+    input  logic signed [COEF_WIDTH-1:0]       coef_wdata,
+    input  logic [$clog2(NUM_MACS)-1:0]        coef_wmac,     // Which MAC to write
 
     // Dual-bank gapless switching control
-    input  logic                          bank_select,      // 0=Bank A (active), 1=Bank B (shadow)
-    input  logic                          bank_load_target    // 0=Load Bank A, 1=Load Bank B (async to bank_select)
+    input  logic                          bank_select,       // 0=Bank A active, 1=Bank B active
+    input  logic                          bank_load_target   // 0=write Bank A, 1=write Bank B
 );
 
     // -------------------------------------------------------------------------
-    //  Dual-Bank Coefficient Architecture for Gapless Switching
-    //
-    //  256 BRAMs total: one RAMB36E2 per MAC, address-interleaved dual-bank.
-    //    - Bank A: addresses [0..2047]   (bank_load_target=0 / bank_select=0)
-    //    - Bank B: addresses [2048..4095] (bank_load_target=1 / bank_select=1)
-    //    - Write port: coef_bank_loader selects bank via MSB of write address
-    //    - Read port:  bank_select MSB chooses active bank each cycle
-    //
-    //  Gapless switch: bank_select instantly redirects read address MSB.
-    //
-    //  Inferred as RAMB36E2 SDP by Vivado: depth=4096, width=18 per MAC.
+    //  Parameters and local constants
     // -------------------------------------------------------------------------
+    localparam int COEF_DEPTH  = 16 * TAPS_PER_PHASE;  // 1024 for TAPS_PER_PHASE=64
+    localparam int NUM_URAMS   = NUM_MACS / 2;          // 2 MACs packed per URAM288
+    // URAM288 SDP: 4096 × 72-bit. We only use COEF_DEPTH addresses (lower 1024 of 4096).
+    localparam int URAM_AW     = 12;   // URAM address is always 12-bit (4096 deep)
+    localparam int URAM_DW     = 72;   // URAM data width in SDP mode
 
-    // Write-bus pipeline register (fanout relief to 256 BRAMs)
-    (* max_fanout = 32 *) logic [11:0]                  coef_waddr_r;
-    (* max_fanout = 32 *) logic signed [COEF_WIDTH-1:0] coef_wdata_r;
-    (* max_fanout = 32 *) logic                         bank_load_target_q;
-
-    // Pre-decoded one-hot WEA per MAC: registered to eliminate the high-fanout
-    // LUT decode tree (coef_wmac_r == 8'(m)) on the critical path to BRAM WEA.
-    // Each bit drives exactly one BRAM's WEA — fanout=1 per bit, zero long routes.
-    (* max_fanout = 1 *) logic [NUM_MACS-1:0] mac_we_oh;   // one-hot, Bank A
-    (* max_fanout = 1 *) logic [NUM_MACS-1:0] mac_we_oh_b; // one-hot, Bank B
+    // -------------------------------------------------------------------------
+    //  Write-bus pipeline registers (1-cycle register for fanout relief)
+    //  Registered into URAM write port next cycle.
+    // -------------------------------------------------------------------------
+    (* max_fanout = 32 *) logic [URAM_AW-1:0]              coef_waddr_r;
+    (* max_fanout = 32 *) logic signed [COEF_WIDTH-1:0]    coef_wdata_r;
+    (* max_fanout = 32 *) logic                            bank_load_target_r;
+    (* max_fanout = 32 *) logic [$clog2(NUM_MACS)-1:0]     coef_wmac_r;
+    (* max_fanout = 32 *) logic                            coef_we_r;
 
     always_ff @(posedge clk) begin
-        coef_waddr_r        <= coef_waddr;
+        coef_waddr_r        <= URAM_AW'(coef_waddr);
         coef_wdata_r        <= coef_wdata;
-        bank_load_target_q  <= bank_load_target;
-        for (int i = 0; i < NUM_MACS; i++) begin
-            mac_we_oh[i]   <= coef_we && !bank_load_target && (coef_wmac == 7'(i));
-            mac_we_oh_b[i] <= coef_we &&  bank_load_target && (coef_wmac == 7'(i));
-        end
+        bank_load_target_r  <= bank_load_target;
+        coef_wmac_r         <= coef_wmac;
+        coef_we_r           <= coef_we;
     end
-    
-    // synthesis translate_off
-    // DEBUG: Trace coefficient writes and verify readback
-    int dbg_write_cnt = 0;
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            dbg_write_cnt <= 0;
-        end else if (coef_we) begin
-            dbg_write_cnt <= dbg_write_cnt + 1;
-`ifdef SIM_DEBUG
-            $display("[COEF_DBG @%0t] we=1 wmac=%0d waddr=%0d wdata=%0d target=%0b mac0_we=%0b wcnt=%0d",
-                $time, coef_wmac, coef_waddr, coef_wdata, bank_load_target, mac_we_oh[0], dbg_write_cnt);
-`endif
-        end else if (!coef_we && dbg_write_cnt > 0 && dbg_write_cnt < 20) begin
-            dbg_write_cnt <= dbg_write_cnt + 1;
-`ifdef SIM_DEBUG
-            if (coef_addr == 0)
-                $display("[COEF_CHECK @%0t] After write: addr=0 coef_out[0]=%0d", $time, coef_out[0]);
-`endif
-        end
-    end
-    
-    // NEGEDGE debug to verify combinational mac_we_oh settles correctly
-    always_ff @(negedge clk) begin
-`ifdef SIM_DEBUG
-        if (rst_n && coef_we && coef_wmac == 0)
-            $display("[WE_NEGEDGE @%0t] coef_we=%0b wmac=%0d mac0_we=%0b (should be 1)",
-                $time, coef_we, coef_wmac, mac_we_oh[0]);
-`endif
-    end
-    // synthesis translate_on
 
-    // Coefficient address from L interpolator (R is lockstep identical)
-    logic [11:0] coef_addr;
-    
-    // Muxed coefficient output to FIR engines
+    // -------------------------------------------------------------------------
+    //  Coefficient address from L interpolator (R is lockstep identical)
+    // -------------------------------------------------------------------------
+    logic [$clog2(COEF_DEPTH)-1:0] coef_addr;
+
+    // -------------------------------------------------------------------------
+    //  Muxed coefficient output to FIR engines (one 18-bit value per MAC per cycle)
+    // -------------------------------------------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_out [0:NUM_MACS-1];
 
-    genvar m;
+    // -------------------------------------------------------------------------
+    //  URAM288 coefficient storage — NUM_URAMS instances, 2 MACs per URAM
+    //
+    //  72-bit word layout:
+    //    [17: 0] = MAC(even) Bank A
+    //    [35:18] = MAC(even) Bank B
+    //    [53:36] = MAC(odd)  Bank A
+    //    [71:54] = MAC(odd)  Bank B
+    //
+    //  WEN[7:0]: each bit gates 9 bits of the 72-bit word (UG573):
+    //    WEN[0] → bits[ 8: 0],  WEN[1] → bits[17: 9]  → MAC(even) Bank A [17:0]
+    //    WEN[2] → bits[26:18],  WEN[3] → bits[35:27]  → MAC(even) Bank B [35:18]
+    //    WEN[4] → bits[44:36],  WEN[5] → bits[53:45]  → MAC(odd)  Bank A [53:36]
+    //    WEN[6] → bits[62:54],  WEN[7] → bits[71:63]  → MAC(odd)  Bank B [71:54]
+    //
+    //  URAM read latency: 2 cycles (IREG_PRE=1, OREG=1).
+    //  bank_select mux applied after URAM output register.
+    // -------------------------------------------------------------------------
+    genvar u;
     generate
-        for (m = 0; m < NUM_MACS; m++) begin : gen_dual_coef_bram
+        for (u = 0; u < NUM_URAMS; u++) begin : gen_uram_coef
 
-            // Explicit RAMB36E2: 36-bit wide x 2048 deep SDP.
-            // Bank A coef in bits [17:0],  Bank B coef in bits [35:18].
-            // Write port (A): WE[1:0]=1 writes Bank A half only (bits [17:0])
-            //                 WE[3:2]=1 writes Bank B half only (bits [35:18])
-            // Read  port (B): 36-bit registered read; bank_select mux picks half.
-            // One RAMB36E2 per MAC = 256 total (vs 512 with two inferred BRAMs).
+            // Determine if this URAM is being written this cycle
+            // coef_wmac_r[0]=0 → even MAC (lower lane), [0]=1 → odd MAC (upper lane)
+            wire uram_sel    = (coef_wmac_r[$clog2(NUM_MACS)-1:1] == $clog2(NUM_URAMS)'(u));
+            wire uram_we     = coef_we_r && uram_sel;
+            wire lane_odd    = coef_wmac_r[0];  // 0=even MAC (lower 36b), 1=odd MAC (upper 36b)
 
-            // RAMB36E2 SDP 36-bit layout (per UG974):
-            //   DIADI[31:0] + DIPADIP[3:0] = 36 bits total
-            //   WEAWEL[n] gates {DIPADIP[n], DIADI[9n+8 : 9n]} (9 bits each)
-            //   WE[1:0] → lower 18 bits: {DIPADIP[1:0], DIADI[15:0]}
-            //   WE[3:2] → upper 18 bits: {DIPADIP[3:2], DIADI[31:16]}
-            //
-            // We map 18-bit coefficients using only DIADI (no parity bits needed):
-            //   Bank A: coef[17:0] → DIADI[17:0]  (WE[1:0], parity DIPADIP[1:0]=0)
-            //   Bank B: coef[17:0] → DIADI[31:14] (WE[3:2], parity DIPADIP[3:2]=0)
-            // Note: DIADI[13:0] overlap is fine — WEs gate independently per half.
+            // WEN[7:0]: select the correct 18-bit field within the 72-bit word
+            // Bank A = lower 18b of each 36b lane, Bank B = upper 18b
+            // Even MAC: lanes [1:0]=Bank A, [3:2]=Bank B
+            // Odd  MAC: lanes [5:4]=Bank A, [7:6]=Bank B
+            // Each WEN bit gates 9 bits; 18-bit coef needs 2 WEN bits asserted.
+            wire [7:0] uram_wen;
+            assign uram_wen = !uram_we ? 8'h00 :
+                              (!lane_odd && !bank_load_target_r) ? 8'h03 :  // even, Bank A
+                              (!lane_odd &&  bank_load_target_r) ? 8'h0C :  // even, Bank B
+                              ( lane_odd && !bank_load_target_r) ? 8'h30 :  // odd,  Bank A
+                                                                   8'hC0;   // odd,  Bank B
 
-            // Inferred simple dual-port BRAM for simulation (4096 deep: 2 banks of 2048)
-            (* ram_style = "block" *) logic [31:0] bram_mem [0:4095];
-            logic [31:0] rdata_do;
-            
-            // Initialize BRAM to 0
-            initial begin
-                for (int i = 0; i < 4096; i++) begin
-                    bram_mem[i] = 32'h0;
-                end
-            end
-            
-            // Write port - use full 32-bit assignments to avoid partial select issues
-            always_ff @(posedge clk) begin
-                if (mac_we_oh[m]) begin
-                    bram_mem[coef_waddr_r] <= {14'b0, coef_wdata_r};
-                end
-                if (mac_we_oh_b[m]) begin
-                    bram_mem[coef_waddr_r] <= {coef_wdata_r, 14'b0};
-                end
-            end
-            
-            // Read port with 2-cycle registered output to match RAMB36E2 DOB_REG=1
-            // Stage 1: BRAM array output register
-            // Stage 2: DOB_REG output register
-            logic [31:0] rdata_do_stage1;
-            always_ff @(posedge clk) begin
-                rdata_do_stage1 <= bram_mem[coef_addr];
-                rdata_do        <= rdata_do_stage1;
-            end
+            // Write data: place coef_wdata_r into the correct 18-bit lane of the 72-bit word.
+            // Other lanes are don't-care since WEN gates them.
+            wire [URAM_DW-1:0] uram_din;
+            assign uram_din = {coef_wdata_r, coef_wdata_r, coef_wdata_r, coef_wdata_r};
 
-            // Bank select mux on registered read output (DOB_REG=1, 2-cycle latency)
-            assign coef_out[m] = bank_select
-                                 ? signed'(rdata_do[31:14])   // Bank B
-                                 : signed'(rdata_do[17:0]);   // Bank A
-                                 
+            // URAM288 read data (2-cycle latency)
+            wire [URAM_DW-1:0] uram_dout;
+
             // synthesis translate_off
-            // DEBUG: Trace coef_out[0] and coef_addr during active FIR sweeps
-            if (m == 0) begin : gen_bram_dbg
-                int dbg_sweep_cnt = 0;
-                logic dbg_coef_nonzero_seen = 0;
-                always_ff @(posedge clk) begin
-                    if (!rst_n) begin
-                        dbg_sweep_cnt    <= 0;
-                        dbg_coef_nonzero_seen <= 0;
-                    end else begin
-                        // Trace every write to MAC[0]
-`ifdef SIM_DEBUG
-                        if (mac_we_oh[m] || mac_we_oh_b[m])
-                            $display("[BRAM_WRITE @%0t] addr=%0d wdata_r=%0h we_a=%0b we_b=%0b",
-                                $time, coef_waddr_r, coef_wdata_r, mac_we_oh[m], mac_we_oh_b[m]);
-`endif
-                        // Track when coef_addr wraps to 0 (start of sweep)
-                        if (coef_addr == 0) begin
-                            dbg_sweep_cnt <= dbg_sweep_cnt + 1;
-`ifdef SIM_DEBUG
-                            $display("[SWEEP_START @%0t] sweep=%0d bram_mem[0]=%0h rdata_do_s1=%0h rdata_do=%0h coef_out=%0d",
-                                $time, dbg_sweep_cnt, bram_mem[0], rdata_do_stage1, rdata_do, coef_out[m]);
-`endif
-                        end
-                        // First time coef_out[0] goes non-zero
-                        if (coef_out[m] != 0 && !dbg_coef_nonzero_seen) begin
-                            dbg_coef_nonzero_seen <= 1;
-`ifdef SIM_DEBUG
-                            $display("[COEF_NONZERO @%0t] coef_addr=%0d coef_out=%0d rdata_do=%0h",
-                                $time, coef_addr, coef_out[m], rdata_do);
-`endif
-                        end
+            // Behavioral model for simulation (Vivado XSim doesn't have URAM288 primitive)
+            (* ram_style = "ultra" *) logic [URAM_DW-1:0] uram_mem [0:4095];
+            logic [URAM_DW-1:0] uram_rd_s1, uram_rd_s2;
+
+            initial begin
+                for (int i = 0; i < 4096; i++) uram_mem[i] = '0;
+            end
+
+            always_ff @(posedge clk) begin
+                if (uram_we) begin
+                    // Byte-enable write: only update enabled 9-bit groups
+                    for (int b = 0; b < 8; b++) begin
+                        if (uram_wen[b])
+                            uram_mem[coef_waddr_r][b*9 +: 9] <= uram_din[b*9 +: 9];
                     end
                 end
+                uram_rd_s1 <= uram_mem[URAM_AW'(coef_addr)];
+                uram_rd_s2 <= uram_rd_s1;
             end
+
+            assign uram_dout = uram_rd_s2;
             // synthesis translate_on
+
+            // synthesis translate_off is above — for synthesis the URAM288 primitive is used below
+            // synthesis translate_on
+
+`ifndef SYNTHESIS
+            // simulation path already handled above via uram_dout
+`else
+            // ----------------------------------------------------------------
+            //  Synthesis: explicit URAM288 primitive instantiation
+            //  UG974 / PG-Xilinx UltraRAM primitive
+            // ----------------------------------------------------------------
+            URAM288 #(
+                .OREG_A             ("FALSE"),  // No output reg on write port (write-only)
+                .OREG_B             ("TRUE"),   // Output register on read port (1 extra cycle)
+                .IREG_PRE_A         ("FALSE"),
+                .IREG_PRE_B         ("TRUE"),   // Input addr register (total 2-cycle read latency)
+                .AUTO_SLEEP_LATENCY (8),
+                .AVG_CONS_INACTIVE_CYCLES(10),
+                .BWE_MODE_A         ("PARITY_INTERLEAVED"),
+                .BWE_MODE_B         ("PARITY_INTERLEAVED"),
+                .EN_AUTO_SLEEP_MODE ("FALSE"),
+                .EN_ECC_RD_A        ("FALSE"),
+                .EN_ECC_RD_B        ("FALSE"),
+                .EN_ECC_WR_A        ("FALSE"),
+                .EN_ECC_WR_B        ("FALSE"),
+                .INIT_VALUE         (72'h000000000000000000),
+                .RST_MODE_A         ("SYNC"),
+                .RST_MODE_B         ("SYNC"),
+                .SELF_ADDR_A        (11'h000),
+                .SELF_ADDR_B        (11'h000),
+                .SELF_MASK_A        (11'h7ff),
+                .SELF_MASK_B        (11'h7ff),
+                .USE_EXT_CE_A       ("FALSE"),
+                .USE_EXT_CE_B       ("FALSE")
+            ) u_uram (
+                // Port A — Write only (coefficient load)
+                .ADDRA      (URAM_AW'(coef_waddr_r)),
+                .DINA       (uram_din),
+                .BWEa       (uram_wen),
+                .ENA        (uram_we),
+                .RDB_WR_A   (1'b1),              // 1=write mode
+                .DOUTA      (),                  // unused
+                .SLEEP      (1'b0),
+                .RSTA       (1'b0),
+
+                // Port B — Read only (coefficient sweep)
+                .ADDRB      (URAM_AW'(coef_addr)),
+                .DINB       ('0),
+                .BWEb       (8'hFF),
+                .ENB        (1'b1),
+                .RDB_WR_B   (1'b0),              // 0=read mode
+                .DOUTB      (uram_dout),
+                .RSTB       (!rst_n),
+
+                .OREG_CE_A  (1'b1),
+                .OREG_CE_B  (1'b1),
+                .CLK        (clk)
+            );
+`endif
+
+            // Extract coef_out for even and odd MAC from registered URAM output
+            // bank_select mux picks Bank A or Bank B slice
+            assign coef_out[2*u]   = bank_select
+                                     ? signed'(uram_dout[35:18])  // even MAC, Bank B
+                                     : signed'(uram_dout[17:0]);  // even MAC, Bank A
+
+            assign coef_out[2*u+1] = bank_select
+                                     ? signed'(uram_dout[71:54])  // odd MAC, Bank B
+                                     : signed'(uram_dout[53:36]); // odd MAC, Bank A
 
         end
     endgenerate
@@ -220,10 +247,11 @@ module fir_polyphase_stereo #(
     //  Left channel interpolator
     // -------------------------------------------------------------------------
     fir_polyphase_interpolator #(
-        .NUM_MACS   (NUM_MACS),
-        .DATA_WIDTH (DATA_WIDTH),
-        .COEF_WIDTH (COEF_WIDTH),
-        .ACC_WIDTH  (ACC_WIDTH)
+        .NUM_MACS       (NUM_MACS),
+        .TAPS_PER_PHASE (TAPS_PER_PHASE),
+        .DATA_WIDTH     (DATA_WIDTH),
+        .COEF_WIDTH     (COEF_WIDTH),
+        .ACC_WIDTH      (ACC_WIDTH)
     ) u_l_fir (
         .clk                (clk),
         .rst_n              (rst_n),
@@ -240,13 +268,14 @@ module fir_polyphase_stereo #(
     //  coef_in is the same coef_out[] array -- shared BRAMs.
     //  coef_addr_out is ignored (lockstep with L).
     // -------------------------------------------------------------------------
-    logic [11:0] coef_addr_r_unused;
+    logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_addr_r_unused;
 
     fir_polyphase_interpolator #(
-        .NUM_MACS   (NUM_MACS),
-        .DATA_WIDTH (DATA_WIDTH),
-        .COEF_WIDTH (COEF_WIDTH),
-        .ACC_WIDTH  (ACC_WIDTH)
+        .NUM_MACS       (NUM_MACS),
+        .TAPS_PER_PHASE (TAPS_PER_PHASE),
+        .DATA_WIDTH     (DATA_WIDTH),
+        .COEF_WIDTH     (COEF_WIDTH),
+        .ACC_WIDTH      (ACC_WIDTH)
     ) u_r_fir (
         .clk                (clk),
         .rst_n              (rst_n),

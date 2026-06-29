@@ -233,10 +233,10 @@ set_clock_groups -physically_exclusive -group [get_clocks -include_generated_clo
 # has 3.35ns of pure routing delay — crossing the entire chip height.
 # Constraining both modules to the same clock region eliminates this route.
 # Expected improvement: ~2ns slack gain (0.397ns -> ~2.4ns)
-create_pblock pblock_coef_fir
-add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_coef_subsys]
-add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_dsp_core/u_stereo_fir]
-resize_pblock [get_pblocks pblock_coef_fir] -add {CLOCKREGION_X1Y1:CLOCKREGION_X1Y2}
+#create_pblock pblock_coef_fir
+#add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_coef_subsys]
+#add_cells_to_pblock [get_pblocks pblock_coef_fir] [get_cells u_dsp_core/u_mono_fir]
+#resize_pblock [get_pblocks pblock_coef_fir] -add {CLOCKREGION_X1Y1:CLOCKREGION_X1Y2}
 
 # 9. PACKAGE PIN ASSIGNMENTS
 #
@@ -346,3 +346,21 @@ set_property IOSTANDARD POD12_DCI   [get_ports "ddr4_dm_dbi_n[*]"]
 set_property IOSTANDARD POD12_DCI   [get_ports "ddr4_dq[*]"]
 set_property IOSTANDARD LVCMOS12    [get_ports "ddr4_reset_n"]
 
+# =============================================================================
+# 6. INTER-FPGA FRAME SYNC (LVDS)
+#    Both TX and RX pins instantiated on every board; role register selects which
+#    is active. Pin assignments are TBD — update with actual PCB assignments.
+# =============================================================================
+set_property IOSTANDARD LVDS [get_ports frame_sync_p]
+set_property IOSTANDARD LVDS [get_ports frame_sync_n]
+set_property IOSTANDARD LVDS [get_ports frame_sync_in_p]
+set_property IOSTANDARD LVDS [get_ports frame_sync_in_n]
+set_property DIFF_TERM TRUE  [get_ports frame_sync_in_p]
+
+# 48 kHz async input — sever timing on the 2-FF CDC first stage.
+set_false_path -to [get_cells -hierarchical -filter {NAME =~ *u_fpga_sync/sync_meta_reg*}]
+
+# Role config registers are written once at boot (clk_49m) and consumed
+# statically in dsp_clk domain — no synchroniser needed, use false-path.
+set_false_path -from [get_cells -hierarchical -filter {NAME =~ *u_role_cfg/channel_sel_reg*}]
+set_false_path -from [get_cells -hierarchical -filter {NAME =~ *u_role_cfg/frame_master_reg*}]

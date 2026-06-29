@@ -32,9 +32,9 @@ module tb_coef_bank_loader;
     // -------------------------------------------------------------------------
     //  Parameters matching the DUT (keep in sync with coef_bank_loader.sv)
     // -------------------------------------------------------------------------
-    localparam int NUM_MACS          = 128;
+    localparam int NUM_MACS          = 256;   // Scaled down for simulation (production=4096)
     localparam int COEF_WIDTH        = 18;
-    localparam int COEF_DEPTH        = 4096;
+    localparam int COEF_DEPTH        = 1024;  // 16 phases * 64 taps/phase
     localparam int BANK_BITS         = 4;
     localparam int AXI_DATA_WIDTH    = 128;
     localparam int AXI_ADDR_WIDTH    = 32;
@@ -80,9 +80,9 @@ module tb_coef_bank_loader;
     logic                         m_axi_rready;
 
     logic                         coef_we;
-    logic [11:0]                  coef_waddr;
+    logic [10:0]                  coef_waddr;
     logic signed [COEF_WIDTH-1:0] coef_wdata;
-    logic [6:0]                   coef_wmac;
+    logic [7:0]                   coef_wmac;
 
     // -------------------------------------------------------------------------
     //  DUT instantiation

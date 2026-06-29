@@ -19,9 +19,9 @@ module tb_system_ddr4_to_fir;
     // -------------------------------------------------------------------------
     //  Parameters (must match DUTs)
     //  -------------------------------------------------------------------------
-    localparam int NUM_MACS       = 128;
+    localparam int NUM_MACS       = 256;   // Scaled down for simulation (production=4096)
     localparam int COEF_WIDTH     = 18;
-    localparam int COEF_DEPTH     = 4096;
+    localparam int COEF_DEPTH     = 1024;  // 16 phases * 64 taps/phase
     localparam int BANK_BITS      = 4;
     localparam int AXI_DATA_WIDTH = 128;
     localparam int AXI_ADDR_WIDTH = 32;
@@ -75,9 +75,9 @@ module tb_system_ddr4_to_fir;
     //  Coefficient Write Bus (dsp_clk domain, from coef_subsys)
     //  -------------------------------------------------------------------------
     logic                      coef_we;
-    logic [11:0]               coef_waddr;
+    logic [10:0]               coef_waddr;
     logic signed [COEF_WIDTH-1:0] coef_wdata;
-    logic [6:0]                coef_wmac;
+    logic [7:0]                coef_wmac;
     
     // -------------------------------------------------------------------------
     //  Bank Control (dsp_clk domain)
@@ -355,16 +355,16 @@ module tb_system_ddr4_to_fir;
     // FIR diagnostics — log every new_sample pulse and every interpolated_valid
     always @(posedge dsp_clk) begin
         if (new_sample)
-            $display("[FIR @%0t] new_sample pulsed, tap_ctr=%0d phase_ctr=%0d",
+            $display("[FIR @%0t] new_sample pulsed, tap_ctr=%0d mca=%0d",
                 $time,
                 u_stereo_fir.u_l_fir.tap_counter,
-                u_stereo_fir.u_l_fir.phase_counter);
+                u_stereo_fir.u_l_fir.master_coef_addr);
     end
     always @(posedge dsp_clk) begin
         if (fir_l_valid)
-            $display("[FIR @%0t] interpolated_valid! phase=%0d out=%0h coef0=%0h bram_rdo=%0h bank_sel=%0b",
+            $display("[FIR @%0t] interpolated_valid! mca=%0d out=%0h coef0=%0h bram_rdo=%0h bank_sel=%0b",
                 $time,
-                u_stereo_fir.u_l_fir.phase_counter,
+                u_stereo_fir.u_l_fir.master_coef_addr,
                 fir_l_out,
                 u_stereo_fir.coef_out[0],
                 u_stereo_fir.gen_dual_coef_bram[0].rdata_do,
@@ -377,10 +377,10 @@ module tb_system_ddr4_to_fir;
     end
     always @(posedge dsp_clk) begin
         if (fir_mon_en && (u_stereo_fir.u_l_fir.tap_counter % 7'd50 == 7'd49))
-            $display("[FIR @%0t] tap_ctr=%0d phase_ctr=%0d nsv=%0b",
+            $display("[FIR @%0t] tap_ctr=%0d mca=%0d nsv=%0b",
                 $time,
                 u_stereo_fir.u_l_fir.tap_counter,
-                u_stereo_fir.u_l_fir.phase_counter,
+                u_stereo_fir.u_l_fir.master_coef_addr,
                 new_sample);
     end
 
@@ -538,7 +538,7 @@ module tb_system_ddr4_to_fir;
     // Waveform dump
     initial begin
         $dumpfile("tb_system_ddr4_to_fir.vcd");
-        $dumpvars(0, tb_system_ddr4_to_fir);
+        $dumpvars(1, tb_system_ddr4_to_fir);  // depth=1: top-level signals only (depth=0 causes ~2GB VCD on 256-MAC design)
     end
 
 endmodule

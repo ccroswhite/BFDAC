@@ -3,19 +3,20 @@ fir_rtl_model.py — Cycle-accurate Python model of the redesigned
 fir_polyphase_interpolator.sv (true polyphase interpolation).
 
 Architecture modelled:
-  - Audio preload: NUM_MACS+1 cycles fill audio_shreg[m]=x[n-m] from audio_bram.
+  - Audio preload: NUM_MACS+1=257 cycles fill audio_shreg[m]=x[n-m] from audio_bram.
   - Coef sweep: 2048 cycles (16 phases x 128 slots), each MAC gets static audio_shreg[m].
-  - MAC pipeline per MAC m:
+  - MAC pipeline per MAC m (NO cascade PCIN/PCOUT):
       Stage 1: a1    <= audio_shreg[m]          (1 reg)
       Stage 2: adreg <= a1 + a1  (= 2*x[n-m])  (1 reg)
                b1    <= coef_out_1              (1 reg)
       Stage 3: b2    <= b1                      (1 reg)
       Stage 4: mreg  <= adreg * b2              (1 reg)
-      Stage 5: creg  <= pcin                    (1 reg, CREG)
-               preg  <= mreg + creg             (1 reg, reset to mreg on phase_sync_d5)
-  - phase_sync propagates along cascade: 1 register per hop.
-    phase_sync_d5 inside MAC resets PREG at start of each phase window.
-  - shadow_acc captures cascade_acc[NUM_MACS] per phase window.
+      Stage 5: preg  <= preg + mreg             (1 reg, reset to mreg on phase_sync_d5)
+  - phase_sync_d5 inside MAC resets PREG at start of each phase window.
+  - 8-level pipelined binary adder tree sums all 256 preg outputs.
+    Tree latency = 8 cycles after phase window ends.
+  - Shadow trigger: ps_d1 delayed 14 cycles (5 MAC + 8 tree + 1 margin).
+    Output = tree_sum captured at shadow trigger.
 
 Usage:
   python fir_rtl_model.py [--impulse | --audio fir_audio_in.txt] --coefs fir_coefs.txt
@@ -26,15 +27,16 @@ import sys, os, math, argparse
 # ============================================================
 # RTL Constants (must match RTL parameters)
 # ============================================================
-NUM_MACS     = 128
+NUM_MACS     = 256
 DATA_WIDTH   = 24
 COEF_WIDTH   = 18
 ACC_WIDTH    = 48
-TAPS_WIN     = 256   # coef_addr slots per phase window
+TAPS_WIN     = 128   # coef_addr slots per phase window
 NUM_PHASES   = 16
-SWEEP_LEN    = NUM_PHASES * TAPS_WIN   # 4096
-PRELOAD_LEN  = NUM_MACS + 1           # cycles for audio preload SM
-SHADOW_DELAY = 5 + (NUM_MACS - 1) + 1 # 133: MAC pipe(5) + cascade hops(127) + 1
+SWEEP_LEN    = NUM_PHASES * TAPS_WIN   # 2048
+PRELOAD_LEN  = NUM_MACS + 1           # 257 cycles for audio preload SM
+TREE_LEVELS  = 8                       # log2(256) = 8
+SHADOW_DELAY = 15  # matches RTL localparam 7+TREE_LEVELS(8)=15
 
 def sign(v, w):
     """Return signed interpretation of v in w-bit two's complement."""
@@ -87,7 +89,7 @@ class Reg:
         self.val = v
 
 # ============================================================
-# MAC Engine — models polyphase_mac_engine.sv (redesigned)
+# MAC Engine — models polyphase_mac_engine.sv (adder-tree architecture)
 #
 # Pipeline (all non-blocking, committed at step()):
 #   Stage 1: a1    <= audio_in            (registered audio input)
@@ -96,9 +98,10 @@ class Reg:
 #            b1    <= co1
 #   Stage 3: b2    <= b1
 #   Stage 4: mreg  <= adreg * b2
-#   Stage 5: creg  <= pcin               (CREG)
-#            preg  <= mreg + creg         (PREG; reset to mreg on ps_d5)
+#   Stage 5: preg  <= preg + mreg         (standalone accumulator, no PCIN)
+#             (reset to mreg on ps_d5)
 #
+# NO pcin/pcout — each MAC is fully independent.
 # phase_sync delay chain: ps1..ps5 (5 stages).
 # ps5 (= phase_sync_d5) resets PREG at the start of each phase window.
 # ============================================================
@@ -106,12 +109,15 @@ class MACEngine:
     def __init__(self, mac_id):
         self.mac_id = mac_id
 
-        # phase_sync delay chain: d1..d5
+        # phase_sync delay chain: d1..d8
         self.ps1 = Reg(1, False)
         self.ps2 = Reg(1, False)
         self.ps3 = Reg(1, False)
         self.ps4 = Reg(1, False)
         self.ps5 = Reg(1, False)
+        self.ps6 = Reg(1, False)
+        self.ps7 = Reg(1, False)
+        self.ps8 = Reg(1, False)
 
         # Audio + coef pipeline
         self.a1    = Reg(DATA_WIDTH)       # stage 1: registered audio_in
@@ -120,20 +126,22 @@ class MACEngine:
         self.b1    = Reg(COEF_WIDTH)       # stage 2
         self.b2    = Reg(COEF_WIDTH)       # stage 3
 
-        # DSP accumulator
+        # DSP accumulator (standalone — no cascade)
         self.mreg  = Reg(ACC_WIDTH)        # stage 4: multiplier
-        self.creg  = Reg(ACC_WIDTH)        # stage 5a: CREG (pcin pipeline)
-        self.preg  = Reg(ACC_WIDTH)        # stage 5b: accumulator / pcout
+        self.preg  = Reg(ACC_WIDTH)        # stage 5: accumulator
 
-    def tick(self, ps_in, coef_in, audio_in, pcin):
+    def tick(self, ps_in, coef_in, audio_in):
         """Schedule all next-state values using current .q() values.
         Does NOT commit — call step() after all MACs have been ticked."""
-        # phase_sync chain
+        # phase_sync chain (8 stages)
         self.ps1.d(ps_in)
         self.ps2.d(self.ps1.q())
         self.ps3.d(self.ps2.q())
         self.ps4.d(self.ps3.q())
         self.ps5.d(self.ps4.q())
+        self.ps6.d(self.ps5.q())
+        self.ps7.d(self.ps6.q())
+        self.ps8.d(self.ps7.q())
 
         # Stage 1
         self.a1.d(audio_in)
@@ -149,21 +157,21 @@ class MACEngine:
         # Stage 4: multiplier
         self.mreg.d(self.adreg.q() * self.b2.q())
 
-        # Stage 5: CREG + PREG
-        self.creg.d(pcin)
-        if self.ps5.q():   # phase_sync_d5 resets accumulator
+        # Stage 5: standalone PREG accumulator
+        if self.ps8.q():   # phase_sync_d8 resets accumulator
             self.preg.d(self.mreg.q())
         else:
-            self.preg.d(self.mreg.q() + self.creg.q())
+            self.preg.d(self.preg.q() + self.mreg.q())
 
     def step(self):
         """Commit all registers."""
         for r in [self.ps1, self.ps2, self.ps3, self.ps4, self.ps5,
+                  self.ps6, self.ps7, self.ps8,
                   self.a1, self.co1, self.adreg, self.b1, self.b2,
-                  self.mreg, self.creg, self.preg]:
+                  self.mreg, self.preg]:
             r.step()
 
-    def pcout(self):
+    def preg_out(self):
         return self.preg.q()
 
 
@@ -217,14 +225,17 @@ class FIRInterpolator:
         # MAC engines
         self.macs = [MACEngine(i) for i in range(NUM_MACS)]
 
-        # Shadow accumulator
-        self.shadow_acc       = 0
+        # Adder tree pipeline: TREE_LEVELS+1 stages (level 0..TREE_LEVELS)
+        # tree_pipe[0] = newest preg snapshot, tree_pipe[TREE_LEVELS] = oldest (output)
+        self.tree_pipe = [[0]*NUM_MACS for _ in range(TREE_LEVELS + 1)]
+
+        # Output
         self.shadow_trig_last = 0
         self.interp_out       = 0
         self.interp_valid     = 0
 
     def _coef(self, mac, addr):
-        return self.bram.get((mac, int(addr) & 0xFFF), 0)
+        return self.bram.get((mac, int(addr) & 0x7FF), 0)
 
     def tick(self, nsv, nsv_data):
         """
@@ -263,7 +274,7 @@ class FIRInterpolator:
             preload_cnt_next = cnt + 1
             # Issue address for next read
             if cnt < NUM_MACS:
-                preload_addr_next = (self.write_ptr - (cnt + 1)) & 0x7FF
+                preload_addr_next = (self.write_ptr - (cnt + 2)) & 0x7FF
             # Write bram_rd (= result of previous address) into shreg
             # At cnt=k (k>=1): bram_rd = audio_bram[write_ptr-(k-1)] = x[n-(k-1)]
             if cnt >= 1:
@@ -302,9 +313,10 @@ class FIRInterpolator:
             done_next  = 0
             mca_next   = 0
             tc_next    = 0
+            ps_next    = 1   # phase_sync at sweep start (resets accum for phase 0)
         elif self.sweep_active:
-            mca_next = (self.master_coef_addr + 1) & 0xFFF
-            tc_next  = (self.tap_counter + 1) & 0xFF
+            mca_next = (self.master_coef_addr + 1) & 0x7FF
+            tc_next  = (self.tap_counter + 1) & 0x7F
             if self.tap_counter == TAPS_WIN - 1:
                 ps_next = 1
             if self.master_coef_addr == SWEEP_LEN - 1:
@@ -324,44 +336,64 @@ class FIRInterpolator:
         shadow_trigger = self.ps_shreg[-1]   # oldest bit = fully delayed
 
         # ================================================================
-        # STEP 2: Tick all MACs using CURRENT state
-        #   coef_in[m]  = coef_out[m]   (current, 2-stage BRAM output)
-        #   audio_in[m] = audio_shreg[m] (static during sweep)
-        #   ps_in       = ps_d1          (broadcast to ALL MACs simultaneously)
-        #   pcin[m]     = pcout of MAC m-1 (= macs[m-1].preg.q())
+        # STEP 2: Tick all MACs (schedule next values) then commit.
+        #   tick() schedules using current .q() values (pre-step).
+        #   step() commits to new .q() values.
+        #   preg_vals is snapshotted AFTER step() — matches RTL where
+        #   preg_out is the registered output visible the same cycle it's
+        #   written (NBA commit before adder tree reads).
         # ================================================================
-        ps_broadcast = self.ps_d1   # same signal to all MACs
-        csc_acc = 0   # cascade_acc[0] = 0
+        ps_broadcast = self.ps_d1
         for m in range(NUM_MACS):
-            coef_in  = self.coef_out[m]
-            audio_in = self.audio_shreg[m]
-            pcin     = csc_acc
-            self.macs[m].tick(ps_broadcast, coef_in, audio_in, pcin)
-            csc_acc = self.macs[m].pcout()   # current preg (pre-step)
+            self.macs[m].tick(ps_broadcast, self.coef_out[m], self.audio_shreg[m])
+        for mac in self.macs:
+            mac.step()
 
-        cacc_last = csc_acc   # cascade_acc[NUM_MACS]
+        # ================================================================
+        # STEP 3: Adder tree — 8-level pipelined binary sum of preg outputs
+        #   Snapshots post-step preg values (combinatorial input to tree level 0).
+        #   tree_pipe[0] = newest (just computed), tree_pipe[TREE_LEVELS] = oldest.
+        #   tree_pipe[-1] = tree_pipe[TREE_LEVELS] = sum available after 8 reg stages.
+        # ================================================================
+        preg_vals = [self.macs[m].preg_out() for m in range(NUM_MACS)]
+        # Push new level-0 into the front of the pipeline
+        self.tree_pipe = [preg_vals] + self.tree_pipe[:-1]  # shift right
 
-        # Shadow accumulator — trigger on fully-delayed ps_d1 rising edge
+        # Compute tree output: full 8-level reduction of tree_pipe[8]
+        # (tree_pipe[8] is the values that entered 8 cycles ago)
+        def tree_reduce(vals):
+            while len(vals) > 1:
+                nxt = []
+                for i in range(0, len(vals), 2):
+                    nxt.append(vals[i] + (vals[i+1] if i+1 < len(vals) else 0))
+                vals = nxt
+            return vals[0] if vals else 0
+
+        tree_sum_now = tree_reduce(list(self.tree_pipe[-1]))
+
+        # Shadow trigger — rising edge: capture tree_sum as output
         rising = shadow_trigger and not self.shadow_trig_last
         if rising:
             interp_valid_next = 1
-            interp_out_next   = self.shadow_acc
-            shadow_next       = cacc_last
+            interp_out_next   = tree_sum_now
         else:
             interp_valid_next = 0
             interp_out_next   = self.interp_out
-            shadow_next       = self.shadow_acc + cacc_last
+
+        # No shadow_acc needed — tree is combinatorial from preg values
+        shadow_next = 0
 
         # ================================================================
-        # STEP 3: Commit all state
+        # STEP 4: Commit all state
         # ================================================================
+        old_bram_rd = self.bram_rd   # save pre-commit bram_rd (RTL registered value)
         self.write_ptr        = wp_next
         self.bram_rd          = bram_rd_next
         self.state            = state_next
         self.preload_addr     = preload_addr_next
         self.preload_cnt      = preload_cnt_next
         if shreg_wr_idx >= 0:
-            self.audio_shreg[shreg_wr_idx] = self.bram_rd   # current bram_rd (pre-tick, RTL RHS)
+            self.audio_shreg[shreg_wr_idx] = old_bram_rd   # RTL: audio_shreg[k] <= bram_rd (registered)
 
         self.master_coef_addr = mca_next
         self.tap_counter      = tc_next
@@ -373,13 +405,9 @@ class FIRInterpolator:
         self.coef_s1          = coef_s1_next
         self.coef_out         = coef_out_next
         self.ps_shreg         = ps_shreg_next
-        self.shadow_acc       = sign(int(shadow_next) & ((1 << ACC_WIDTH) - 1), ACC_WIDTH)
         self.shadow_trig_last = shadow_trigger
         self.interp_out       = sign(int(interp_out_next) & ((1 << ACC_WIDTH) - 1), ACC_WIDTH)
         self.interp_valid     = interp_valid_next
-
-        for mac in self.macs:
-            mac.step()
 
         return self.interp_out, self.interp_valid
 
