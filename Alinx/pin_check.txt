@@ -1,0 +1,38 @@
+=== clock-capable (L11-L14) pairs per bank ===
+  Bank 64 L11: 2 pins
+  Bank 64 L12: 2 pins
+  Bank 64 L13: 2 pins
+  Bank 64 L14: 2 pins
+  Bank 65 L11: 2 pins
+  Bank 65 L12: 2 pins
+  Bank 65 L13: 2 pins
+  Bank 65 L14: 2 pins
+  Bank 66 L13: 1 pins
+  Bank 66 L14: 2 pins
+  Bank 67 L11: 2 pins
+  Bank 67 L12: 2 pins
+  Bank 67 L13: 2 pins
+  Bank 67 L14: 2 pins
+  Bank 68 L11: 2 pins
+  Bank 68 L12: 2 pins
+  Bank 69 L11: 2 pins
+  Bank 69 L12: 2 pins
+  Bank 69 L13: 2 pins
+  Bank 69 L14: 2 pins
+  Bank 70 L11: 2 pins
+  Bank 70 L12: 2 pins
+  Bank 70 L13: 2 pins
+  Bank 70 L14: 2 pins
+  Bank 71 L11: 2 pins
+  Bank 71 L12: 2 pins
+  Bank 71 L13: 2 pins
+  Bank 71 L14: 2 pins
+=== XDC pin existence check ===
+  R27: A1,B71_L2_N,R27
+  T27: A2,B71_L2_P,T27
+  N28: A4,B71_L5_N,N28
+  R28: A7,B71_L1_N,R28
+  T28: A8,B71_L1_P,T28
+  U28: NOT ON CONNECTORS
+  R29: NOT ON CONNECTORS
+  T29: NOT ON CONNECTORS

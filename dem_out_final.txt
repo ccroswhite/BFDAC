@@ -1,0 +1,32 @@
+signal: 1007.8Hz sine at -1dBFS, 262144 samples at 6.144MHz, mismatch sigma=0.1%, asym=0.0071%
+modulator: 2nd-order 65-level delta-sigma, in-band SNDR of code stream = 133.5 dB
+even-step modulator (33-level): in-band SNDR of code stream = 127.5 dB
+dcode stats: mean|d|=1.00, p99=3, max=3
+scheme                   k_mean  k_p99 k_max |  SNDR_mis |  gl_res2n2  gl_pad  gl_ffwd gl_stack gl_asymOnly
+thermometer (no DEM)        1.0      3    32 |      76.5 |      105.7   126.5    132.4    130.9       132.4
+DWA classic (r=code)       27.7     63    64 |     148.0 |       81.3    87.2     87.3     87.4        87.4
+partial rot r=1             2.3      5    32 |     115.8 |       90.7   118.9    135.5    128.1       135.1
+partial rot r=2             4.0      7    32 |     114.5 |       84.7   111.5    145.4    116.6       143.9
+partial rot r=4             7.9     11    32 |     114.0 |       78.2   105.5    123.3    108.4       122.4
+partial rot r=8            13.8     19    32 |     106.1 |       73.8   106.0    102.0    107.9       101.9
+partial rot r=16           21.8     34    35 |      95.9 |       73.9    95.1     92.3     94.6        92.3
+random subset (dCS-ish)    19.3     38    47 |      99.2 |       81.6    92.8     93.1     93.1        93.2
+random rot r~U[1,8]         8.4     18    32 |     100.6 |       76.1   104.1    111.5    107.4       111.3
+constant-k K=4              4.5      5    32 |     110.9 |       99.5   125.5    137.0    127.8       137.1
+constant-k K=8              8.3      9    32 |     107.7 |      100.2   119.1    120.2    119.7       120.3
+constant-k K=16            14.1     17    32 |     113.8 |       97.7   101.1    101.3    101.3       101.4
+const-k K=4 par-shaped      4.0      5    32 |     113.1 |       88.1   114.9    151.7    120.6       165.4
+const-k K=4 greedy 1st      4.5      5    32 |     118.2 |       99.5   125.5    137.0    127.8       137.1
+const-k K=4 2nd g2=.25      4.5      5    32 |     128.7 |       99.5   125.5    137.0    127.8       137.1
+const-k K=4 2nd g2=.5       4.5      5    32 |     132.6 |       99.5   125.5    137.0    127.8       137.1
+const-k K=4 2nd g2=1        4.5      5    32 |     131.2 |       99.5   125.5    137.0    127.8       137.1
+const-k K=8 2nd g2=.5       8.3      9    32 |     141.9 |      100.2   119.1    120.2    119.7       120.3
+K=4 par+2nd g2=.5           4.0      5    32 |     130.6 |       88.1   114.9    151.7    120.6       165.4
+
+Notes:
+ SNDR_mis     = mismatch-shaping quality (0.1% sigma), higher is better; target >=128dB relative contribution
+ gl_res2n2    = glitch SNDR, reservoir C_sum=2.2n, measured q_pc(k) + asym (cosim9e/10)
+ gl_pad       = wide-linear-range amp + 50mA current padding, NO feedback loop (cosim15)
+ gl_ffwd      = replica feedforward + 100n bus caps + 50mA padding, realistic 40MHz amp (cosim17e)
+ gl_stack     = REALISTIC composed stack: 40MHz amp w/ wide-linear-range input + reg cascode (cosim13b)
+ gl_asymOnly  = asymmetry term alone (flat q_pc): the floor if compression were fully fixed

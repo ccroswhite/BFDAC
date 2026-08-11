@@ -1,0 +1,13 @@
+total lines: 1930
+connectors: Connector J1 | Connector J2 | Connector J3 | Connector J4 | Connector J5 | Connector J6 | Connector J7 | Connector J8
+IO rows: 368
+banks:
+  Bank 64: 51 pins
+  Bank 65: 46 pins
+  Bank 66: 42 pins
+  Bank 67: 51 pins
+  Bank 68: 25 pins
+  Bank 69: 51 pins
+  Bank 70: 51 pins
+  Bank 71: 51 pins
+GC-capable rows: 0

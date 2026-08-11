@@ -1,0 +1,20 @@
+--- BIN 5 (worst HD = max of HD2..HD5) ---
+exact      : SNDR min   91.2 / med  102.2  worstHD best  -120.3 / WORST  -108.2 (seed 8)  clamps 0
+int W18 F24: SNDR min   91.1 / med  102.4  worstHD best  -120.4 / WORST  -108.2 (seed 8)  clamps 0
+int W14 F20: SNDR min   91.1 / med  102.3  worstHD best  -120.1 / WORST  -108.2 (seed 8)  clamps 0
+--- BIN 11 (worst HD = max of HD2..HD5) ---
+exact      : SNDR min   91.0 / med  101.8  worstHD best  -120.3 / WORST  -108.0 (seed 8)  clamps 0
+int W18 F24: SNDR min   91.0 / med  102.3  worstHD best  -120.6 / WORST  -108.0 (seed 8)  clamps 0
+int W14 F20: SNDR min   91.3 / med  102.5  worstHD best  -120.6 / WORST  -108.3 (seed 8)  clamps 0
+--- BIN 17 (worst HD = max of HD2..HD5) ---
+exact      : SNDR min   91.2 / med   91.4  worstHD best  -120.1 / WORST  -108.1 (seed 1)  clamps 0
+int W18 F24: SNDR min   91.1 / med  102.2  worstHD best  -120.6 / WORST  -108.2 (seed 8)  clamps 0
+int W14 F20: SNDR min   91.1 / med  102.4  worstHD best  -120.2 / WORST  -108.0 (seed 8)  clamps 0
+--- BIN 27 (worst HD = max of HD2..HD5) ---
+exact      : SNDR min   90.9 / med  102.3  worstHD best  -119.5 / WORST  -107.0 (seed 8)  clamps 0
+int W18 F24: SNDR min   90.9 / med  102.3  worstHD best  -120.4 / WORST  -107.1 (seed 8)  clamps 0
+int W14 F20: SNDR min   91.0 / med  102.5  worstHD best  -119.9 / WORST  -107.3 (seed 8)  clamps 0
+--- BIN 37 (worst HD = max of HD2..HD5) ---
+exact      : SNDR min   91.1 / med  103.3  worstHD best  -121.3 / WORST  -106.8 (seed 8)  clamps 0
+int W18 F24: SNDR min   91.1 / med  103.5  worstHD best  -120.4 / WORST  -107.6 (seed 8)  clamps 0
+int W14 F20: SNDR min   90.8 / med  103.1  worstHD best  -120.8 / WORST  -106.9 (seed 2)  clamps 0

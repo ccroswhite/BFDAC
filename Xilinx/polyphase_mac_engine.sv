@@ -8,16 +8,21 @@
 //   pipelined binary tree (log2(NUM_MACS) levels, 12 levels for 4096 MACs).
 //   This eliminates the long PCIN/PCOUT routing chain entirely, dramatically improving timing closure.
 //
-// Audio delivery: each MAC receives x[n-m] as a STATIC direct input
-// (audio_in) from the interpolator's audio shift register, which is
-// pre-loaded from the audio BRAM at new_sample_valid.
+// Audio delivery (audio-window redesign, 2026-08-01): each MAC receives a
+// PER-TAP window sample x[n-(TAPS_PER_PHASE*m + t)] on audio_in, CO-TIMED
+// with coef_in (the interpolator pipelines both as 3-cycle paths from the
+// sweep counter). The audio and coefficient operand pipelines inside this
+// module are DEPTH-MATCHED (3 stages each: a1/a2/adreg vs c1/b1/b2) so each
+// product pairs the coefficient with its own sample — the previous 2-vs-3
+// stage skew was harmless with static audio but wrong for per-tap audio.
 //
 // Pipeline timing (from coef_addr being issued at the wrapper):
-//   cycle 0 : coef_addr issued; audio_in valid and stable
+//   cycle 0 : coef_addr issued; window read address in flight
 //   cycle 1 : coef BRAM read latency  (stage 1 inside wrapper)
-//   cycle 2 : coef BRAM DO_REG        (stage 2 inside wrapper) → coef_in valid
+//   cycle 2 : coef BRAM DO_REG        (stage 2 inside wrapper) → coef_in
+//             valid, audio_in (win_q2) valid — co-timed
 //   cycle 3 : dsp_a1 / coef_out_1    (Stage 1 here)
-//   cycle 4 : dsp_b1                  (Stage 2 here)
+//   cycle 4 : dsp_a2 / dsp_b1        (Stage 2 here)
 //   cycle 5 : dsp_adreg / dsp_b2     (Stage 3 here) ← phase_sync_d5 fires
 //   cycle 6 : dsp_mreg               (Stage 4 - multiplier)
 //   cycle 7 : dsp_preg               (Stage 5 - accumulator, output to tree)
@@ -36,7 +41,7 @@ module polyphase_mac_engine #(
     input  logic                          rst_n,
     input  logic                          phase_sync,
     input  logic signed [COEF_WIDTH-1:0]  coef_in,
-    input  logic signed [DATA_WIDTH-1:0]  audio_in,    // x[n-m], static during sweep
+    input  logic signed [DATA_WIDTH-1:0]  audio_in,    // per-tap window sample, co-timed with coef_in
     output logic signed [ACC_WIDTH-1:0]   preg_out     // partial sum → adder tree
 );
 
@@ -45,17 +50,22 @@ module polyphase_mac_engine #(
     //    phase_sync_d5 fires when dsp_adreg and dsp_b2 hold the first
     //    valid product of each phase window.
     // =================================---------------------------------------
-    // phase_sync delay: 2 (BRAM latency) + 5 (MAC stages) + 1 (accumulate before reset) = 8.
-    // This aligns the accumulator reset/load with the first product of the new phase
-    // arriving at PREG (stage 5).
+    // Load-tap accounting (2026-08-01 audio-window bring-up, TB-verified):
+    //   Products of master-sweep cycle T reach PREG at the end of T+8.
+    //   phase_sync received here is the WRAPPER's phase_sync_d1, i.e. already
+    //   high during T_boundary+2. Delayed 6 more (d6, high during T_b+8) it
+    //   gates the load exactly as the NEW phase's first product (master T_b)
+    //   sits in MREG — each accumulation window is then precisely one phase
+    //   (taps 0..TPP-1). Was d8: two cycles late, grouping each output as
+    //   taps [2..17] straddling the phase boundary — masked by the old
+    //   static-audio collapse, exposed by tb_fir_window (bit-exact).
     (* shreg_extract = "no" *) logic phase_sync_d1, phase_sync_d2, phase_sync_d3;
     (* shreg_extract = "no" *) logic phase_sync_d4, phase_sync_d5, phase_sync_d6;
-    (* shreg_extract = "no" *) logic phase_sync_d7, phase_sync_d8;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             {phase_sync_d1, phase_sync_d2, phase_sync_d3, phase_sync_d4,
-             phase_sync_d5, phase_sync_d6, phase_sync_d7, phase_sync_d8} <= '0;
+             phase_sync_d5, phase_sync_d6} <= '0;
         end else begin
             phase_sync_d1 <= phase_sync;
             phase_sync_d2 <= phase_sync_d1;
@@ -63,14 +73,11 @@ module polyphase_mac_engine #(
             phase_sync_d4 <= phase_sync_d3;
             phase_sync_d5 <= phase_sync_d4;
             phase_sync_d6 <= phase_sync_d5;
-            phase_sync_d7 <= phase_sync_d6;
-            phase_sync_d8 <= phase_sync_d7;
         end
     end
 
     // =================================---------------------------------------
-    // 2. STAGE 1: Audio & Coef Registration
-    //    audio_in is stable for the entire sweep — register once.
+    // 2. STAGE 1: Audio & Coef Registration (per-tap, both change every cycle)
     // =================================---------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_out_1;
     logic signed [DATA_WIDTH-1:0] dsp_a1;
@@ -86,31 +93,37 @@ module polyphase_mac_engine #(
     end
 
     // =================================---------------------------------------
-    // 3. STAGE 2: Pre-Adder (ADREG) & Coef Stage 2 (B1)
-    //    Pre-adder doubles: adreg = a1 + a1 = 2*x[n-m]  (matches RTL intent
-    //    of fwd+rev paths both carrying x[n-m]).
+    // 3. STAGE 2: Audio A2 & Coef B1 (DSP48E2 A1→A2 / B1 registers)
     // =================================---------------------------------------
-    logic signed [DATA_WIDTH:0]   dsp_adreg;
+    logic signed [DATA_WIDTH-1:0] dsp_a2;
     logic signed [COEF_WIDTH-1:0] dsp_b1;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            dsp_adreg <= '0;
-            dsp_b1    <= '0;
+            dsp_a2 <= '0;
+            dsp_b1 <= '0;
         end else begin
-            dsp_adreg <= $signed(dsp_a1) + $signed(dsp_a1);
-            dsp_b1    <= coef_out_1;
+            dsp_a2 <= dsp_a1;
+            dsp_b1 <= coef_out_1;
         end
     end
 
     // =================================---------------------------------------
-    // 4. STAGE 3: B2
+    // 4. STAGE 3: Pre-Adder (ADREG) & B2 — operands now depth-matched.
+    //    Pre-adder doubles: adreg = a2 + a2 = 2*x (legacy gain; hook for a
+    //    future symmetric fwd+rev coefficient fold: adreg = x_fwd + x_rev).
     // =================================---------------------------------------
+    logic signed [DATA_WIDTH:0]   dsp_adreg;
     logic signed [COEF_WIDTH-1:0] dsp_b2;
 
     always_ff @(posedge clk) begin
-        if (!rst_n) dsp_b2 <= '0;
-        else        dsp_b2 <= dsp_b1;
+        if (!rst_n) begin
+            dsp_adreg <= '0;
+            dsp_b2    <= '0;
+        end else begin
+            dsp_adreg <= $signed(dsp_a2) + $signed(dsp_a2);
+            dsp_b2    <= dsp_b1;
+        end
     end
 
     // =================================---------------------------------------
@@ -125,7 +138,7 @@ module polyphase_mac_engine #(
 
     // =================================---------------------------------------
     // 6. STAGE 5: DSP48 Accumulator (PREG)
-    //    phase_sync_d5 resets accumulator at start of each phase window.
+    //    phase_sync_d6 loads (resets) the accumulator at each phase boundary.
     //    Standalone accumulation — no cascade input.
     //    Vivado maps as DSP48E2 PREG with ALUMODE=0000 (P = P + M).
     // =================================---------------------------------------
@@ -134,7 +147,7 @@ module polyphase_mac_engine #(
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             dsp_preg <= '0;
-        end else if (phase_sync_d8) begin
+        end else if (phase_sync_d6) begin
             dsp_preg <= dsp_mreg;        // load first product of new phase
         end else begin
             dsp_preg <= dsp_preg + dsp_mreg;  // accumulate
@@ -143,19 +156,27 @@ module polyphase_mac_engine #(
 
     assign preg_out = dsp_preg;
 
-    // synthesis translate_off
-`ifdef SIM_DEBUG
-    int mac0_dbg_cnt = 0;
+`ifdef SIM
+    int dbg_acc_count = 0;   // decl-init: no separate initial block
+    int dbg_phase_num = 0;   // (always_ff forbids a second procedural driver)
     always_ff @(posedge clk) begin
-        if (MAC_ID == 0 && mac0_dbg_cnt < 3) begin
-            if (dsp_b2 != 0) begin
-                $display("[MAC0 @%0t] coef_in=%0d b1=%0d b2=%0d adreg=%0d mreg=%0d preg=%0d ps8=%b",
-                    $time, coef_in, dsp_b1, dsp_b2, dsp_adreg, dsp_mreg, dsp_preg, phase_sync_d8);
-                mac0_dbg_cnt <= mac0_dbg_cnt + 1;
+        if (MAC_ID == 0) begin
+            if (!rst_n) begin
+                dbg_acc_count <= 0;
+                dbg_phase_num <= 0;
+            end else if (phase_sync_d6) begin
+`ifdef SIM_DEBUG
+                if (dbg_acc_count > 0)
+                    $display("[MAC0_DBG] phase %0d finished: %0d taps, preg=0x%0h",
+                             dbg_phase_num, dbg_acc_count, dsp_preg);
+`endif
+                dbg_acc_count <= 1;
+                dbg_phase_num <= dbg_phase_num + 1;
+            end else begin
+                dbg_acc_count <= dbg_acc_count + 1;
             end
         end
     end
-`endif
-    // synthesis translate_on
+`endif // SIM
 
 endmodule

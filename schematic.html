@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BFDAC — Full Schematic</title>
+<style>
+  :root {
+    --bg: #11151c; --panel: #171d27; --ink: #dce3ee; --dim: #8a96a8;
+    --wire: #9fb4d0; --accent: #56b6ff; --hot: #ff9e57; --ok: #6ee7a0;
+    --sym: #dce3ee; --lbl: #b9c6da; --val: #86d3ff;
+  }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 "Segoe UI", system-ui, sans-serif; margin: 0; padding: 2rem 3rem 5rem; }
+  h1 { font-size: 1.7rem; letter-spacing: .02em; margin-bottom: .2rem; }
+  h2 { color: var(--accent); font-size: 1.15rem; margin: 2.6rem 0 .6rem; border-bottom: 1px solid #2a3446; padding-bottom: .35rem; }
+  .sub { color: var(--dim); margin-top: 0; }
+  figure { background: var(--panel); border: 1px solid #232c3b; border-radius: 10px; padding: 1.2rem; margin: 1rem 0; overflow-x: auto; }
+  figcaption { color: var(--dim); font-size: .85rem; margin-top: .6rem; }
+  svg { display: block; margin: 0 auto; }
+  svg text { font: 12px "Segoe UI", sans-serif; fill: var(--lbl); }
+  svg text.val { fill: var(--val); }
+  svg text.net { fill: var(--hot); font-size: 11px; }
+  svg text.ttl { fill: var(--ink); font-size: 13px; font-weight: 600; }
+  svg .w  { stroke: var(--wire); stroke-width: 1.6; fill: none; }
+  svg .s  { stroke: var(--sym);  stroke-width: 1.6; fill: none; }
+  svg .sf { fill: var(--sym); stroke: none; }
+  svg .dot { fill: var(--wire); }
+  svg rect.box { fill: #1d2635; stroke: #46536b; stroke-width: 1.4; rx: 6; }
+  table { border-collapse: collapse; margin: .8rem 0; font-size: .88rem; }
+  th, td { border: 1px solid #2a3446; padding: .35rem .7rem; text-align: left; }
+  th { background: #1d2635; color: var(--accent); }
+  code { background: #1d2635; padding: .08rem .35rem; border-radius: 4px; font-size: .85em; color: var(--val); }
+  .tag { color: var(--ok); font-size: .8rem; }
+</style>
+</head>
+<body>
+
+<h1>BFDAC — Discrete 64-Cell Current-Steering Audio DAC</h1>
+<p class="sub">Full analog schematic &middot; as verified through cosim24/24b (2026-07-15) &middot; system budget &asymp; 128.6 dB THD+N</p>
+
+<h2>1. System block diagram</h2>
+<figure>
+<svg width="1060" height="330" viewBox="0 0 1060 330">
+  <!-- FPGA -->
+  <rect class="box" x="20" y="60" width="190" height="210"/>
+  <text class="ttl" x="115" y="85" text-anchor="middle">FPGA</text>
+  <text x="115" y="110" text-anchor="middle">interpolator + modulator</text>
+  <text x="115" y="128" text-anchor="middle">(&plusmn;28 levels used)</text>
+  <text x="115" y="152" text-anchor="middle">2nd-order sort vector-shaper</text>
+  <text x="115" y="170" text-anchor="middle">(Round 30, unconstrained, g2=0.5)</text>
+  <text x="115" y="200" text-anchor="middle">RTZ pattern gen (6-of-8 mclk)</text>
+  <text x="115" y="218" text-anchor="middle">64 pins/ch (1/cell) &rarr; FFs &sect;1b</text>
+  <text x="115" y="248" text-anchor="middle">replica-DAC driver</text>
+  <text x="115" y="264" text-anchor="middle">(2 aux outputs / rail)</text>
+
+  <!-- gate bus -->
+  <path class="w" d="M210 140 H300"/>
+  <path class="w" d="M255 130 l14 10 l-14 10"/>
+  <text x="255" y="122" text-anchor="middle">64 &times; 2 bases (Q/&#818;Q&#818;)</text>
+  <text x="255" y="162" text-anchor="middle" class="val">via SN74LVC1G74 reclock FFs (RTZ)</text>
+  <text x="255" y="178" text-anchor="middle" class="val">+ 1.41k/246&Omega; shift ea. (&sect;1b)</text>
+
+  <!-- cell array -->
+  <rect class="box" x="300" y="60" width="200" height="210"/>
+  <text class="ttl" x="400" y="85" text-anchor="middle">CELL ARRAY &times;64</text>
+  <text x="400" y="110" text-anchor="middle">DMMT5551 steering pair</text>
+  <text x="400" y="128" text-anchor="middle">THAT300 tail, 750&Omega; degen</text>
+  <text x="400" y="146" text-anchor="middle" class="val">0.774 mA / cell</text>
+  <text x="400" y="176" text-anchor="middle">common base line 1.25 V</text>
+  <text x="400" y="206" text-anchor="middle">&sect;2 below</text>
+
+  <!-- buses -->
+  <path class="w" d="M500 110 H600"/> <text class="net" x="550" y="100" text-anchor="middle">bus_plus</text>
+  <path class="w" d="M500 230 H600"/> <text class="net" x="550" y="222" text-anchor="middle">bus_minus</text>
+
+  <!-- output stages -->
+  <rect class="box" x="600" y="70" width="240" height="80"/>
+  <text class="ttl" x="720" y="95" text-anchor="middle">OUTPUT STAGE (+)</text>
+  <text x="720" y="115" text-anchor="middle">cascode + replica FF + I<tspan baseline-shift="sub" font-size="9">b</tspan>-comp</text>
+  <text x="720" y="133" text-anchor="middle">+ I/V converter &nbsp;&sect;3, &sect;4</text>
+  <rect class="box" x="600" y="190" width="240" height="80"/>
+  <text class="ttl" x="720" y="215" text-anchor="middle">OUTPUT STAGE (&minus;)</text>
+  <text x="720" y="235" text-anchor="middle">identical, mirrored</text>
+  <text x="720" y="253" text-anchor="middle">R_off = 180.18&Omega; (offset trim)</text>
+
+  <!-- replica feed -->
+  <path class="w" d="M115 270 V300 H920 V150"/>
+  <path class="w" d="M868 300 V270"/>
+  <text x="530" y="318" text-anchor="middle">replica-DAC currents I<tspan baseline-shift="sub" font-size="9">ff</tspan>, I<tspan baseline-shift="sub" font-size="9">snk</tspan> (gate-derived copies, &plusmn;5% tolerant, &le;2 ns skew tolerant)</text>
+
+  <!-- diff out -->
+  <path class="w" d="M840 110 H1000"/>
+  <path class="w" d="M840 230 H1000 "/>
+  <text class="net" x="965" y="100">out_p</text>
+  <text class="net" x="965" y="222">out_m</text>
+  <text x="1002" y="175">diff</text>
+  <text x="1002" y="191">out</text>
+</svg>
+<figcaption>Fig. 1 — Signal path. Everything to the right of the cell array exists once per rail; the DEM shaper makes cell mismatch first-order shaped (SNDR<sub>mis</sub> 130.6 dB); glitch energy 151.7 dB; static INL 138.9 dB worst-corner after I<sub>b</sub>-compensation.</figcaption>
+</figure>
+
+<h2>1b. Master clock tree &amp; cascode reclocking (Chord-DAVE-style)</h2>
+<figure>
+<svg width="1060" height="400" viewBox="0 0 1060 400">
+  <!-- OCXOs -->
+  <rect class="box" x="20" y="40" width="150" height="60"/>
+  <text class="ttl" x="95" y="63" text-anchor="middle">OCXO #1</text>
+  <text x="95" y="83" text-anchor="middle">45.1584 MHz (44.1k)</text>
+  <rect class="box" x="20" y="130" width="150" height="60"/>
+  <text class="ttl" x="95" y="153" text-anchor="middle">OCXO #2</text>
+  <text x="95" y="173" text-anchor="middle">49.152 MHz (48k)</text>
+
+  <!-- LMK00304 mux/fanout -->
+  <path class="w" d="M170 70 H240"/>
+  <path class="w" d="M170 160 H240"/>
+  <rect class="box" x="240" y="40" width="180" height="200"/>
+  <text class="ttl" x="330" y="65" text-anchor="middle">LMK00304</text>
+  <text x="330" y="85" text-anchor="middle">2:1 mux + 1:4 fanout</text>
+  <text x="330" y="103" text-anchor="middle" class="val">~50 fs additive RMS</text>
+  <text x="330" y="127" text-anchor="middle">CLKin0 = 45M, CLKin1 = 49M</text>
+  <text x="330" y="151" text-anchor="middle">NOT glitch-free:</text>
+  <text x="330" y="167" text-anchor="middle">switch only muted +</text>
+  <text x="330" y="183" text-anchor="middle">MMCM in reset</text>
+  <text x="330" y="215" text-anchor="middle" class="net">CLKin_SEL &larr; clk_sel</text>
+
+  <!-- FPGA -->
+  <path class="w" d="M420 70 H520"/>
+  <text x="470" y="60" text-anchor="middle" class="net">mclk_p/n (LVDS)</text>
+  <rect class="box" x="520" y="40" width="190" height="200"/>
+  <text class="ttl" x="615" y="65" text-anchor="middle">FPGA (VU13P)</text>
+  <text x="615" y="85" text-anchor="middle">B71_L12 GC pair (J28/J29)</text>
+  <text x="615" y="109" text-anchor="middle">MMCM &times;20 / 3.5</text>
+  <text x="615" y="127" text-anchor="middle">dsp_clk 258 / 281 MHz</text>
+  <text x="615" y="151" text-anchor="middle">128 cascode data outs (1/cell)</text>
+  <text x="615" y="169" text-anchor="middle">IOB-registered, LVCMOS18</text>
+  <text x="615" y="193" text-anchor="middle" class="net">clk_sel out (J26)</text>
+  <text x="615" y="211" text-anchor="middle">quasi-static, SPI 0x06</text>
+  <path class="w" d="M520 215 H480 V260 H330 V240"/>
+
+  <!-- FF clock fanout -->
+  <path class="w" d="M420 160 H460 V320 H520"/>
+  <text x="452" y="310" text-anchor="middle" class="net">FF clk</text>
+  <rect class="box" x="520" y="290" width="190" height="70"/>
+  <text class="ttl" x="615" y="313" text-anchor="middle">LMK1C1108 tree (qty per FF pkg)</text>
+  <text x="615" y="331" text-anchor="middle">1:8 fanout, skew &lt; 30 ps</text>
+  <text x="615" y="347" text-anchor="middle">no length matching (RTZ, tol &plusmn;5 ns)</text>
+
+  <!-- reclock FFs -->
+  <path class="w" d="M710 325 H790"/>
+  <path class="w" d="M710 160 H750 V300 H790 "/>
+  <text x="748" y="150" text-anchor="middle">128 &times; RTZ data, LVCMOS18 &rarr; AXC1T45 &rarr; 3.3 V</text>
+  <rect class="box" x="790" y="270" width="250" height="110"/>
+  <text class="ttl" x="915" y="293" text-anchor="middle">Reclock FF: 128 &times; SN74LVC1G74 (Round 30)</text>
+  <text x="915" y="311" text-anchor="middle">single D-FF/pkg (SSN mandate), VCC = 3.3 V (LDO)</text>
+  <text x="915" y="329" text-anchor="middle">per-pkg rail isolation (R/ferrite + C)</text>
+  <text x="915" y="347" text-anchor="middle">RTZ pulse: 6-of-8 mclk = 75 % duty @ 6.144 MHz</text>
+  <text x="915" y="365" text-anchor="middle">Q/&#818;Q&#818; &rarr; 1.41k/246&Omega; vs VCM 1.85 V &rarr; pair bases (&sect;2)</text>
+
+  <!-- timing note -->
+  <text x="530" y="392">Setup margin &asymp; 9&ndash;13 ns @ 49.152 MHz (Tco 3&ndash;5 ns + flight + translator 1&ndash;2 ns + FF setup &le; 2.5 ns vs 20.35 ns period); clock skew tolerance &plusmn;5 ns (RTZ position-invariance)</text>
+</svg>
+<figcaption>Fig. 1b — Master clock tree. Clock selection moved OFF-chip: the FPGA sees a single muxed MCLK on one GC pair and drives <code>clk_sel</code> to the LMK00304. The same LMK output tree clocks the external reclock FFs, so the cascode edge timing is set by the OCXO + buffer chain (&lt; 0.1 ps additive) instead of the FPGA fabric (&approx; 5&ndash;20 ps), the ~23 dB timing-SNDR gain from the Round 23 Monte-Carlo study (<code>reclock_study.py</code>). One FPGA data pin per cell (128 total, LVCMOS18). <b>Round 30 (RATIFIED, replaces the vetoed 18 W MC100EP52 design):</b> the cell coding is <b>RTZ at 75 % duty</b> &mdash; each selected cell emits one identical charge pulse per 6.144 MHz sample (6-of-8 mclk cycles), so driver rise-vs-fall asymmetry becomes pure GAIN, per-cell spreads become DEM-shaped mismatch, and pulse position is charge-invariant (clock-tree length matching retired, tolerance &plusmn;5 ns). Reclock FF is one TI <b>SN74LVC1G74</b> per cell (single-FF package MANDATED by the SSN code&sup2; analysis &mdash; shared-die edge pushout would convert code-dependent packmate activity into pulse-width distortion at 75&ndash;100 dB class; <code>rtz_noise.py</code>). Data path: FPGA 1.8 V &rarr; AXC1T45-class translator &rarr; D; translator timing is retimed away. Q/&#818;Q&#818; drive the steering pair through 1.41 k&Omega;/246 &Omega; vs the buffered VCM 1.85 V rail (<code>bfdac_cosim28j.cir</code>). &asymp;5&ndash;7 mW/cell, array &lt; 1 W. Bench-verify before layout: part-to-part |tPLH&minus;tPHL| spread &le; ~600 ps, additive jitter &le; 1 ps (bom item #10). 4-leg verification: <code>progress.md</code> Round 30.</figcaption>
+</figure>
+
+<h2>2. Unit cell (&times;64)</h2>
+<figure>
+<svg width="620" height="430" viewBox="0 0 620 430">
+  <!-- bus rails -->
+  <path class="w" d="M120 40 H260"/>
+  <text class="net" x="118" y="44" text-anchor="end">bus_plus</text>
+  <path class="w" d="M360 40 H500"/>
+  <text class="net" x="502" y="44">bus_minus</text>
+
+  <!-- Q1a: NPN left, collector up to bus_plus, emitter down to c_s (Round 29) -->
+  <path class="w" d="M260 40 V115"/>
+  <path class="s" d="M246 125 V165"/>                    <!-- base bar -->
+  <path class="s" d="M246 135 L260 121 M260 115 V121"/>  <!-- collector -->
+  <path class="s" d="M246 155 L260 169 M260 169 V210"/>  <!-- emitter -->
+  <path class="sf" d="M260 169 L248 164 L253 157 Z"/>    <!-- arrow out -->
+  <text x="286" y="130">Q1<tspan baseline-shift="sub" font-size="9">a</tspan> &frac12; DMMT5551</text>
+  <!-- base network: 100R series + 165R to 1.0V rail -->
+  <path class="w" d="M246 145 H180"/>
+  <circle class="dot" cx="180" cy="145" r="3"/>
+  <rect class="s" x="130" y="137" width="50" height="16"/>
+  <path class="w" d="M130 145 H80"/>
+  <text class="val" x="155" y="130" text-anchor="middle">100&Omega;</text>
+  <text x="78" y="130" text-anchor="end">FF Q (&sect;1b)</text>
+  <text x="78" y="162" text-anchor="end">PECL 1.6 / 2.4 V</text>
+  <rect class="s" x="172" y="165" width="16" height="40"/>
+  <path class="w" d="M180 205 V225 H80"/>
+  <text class="val" x="196" y="186">165&Omega;</text>
+  <text x="78" y="222" text-anchor="end" class="net">1.0 V rail</text>
+  <text x="196" y="204" class="val">base 1.36&ndash;1.86 V</text>
+
+  <!-- Q1b: NPN right, collector to bus_minus -->
+  <path class="w" d="M360 40 V115"/>
+  <path class="s" d="M374 125 V165"/>
+  <path class="s" d="M374 135 L360 121 M360 115 V121"/>
+  <path class="s" d="M374 155 L360 169 M360 169 V210"/>
+  <path class="sf" d="M360 169 L372 164 L367 157 Z"/>
+  <text x="336" y="130" text-anchor="end">DMMT5551 &frac12; Q1<tspan baseline-shift="sub" font-size="9">b</tspan></text>
+  <path class="w" d="M374 145 H440"/>
+  <circle class="dot" cx="440" cy="145" r="3"/>
+  <rect class="s" x="440" y="137" width="50" height="16"/>
+  <path class="w" d="M490 145 H540"/>
+  <text class="val" x="465" y="130" text-anchor="middle">100&Omega;</text>
+  <text x="542" y="130">FF &#818;Q&#818; (&sect;1b)</text>
+  <text x="542" y="162">PECL 2.4 / 1.6 V</text>
+  <rect class="s" x="432" y="165" width="16" height="40"/>
+  <path class="w" d="M440 205 V225 H540"/>
+  <text class="val" x="404" y="186">165&Omega;</text>
+  <text x="542" y="222" class="net">1.0 V rail</text>
+
+  <!-- common emitter node c_s -->
+  <path class="w" d="M260 210 V240 H360 V210"/>
+  <circle class="dot" cx="310" cy="240" r="3"/>
+  <path class="w" d="M310 240 V265"/>
+  <text class="net" x="322" y="258">c_s</text>
+
+  <!-- Q4 NPN: collector at c_s(top), base left, emitter down -->
+  <path class="s" d="M296 279 V311"/>                    <!-- base bar -->
+  <path class="w" d="M296 295 H230"/>                    <!-- base lead -->
+  <path class="s" d="M296 285 L310 271 M310 265 V271"/>  <!-- collector -->
+  <path class="s" d="M296 305 L310 319 M310 319 V330"/>  <!-- emitter -->
+  <path class="sf" d="M310 319 L298 314 L303 307 Z"/>    <!-- arrow out -->
+  <text x="330" y="300">Q4 &mdash; THAT300</text>
+  <text x="330" y="316">(matched NPN array)</text>
+
+  <!-- base bias -->
+  <rect class="s" x="160" y="287" width="50" height="16"/>
+  <path class="w" d="M230 295 H210 M160 295 H110"/>
+  <text class="val" x="185" y="280" text-anchor="middle">100&Omega;</text>
+  <text class="net" x="108" y="288" text-anchor="end">q4_base</text>
+  <text x="108" y="306" text-anchor="end">1.25 V ref</text>
+  <!-- shared base-line bypass (Round 14) -->
+  <circle class="dot" cx="230" cy="295" r="3"/>
+  <path class="w" d="M230 295 V330"/>
+  <path class="s" d="M218 330 H242 M218 338 H242"/>
+  <path class="w" d="M230 338 V352"/>
+  <path class="s" d="M214 352 H246 M220 358 H240 M226 364 H234"/>
+  <text class="val" x="120" y="336">1000&mu;F</text>
+  <text x="120" y="352">base-line bypass</text>
+  <text x="120" y="368">(1.6 Hz, shared &times;1)</text>
+
+  <!-- Rt -->
+  <rect class="s" x="302" y="340" width="16" height="46"/>
+  <path class="w" d="M310 330 V340 M310 386 V400"/>
+  <text class="val" x="326" y="366">750&Omega;</text>
+  <text x="326" y="382">Rt (thin film)</text>
+  <!-- gnd -->
+  <path class="s" d="M294 400 H326 M300 406 H320 M306 412 H314"/>
+</svg>
+<figcaption>Fig. 2 — Unit cell, <b>LOCKED Round 29: BJT steering pair</b> (classic ECL-driven bipolar current steering, PCM63 lineage). I<sub>cell</sub> = (1.25 V &minus; V<sub>be</sub>)/750&Omega; &asymp; 0.774 mA. A same-die <b>DMMT5551</b> emitter-coupled pair steers the tail current; bases swing 1.36&ndash;1.86 V (100&Omega;/165&Omega; attenuator from the MC100EP52's LVPECL Q/&#818;Q&#818;, Thevenin return = buffered 1.0 V rail, &sect;9). The pair steers within &plusmn;~120 mV of the crossing, so the emitter node never collapses (no dead zone) and tail current never interrupts; crossing symmetry is set by same-die &Delta;V<sub>be</sub> &lt; 1 mV, not FET V<sub>th</sub> spread. Deck-verified (<code>bfdac_cosim27*</code>, Round 28): bus disturbance 2.2 mV (vs 89 mV FET cell), rise/fall asym 7.6e-5 at zero FF skew, stable &minus;20/+85 &deg;C, k-linearity clean; noise on the 1.0 V rail is common-mode and rejected by the pair. Switch-pair &alpha; (I<sub>c</sub>/I<sub>e</sub>) mismatch is a static per-cell gain term absorbed by DEM mismatch shaping (verify in static-INL deck, open item). All Round 9&ndash;12 output-stage fixes live in &sect;3. Round 14 addition retained: single shared 1000&nbsp;&mu;F bypass on the common q4_base line (1.6&nbsp;Hz corner &rarr; code-independent noise floor, <code>noise1b</code>).</figcaption>
+</figure>
+<h2>3. Per-rail output stage (&times;2, PLUS rail shown)</h2>
+<figure>
+<svg width="1140" height="720" viewBox="0 -20 1140 720">
+  <!-- ===== sum node wire ===== -->
+  <path class="w" d="M120 65 H1005"/>
+  <text class="net" x="120" y="55">sum_p &nbsp;(virtual ground, 2.4 V)</text>
+  <circle class="dot" cx="540" cy="65" r="3"/>
+  <circle class="dot" cx="920" cy="65" r="3"/>
+  <circle class="dot" cx="880" cy="65" r="3"/>
+  <circle class="dot" cx="990" cy="65" r="3"/>
+  <circle class="dot" cx="160" cy="65" r="3"/>
+  <circle class="dot" cx="260" cy="65" r="3"/>
+
+  <!-- R_off from +15F -->
+  <rect class="s" x="152" y="-14" width="16" height="46" transform="translate(0,20)"/>
+  <path class="w" d="M160 65 V52 M160 6 V-4" transform="translate(0,4)"/>
+  <text x="140" y="-2" class="net">+15F</text>
+  <text class="val" x="178" y="30">R_off 180&Omega;</text>
+  <text x="178" y="46">(180.18&Omega; on &minus; rail)</text>
+
+  <!-- I_pads -->
+  <circle class="s" cx="260" cy="22" r="13"/>
+  <path class="s" d="M260 14 V30 M260 30 l-4 -7 h8 Z"/>
+  <path class="w" d="M260 65 V35 M260 9 V-2"/>
+  <text x="278" y="14" class="net">+15</text>
+  <text class="val" x="278" y="30">I_pad 50 mA</text>
+
+  <!-- ===== casb wire ===== -->
+  <path class="w" d="M140 330 H840"/>
+  <text class="net" x="140" y="320">casb_p &nbsp;(&asymp; 2.55&ndash;2.62 V, tracks V<tspan baseline-shift="sub" font-size="9">be</tspan>(I))</text>
+  <circle class="dot" cx="160" cy="330" r="3"/>
+  <circle class="dot" cx="240" cy="330" r="3"/>
+  <circle class="dot" cx="700" cy="330" r="3"/>
+  <circle class="dot" cx="820" cy="330" r="3"/>
+
+  <!-- B_ff replica current into casb -->
+  <circle class="s" cx="160" cy="282" r="13"/>
+  <path class="s" d="M160 274 V290 M160 290 l-4 -7 h8 Z"/>
+  <path class="w" d="M160 330 V295 M160 269 V255"/>
+  <text x="140" y="250" class="net">+15</text>
+  <text class="val" x="180" y="278">I_ff &mdash; replica DAC out A</text>
+  <text x="180" y="294">0.774m&middot;N(t) + 51.92 mA</text>
+
+  <!-- Q5R diode-connected: collector+base at casb, emitter to vfr -->
+  <path class="s" d="M226 384 V416"/>
+  <path class="w" d="M226 400 H196 V330"/>
+  <circle class="dot" cx="196" cy="330" r="3"/>
+  <path class="s" d="M226 390 L240 376 M240 376 V330"/>
+  <path class="s" d="M226 410 L240 424 M240 424 V440"/>
+  <path class="sf" d="M240 424 L228 419 L233 412 Z"/>
+  <text x="256" y="396">Q5R &mdash; replica cascode</text>
+  <text x="256" y="412">(diode-connected, matched to Q5)</text>
+  <path class="w" d="M240 440 V470 H180 V495"/>
+  <text class="net" x="150" y="490">vfr</text>
+  <text x="150" y="506">1.75 V</text>
+
+  <!-- ===== Q5 main cascode ===== -->
+  <path class="s" d="M526 315 V345"/>
+  <path class="w" d="M526 330 H505"/>
+  <circle class="dot" cx="505" cy="330" r="3"/>
+  <path class="s" d="M526 320 L540 306 M540 306 V65"/>
+  <path class="s" d="M526 340 L540 354 M540 354 V430"/>
+  <path class="sf" d="M540 354 L528 349 L533 342 Z"/>
+  <text class="ttl" x="558" y="326">Q5 &mdash; shared cascode</text>
+  <text x="558" y="344">I<tspan baseline-shift="sub" font-size="9">C</tspan> = 52&ndash;95 mA over code</text>
+
+  <!-- ===== bus wire ===== -->
+  <path class="w" d="M330 430 H560"/>
+  <text class="net" x="330" y="420">bus_plus &nbsp;(pinned &asymp; 1.75 V)</text>
+  <circle class="dot" cx="540" cy="430" r="3"/>
+  <circle class="dot" cx="360" cy="430" r="3"/>
+  <circle class="dot" cx="420" cy="430" r="3"/>
+  <circle class="dot" cx="480" cy="430" r="3"/>
+
+  <!-- cells arrow -->
+  <path class="w" d="M360 430 V500"/>
+  <path class="sf" d="M360 500 L354 486 H366 Z"/>
+  <text x="360" y="522" text-anchor="middle">to 32 cell</text>
+  <text x="360" y="538" text-anchor="middle">drains (M<tspan baseline-shift="sub" font-size="9">a</tspan>)</text>
+
+  <!-- C_bus -->
+  <path class="w" d="M420 430 V470 M420 482 V510"/>
+  <path class="s" d="M406 470 H434 M406 482 H434"/>
+  <text class="val" x="440" y="480">10 n C0G</text>
+  <path class="s" d="M404 510 H436 M410 516 H430 M416 522 H424"/>
+
+  <!-- R_bleed -->
+  <rect class="s" x="472" y="452" width="16" height="42"/>
+  <path class="w" d="M480 430 V452 M480 494 V510"/>
+  <text class="val" x="496" y="470">910&Omega;</text>
+  <text x="496" y="486">bleed</text>
+  <path class="s" d="M464 510 H496 M470 516 H490 M476 522 H484"/>
+
+  <!-- I_padb -->
+  <circle class="s" cx="540" cy="475" r="13"/>
+  <path class="s" d="M540 467 V483 M540 483 l-4 -7 h8 Z"/>
+  <path class="w" d="M540 430 V462 M540 488 V510"/>
+  <text x="556" y="472" class="val">I_pad 50 mA</text>
+  <text x="556" y="488" class="net">to &minus;15</text>
+
+  <!-- ===== Ib compensation network ===== -->
+  <text class="ttl" x="700" y="230">I<tspan baseline-shift="sub" font-size="9">b</tspan>-COMPENSATION (Round 12)</text>
+  <text x="700" y="248">refills Q5's base-current theft: HD3 &minus;122.7 &rarr; &minus;143.9 dB</text>
+
+  <!-- QM1 diode PNP: emitter up to casb, collector down -->
+  <path class="s" d="M686 384 V416"/>
+  <path class="w" d="M686 400 H660 V435 H700"/>
+  <path class="s" d="M686 390 L700 376 M700 376 V330"/>
+  <path class="sf" d="M700 376 L688 372 L692 364 Z"/>
+  <path class="s" d="M686 410 L700 424 M700 424 V435"/>
+  <circle class="dot" cx="700" cy="435" r="3"/>
+  <text x="646" y="380" text-anchor="end">QM1 (PNP)</text>
+
+  <!-- QM2 PNP: emitter up to casb, base from QM1 base line, collector down -->
+  <path class="s" d="M806 384 V416"/>
+  <path class="w" d="M806 400 H745"/>
+  <circle class="dot" cx="745" cy="400" r="3"/>
+  <path class="w" d="M745 400 V400"/>
+  <path class="s" d="M806 390 L820 376 M820 376 V330"/>
+  <path class="sf" d="M820 376 L808 372 L812 364 Z"/>
+  <path class="s" d="M806 410 L820 424 M820 424 V510"/>
+  <text x="838" y="396">QM2 (PNP,</text>
+  <text x="838" y="412">matched pair)</text>
+
+  <!-- q5cb node routing to Q5C base -->
+  <path class="w" d="M700 435 V455 H620 V520 H646"/>
+  <text class="net" x="606" y="448">q5cb</text>
+
+  <!-- Q5C -->
+  <path class="s" d="M646 504 V536"/>
+  <path class="s" d="M646 510 L660 496 M660 496 V466"/>
+  <path class="s" d="M646 530 L660 544 M660 544 V566"/>
+  <path class="sf" d="M660 544 L648 539 L653 532 Z"/>
+  <text class="net" x="660" y="458" text-anchor="middle">vfr</text>
+  <text x="678" y="514">Q5C &mdash; matched to Q5</text>
+  <text x="678" y="530">(V<tspan baseline-shift="sub" font-size="9">CE</tspan> match via vfr)</text>
+  <!-- B_snk -->
+  <circle class="s" cx="660" cy="586" r="13"/>
+  <path class="s" d="M660 578 V594 M660 594 l-4 -7 h8 Z"/>
+  <path class="w" d="M660 566 V573 M660 599 V615"/>
+  <text class="net" x="660" y="632" text-anchor="middle">&minus;15</text>
+  <text class="val" x="682" y="584">I_snk &mdash; replica DAC out B</text>
+  <text x="682" y="600">(same law as I_ff)</text>
+
+  <!-- QN1 diode NPN -->
+  <circle class="dot" cx="820" cy="510" r="3"/>
+  <path class="s" d="M806 524 V556"/>
+  <path class="w" d="M806 540 H780 V510 H820"/>
+  <path class="s" d="M806 530 L820 516 M820 516 V510"/>
+  <path class="s" d="M806 550 L820 564 M820 564 V585"/>
+  <path class="sf" d="M820 564 L808 559 L813 552 Z"/>
+  <text x="770" y="576" text-anchor="end">QN1 (NPN)</text>
+  <path class="s" d="M804 585 H836 M810 591 H830 M816 597 H824"/>
+
+  <!-- QN2 NPN: collector up to sum -->
+  <path class="s" d="M906 524 V556"/>
+  <path class="w" d="M906 540 H855"/>
+  <circle class="dot" cx="855" cy="540" r="3"/>
+  <path class="w" d="M855 540 H806" opacity="0"/>
+  <path class="s" d="M906 530 L920 516 M920 516 V65"/>
+  <path class="s" d="M906 550 L920 564 M920 564 V585"/>
+  <path class="sf" d="M920 564 L908 559 L913 552 Z"/>
+  <text x="938" y="540">QN2 &mdash; sinks I<tspan baseline-shift="sub" font-size="9">b</tspan>-copy</text>
+  <text x="938" y="556">from sum node</text>
+  <path class="s" d="M904 585 H936 M910 591 H930 M916 597 H924"/>
+  <!-- QN base tie -->
+  <path class="w" d="M855 540 H906" />
+
+  <!-- ===== I/V amp ===== -->
+  <path class="s" d="M1005 40 L1005 110 L1068 75 Z"/>
+  <text x="1014" y="62">&minus;</text>
+  <text x="1014" y="98">+</text>
+  <path class="w" d="M990 90 H1005"/>
+  <text class="net" x="988" y="106" text-anchor="end">2.4 V ref</text>
+  <path class="w" d="M1068 75 H1110"/>
+  <text class="net" x="1112" y="70">out_p</text>
+  <text class="ttl" x="1036" y="130" text-anchor="middle">I/V &sect;4</text>
+  <!-- feedback Rf + Cf -->
+  <circle class="dot" cx="1090" cy="75" r="3"/>
+  <path class="w" d="M1090 75 V14 H940 M880 14 H860 V14"/>
+  <rect class="s" x="880" y="6" width="60" height="16"/>
+  <text class="val" x="910" y="0" text-anchor="middle">R_f 56&Omega;</text>
+  <path class="w" d="M860 14 H830 V38 M830 50 V65"/>
+  <path class="s" d="M816 38 H844 M816 50 H844"/>
+  <text class="val" x="850" y="48">C_f 390 pF</text>
+  <circle class="dot" cx="830" cy="65" r="3"/>
+
+  <!-- R_sum snubber -->
+  <rect class="s" x="982" y="150" width="16" height="36"/>
+  <path class="w" d="M990 65 V150 M990 186 V210 M990 222 V246"/>
+  <path class="s" d="M976 210 H1004 M976 222 H1004"/>
+  <text class="val" x="1008" y="172">4.7&Omega;</text>
+  <text class="val" x="1008" y="220">2.2 nF</text>
+  <path class="s" d="M974 246 H1006 M980 252 H1000 M986 258 H994"/>
+  <text x="1008" y="250">snubber</text>
+</svg>
+<figcaption>Fig. 3 — One rail, complete. The replica (Q5R + I_ff) pins the bus by feed-forwarding V<sub>be</sub>(I); the padding sources keep Q5 at &ge;50 mA; the 10 n C0G swamps the &asymp;1.6 nF of nonlinear junction capacitance on the bus; QM1/QM2 sense Q5C's base current (same die-law as Q5's) and QN1/QN2 sink the copy from the sum node. The MINUS rail is identical with R_off = 180.18 &Omega;.</figcaption>
+</figure>
+
+<h2>4. I/V converter detail (per rail)</h2>
+<figure>
+<svg width="900" height="330" viewBox="0 0 900 330">
+  <!-- front amp block -->
+  <rect class="box" x="40" y="110" width="240" height="110"/>
+  <text class="ttl" x="160" y="140" text-anchor="middle">FRONT AMP (OPA1612-class)</text>
+  <text x="160" y="162" text-anchor="middle">GBW 40 MHz &middot; slew 27 V/&mu;s</text>
+  <text x="160" y="180" text-anchor="middle">A<tspan baseline-shift="sub" font-size="9">OL</tspan> 120 dB &middot; lin. range 107 mV</text>
+  <text x="160" y="202" text-anchor="middle">inputs: sum_p vs 2.4 V ref</text>
+  <path class="w" d="M280 165 H340"/>
+  <text class="net" x="310" y="156" text-anchor="middle">oav</text>
+
+  <!-- diamond buffer -->
+  <text class="ttl" x="520" y="40" text-anchor="middle">DIAMOND BUFFER (class AB, inside loop)</text>
+  <text class="net" x="420" y="66">+15</text>
+  <path class="w" d="M440 60 V80 M440 250 V275"/>
+  <text class="net" x="420" y="292">&minus;15</text>
+  <!-- QA npn top-left -->
+  <path class="s" d="M426 94 V126"/>
+  <path class="w" d="M340 165 V110 H426"/>
+  <circle class="dot" cx="340" cy="165" r="3"/>
+  <path class="s" d="M426 100 L440 86 M440 86 V80"/>
+  <path class="s" d="M426 120 L440 134 M440 134 V150"/>
+  <path class="sf" d="M440 134 L428 129 L433 122 Z"/>
+  <text x="452" y="112">QA (NPN)</text>
+  <!-- I_ba -->
+  <circle class="s" cx="440" cy="163" r="12"/>
+  <path class="s" d="M440 156 V170 M440 170 l-4 -6 h8 Z"/>
+  <path class="w" d="M440 150 V151 M440 175 V196"/>
+  <text x="456" y="168" class="val">5 mA</text>
+  <circle class="dot" cx="440" cy="150" r="3"/>
+  <path class="w" d="M440 150 H520"/>
+  <!-- QB pnp bottom-left mirrored: emitter down -->
+  <path class="s" d="M426 204 V236"/>
+  <path class="w" d="M340 165 V220 H426"/>
+  <path class="s" d="M426 210 L440 196"/>
+  <path class="sf" d="M426 210 L438 206 L434 198 Z"/>
+  <path class="s" d="M426 230 L440 244 M440 244 V250"/>
+  <text x="452" y="228">QB (PNP)</text>
+  <path class="w" d="M440 196 V196"/>
+  <circle class="dot" cx="440" cy="196" r="3"/>
+  <path class="w" d="M440 196 H520" opacity="0"/>
+  <!-- I_bb top of QB node: actually node nb=440,? simplify: nb node at y=196 wire to QD base -->
+  <path class="w" d="M440 196 H560"/>
+  <!-- QD npn output top: base at nb?? per netlist QD base=nb (QB emitter node), QC base=na (QA emitter node) -->
+  <path class="s" d="M560 180 V212"/>
+  <path class="s" d="M560 186 L574 172 M574 172 V80"/>
+  <path class="s" d="M560 206 L574 220 M574 220 V240"/>
+  <path class="sf" d="M574 220 L562 215 L567 208 Z"/>
+  <text x="588" y="182">QD (NPN, source)</text>
+  <path class="w" d="M574 80 H440" opacity="0"/>
+  <path class="w" d="M574 80 V60"/>
+  <text class="net" x="574" y="52" text-anchor="middle">+15</text>
+  <!-- QC pnp output bottom -->
+  <path class="s" d="M520 134 V150" opacity="0"/>
+  <path class="s" d="M646 180 V212" transform="translate(-126,60)"/>
+  <path class="s" d="M520 246 L534 232"/>
+  <path class="sf" d="M520 246 L532 242 L528 234 Z"/>
+  <path class="s" d="M520 266 L534 280 M534 280 V300"/>
+  <text class="net" x="534" y="316" text-anchor="middle">&minus;15</text>
+  <text x="452" y="262" text-anchor="end">QC (PNP, sink)</text>
+  <path class="w" d="M520 150 V240" opacity="0"/>
+  <path class="w" d="M534 232 V232"/>
+  <circle class="dot" cx="534" cy="232" r="0"/>
+  <!-- QC base from na node (QA emitter chain) -->
+  <path class="w" d="M440 150 H506 V240 H520" opacity="0"/>
+  <path class="w" d="M520 150 V240"/>
+  <circle class="dot" cx="520" cy="150" r="3"/>
+  <path class="w" d="M520 240 H520"/>
+  <!-- output node -->
+  <path class="w" d="M574 240 H640 M534 232 V232"/>
+  <path class="w" d="M534 232 H534" opacity="0"/>
+  <path class="w" d="M574 240 V240"/>
+  <circle class="dot" cx="640" cy="240" r="0"/>
+  <path class="w" d="M534 232 H574" opacity="0"/>
+  <path class="w" d="M640 240 H700"/>
+  <text class="net" x="704" y="244">out_p</text>
+  <text x="640" y="264">QD emitter &amp; QC collector join at out</text>
+</svg>
+<figcaption>Fig. 4 — I/V converter: behavioral-verified front amp (OPA1612-class composite) drives a real diamond buffer inside the loop; R_f 56&Omega; &#8214; 390 pF closes the loop at the sum node (Fig. 3). Verified: sum-node excursion &lt;1 mV under worst-case k=8 DEM transitions with padding + bus caps; loop is what set the original glitch compression, now flat to 0.005%.</figcaption>
+</figure>
+
+<h2>4b. Reconstruction filter (per leg, &times;2 per channel) &nbsp;<span class="tag">VERIFIED (filt1 / noise2 / cosim25b)</span></h2>
+<figure>
+<svg width="1140" height="270" viewBox="0 0 1140 270">
+  <!-- input from I/V -->
+  <path class="w" d="M60 80 H120"/>
+  <text class="net" x="58" y="70">out_p</text>
+  <text x="58" y="100">(from Fig. 4, Z<tspan baseline-shift="sub" font-size="9">src</tspan>&asymp;1&Omega;)</text>
+  <!-- L1 coil -->
+  <path class="s" d="M120 80 a12,12 0 0 1 24,0 a12,12 0 0 1 24,0 a12,12 0 0 1 24,0 a12,12 0 0 1 24,0"/>
+  <text class="val" x="168" y="52" text-anchor="middle">L1 77.6 &mu;H</text>
+  <text x="168" y="36" text-anchor="middle">air-core, DCR 1.5&Omega;</text>
+  <path class="w" d="M216 80 H320"/>
+  <circle class="dot" cx="268" cy="80" r="3"/>
+  <!-- C2 shunt -->
+  <path class="w" d="M268 80 V116"/>
+  <path class="s" d="M254 116 H282 M254 124 H282"/>
+  <path class="w" d="M268 124 V140"/>
+  <path class="s" d="M252 140 H284 M258 146 H278 M264 152 H272"/>
+  <text class="val" x="292" y="122">C2 1.99 nF</text>
+  <text x="292" y="138">C0G</text>
+  <!-- L3 coil -->
+  <path class="s" d="M320 80 a12,12 0 0 1 24,0 a12,12 0 0 1 24,0 a12,12 0 0 1 24,0"/>
+  <text class="val" x="356" y="52" text-anchor="middle">L3 15.5 &mu;H</text>
+  <text x="356" y="36" text-anchor="middle">air-core, DCR 0.4&Omega;</text>
+  <path class="w" d="M392 80 H520"/>
+  <circle class="dot" cx="460" cy="80" r="3"/>
+  <text class="net" x="452" y="70">fo_p</text>
+  <!-- R0 termination -->
+  <path class="w" d="M460 80 V106"/>
+  <rect class="s" x="452" y="106" width="16" height="46"/>
+  <path class="w" d="M460 152 V168"/>
+  <path class="s" d="M444 168 H476 M450 174 H470 M456 180 H464"/>
+  <text class="val" x="478" y="126">R0 150&Omega;</text>
+  <text x="478" y="142">termination</text>
+  <text x="522" y="70">&rarr; V-stage</text>
+  <text x="522" y="88">(hi-Z bridge, gain only)</text>
+
+  <!-- verified results -->
+  <text class="ttl" x="700" y="40">Verified:</text>
+  <text x="700" y="64">3rd-order Bessel, f<tspan baseline-shift="sub" font-size="9">&minus;3dB</tspan> 450 kHz &mdash; exact synthesis vs s&sup3;+6s&sup2;+15s+15: L1=(5/6)R0/&omega;s &middot; C2=(12/25)/(R0&omega;s) &middot; L3=(1/6)R0/&omega;s</text>
+  <text x="700" y="88"><tspan class="val">group delay 614 ns, flat to 17 ps</tspan> 20 Hz&ndash;20 kHz &mdash; pure time shift ("no phase shift" spec)</text>
+  <text x="700" y="112">&minus;41.4 dB @ 3.072 MHz (DEM shaped noise) &middot; &minus;59.3 dB @ 6.144 MHz (+sinc &rarr; images &asymp; &minus;109 dB)</text>
+  <text x="700" y="136">insertion &minus;0.11 dB (DCR divider) &middot; droop 1 k&rarr;20 k: 0.005 dB</text>
+  <text x="700" y="160">step: 0.93% overshoot, symmetric, no ringing &middot; I/V glitch linearity unchanged into L1</text>
+  <text x="700" y="184">L &plusmn;5%: delay 583&ndash;644 ns but flatness survives (&lt;110 ps dev)</text>
+  <text x="700" y="208">in-band noise through filter unchanged: 4.85 nV/&radic;Hz = &minus;133.9 dB rel FS</text>
+  <text x="700" y="240" class="tag">Layout rule: air-core coils orthogonal orientation + spacing; keep away from mains/rail magnetics</text>
+</svg>
+<figcaption>Fig. 4b — Passive reconstruction filter, one leg shown (both rails identical; C2 per leg to ground). Singly-terminated Bessel ladder driven by the I/V's near-zero output impedance; the V-stage must bridge the 150&nbsp;&Omega; termination with a high-Z input. Steep image rejection lives in the linear-phase digital FIR; this filter's job is group-delay-flat mop-up of the &gt;450 kHz spectrum, protecting the V-stage from the shaped DEM noise near 3 MHz. Decks: <code>bfdac_filt1.cir</code> (AC + tolerance), <code>bfdac_noise2.cir</code> (noise through filter), <code>bfdac_cosim25b.cir</code> (transient/glitch into LC).</figcaption>
+</figure>
+
+<h2>4c. Line V-stage (per leg, &times;2 per channel) &nbsp;<span class="tag">VERIFIED (vstage1 /b/o)</span></h2>
+<figure>
+<svg width="1140" height="330" viewBox="0 0 1140 330">
+  <!-- input -->
+  <text class="net" x="20" y="64">from termination tap</text>
+  <text x="20" y="82">(Z&le;50&Omega;, Fig. 4d)</text>
+  <path class="w" d="M170 60 H230"/>
+  <!-- LTP -->
+  <rect class="s" x="230" y="30" width="170" height="70"/>
+  <text class="ttl" x="315" y="52" text-anchor="middle">LTP, low-noise NPN</text>
+  <text x="315" y="70" text-anchor="middle">6 mA/side, 33&Omega; deg</text>
+  <text x="315" y="86" text-anchor="middle">BJT tail 12 mA</text>
+  <!-- mirror above -->
+  <rect class="s" x="230" y="120" width="170" height="52"/>
+  <text x="315" y="140" text-anchor="middle">PNP mirror load, 200&Omega; deg</text>
+  <text x="315" y="158" text-anchor="middle">+ beta-helper QH (22k bleed)</text>
+  <path class="w" d="M315 100 V120"/>
+  <!-- VAS -->
+  <path class="w" d="M400 60 H460"/>
+  <rect class="s" x="460" y="30" width="180" height="70"/>
+  <text class="ttl" x="550" y="52" text-anchor="middle">VAS: PNP Darlington</text>
+  <text x="550" y="70" text-anchor="middle">QV0 follower + QV 6 mA (Rev 130&Omega;)</text>
+  <text x="550" y="86" text-anchor="middle">+ cascode QVC (base +8 V)</text>
+  <!-- Miller -->
+  <path class="w" d="M550 100 V130"/>
+  <text x="562" y="126">Miller: 1 nF + 100&Omega; series, back to LTP output node</text>
+  <!-- diamond -->
+  <path class="w" d="M640 60 H700"/>
+  <rect class="s" x="700" y="30" width="180" height="70"/>
+  <text class="ttl" x="790" y="52" text-anchor="middle">Class-A diamond, m=3</text>
+  <text x="790" y="70" text-anchor="middle">Idq 25 mA; stoppers 22&Omega;/10&Omega;</text>
+  <text x="790" y="86" text-anchor="middle">Zobel 10&Omega; + 100 nF</text>
+  <path class="w" d="M880 60 H960"/>
+  <circle class="dot" cx="920" cy="60" r="3"/>
+  <text class="net" x="964" y="64">out</text>
+  <text x="964" y="82">&rarr; mute relay (Fig. 4d)</text>
+  <!-- feedback -->
+  <path class="w" d="M920 60 V200 H340 M340 200 V100" opacity="0"/>
+  <path class="w" d="M920 60 V210 H360"/>
+  <rect class="s" x="700" y="202" width="46" height="16"/>
+  <text class="val" x="723" y="196" text-anchor="middle">Rf 150&Omega;</text>
+  <path class="w" d="M360 210 V108"/>
+  <text x="368" y="230">Rg 195&Omega; to gnd at fb node &rarr; fixed gain 1.769 (never relay-switched; level set upstream)</text>
+  <!-- results -->
+  <text class="ttl" x="20" y="266">Verified:</text>
+  <text x="20" y="288"><tspan class="val">1 kHz THD 0.00001% = &minus;140 dB</tspan> at full 3 Vrms leg output &middot; 20 kHz THD 0.0006% = &minus;104 dB &middot; zero-input oscillation test: pV residual &middot; DC offset 2.9 mV systematic (cancels leg-to-leg differentially) &middot; gain error 0.05%</text>
+  <text x="20" y="312">Differential (2 legs, 600 &Omega; XLR): THD &minus;140 dB @ 1 k / &minus;105 dB @ 20 k; diff offset 0.4 &mu;V @ 0.5% mismatch (per-leg offset is pure CM); SNR at XLR 132.8 / 131.5 / 128.0 dB (6/4/2 V). Rules: LTP tail &#8811; peak Miller current; mirror compliance vs VAS level; crossover ~1.2 MHz.</text>
+</svg>
+<figcaption>Fig. 4c — Line V-stage, one leg (both legs identical; XLR pin 2/3 taken differentially, systematic offsets cancel). Fixed-gain 1.769 non-inverting discrete amplifier bridging the reconstruction filter's tapped 150&nbsp;&Omega; termination; 2/4/6&nbsp;Vrms selection is done by relay taps <em>upstream</em> so the loop is never reconfigured. Min load 600&nbsp;&Omega; differential. Deck: <code>bfdac_vstage1.cir</code> (1&nbsp;kHz THD), <code>_1b</code> (20&nbsp;kHz), <code>_1o</code> (oscillation test).</figcaption>
+</figure>
+
+<h2>4d. Output routing &amp; relay architecture (per channel)</h2>
+<figure>
+<svg width="1140" height="300" viewBox="0 0 1140 300">
+  <!-- tapped termination -->
+  <rect class="s" x="20" y="60" width="150" height="80"/>
+  <text class="ttl" x="95" y="84" text-anchor="middle">Tapped R0 150&Omega;</text>
+  <text x="95" y="102" text-anchor="middle">taps 1/3 &middot; 2/3 &middot; 1</text>
+  <text x="95" y="120" text-anchor="middle">= 2/4/6 Vrms, Z&le;50&Omega;</text>
+  <text x="26" y="158">level relays switch signal-level</text>
+  <text x="26" y="174">taps into a hi-Z input</text>
+  <!-- input select -->
+  <path class="w" d="M170 100 H240"/>
+  <rect class="s" x="240" y="70" width="140" height="60"/>
+  <text class="ttl" x="310" y="94" text-anchor="middle">Input select</text>
+  <text x="310" y="112" text-anchor="middle">DPDT, unused side gnd</text>
+  <!-- line branch -->
+  <path class="w" d="M380 85 H450"/>
+  <rect class="s" x="450" y="55" width="150" height="56"/>
+  <text class="ttl" x="525" y="78" text-anchor="middle">Line V-stage</text>
+  <text x="525" y="96" text-anchor="middle">(Fig. 4c) always powered</text>
+  <path class="w" d="M600 85 H670"/>
+  <rect class="s" x="670" y="55" width="140" height="56"/>
+  <text class="ttl" x="740" y="78" text-anchor="middle">Line mute</text>
+  <text x="740" y="96" text-anchor="middle">de-energized: open+shunt</text>
+  <path class="w" d="M810 85 H880"/>
+  <text class="net" x="884" y="89">REAR XLR</text>
+  <!-- hp branch -->
+  <path class="w" d="M380 118 H450 V180 H450"/>
+  <path class="w" d="M450 180 H450"/>
+  <path class="w" d="M380 118 V180 H450" opacity="0"/>
+  <rect class="s" x="450" y="152" width="150" height="56"/>
+  <text class="ttl" x="525" y="175" text-anchor="middle">Headphone stage</text>
+  <text x="525" y="193" text-anchor="middle">rails via relay, off in line mode</text>
+  <path class="w" d="M600 180 H670"/>
+  <rect class="s" x="670" y="152" width="140" height="56"/>
+  <text class="ttl" x="740" y="175" text-anchor="middle">HP mute</text>
+  <text x="740" y="193" text-anchor="middle">de-energized: jack shorted</text>
+  <path class="w" d="M810 180 H880"/>
+  <text class="net" x="884" y="184">FRONT jack</text>
+  <text x="884" y="202">low-Z drive crosses</text>
+  <text x="884" y="218">FPGA zone (robust)</text>
+  <!-- rules -->
+  <text class="ttl" x="20" y="248">Rules:</text>
+  <text x="20" y="268">Mutually exclusive outputs. Unpowered-stage input must be relay-disconnected &amp; grounded (b-c junction to collapsed rails clamps at ~0.6 V). All relays telecom-class (bifurcated Au), switched only while muted &rarr; contacts never break current.</text>
+  <text x="20" y="288">FPGA sequencing: mute &rarr; switch select + rails &rarr; settle &rarr; unmute. De-energized = muted everywhere: cold start is physically silent until deliberately unmuted (incl. ~90 s servo settle).</text>
+</svg>
+<figcaption>Fig. 4d — Output architecture (user-selected two-stage pattern; researched: dCS Vivaldi APEX has no headphone output, Chord DAVE shares one stage). Rear line XLR 2/4/6&nbsp;Vrms via tapped termination; front headphone output 1/6&nbsp;Vrms gain ranges (stage TBD). Relay bill per channel: input select, HP rails, 2&times; mute, plus level taps.</figcaption>
+</figure>
+
+<h2>4e. Headphone stage (per leg, &times;2 per channel, bridged 4-pin XLR) &nbsp;<span class="tag">VERIFIED (hp1/2/4 + noise/PM/temp)</span></h2>
+<figure>
+<svg width="1140" height="360" viewBox="0 0 1140 360">
+  <!-- input -->
+  <text class="net" x="20" y="64">from termination tap</text>
+  <text x="20" y="82">(Z&le;50&Omega;, Fig. 4d)</text>
+  <path class="w" d="M170 60 H230"/>
+  <!-- front end = Fig 4c -->
+  <rect class="s" x="230" y="30" width="200" height="70"/>
+  <text class="ttl" x="330" y="52" text-anchor="middle">Front end = Fig. 4c unchanged</text>
+  <text x="330" y="70" text-anchor="middle">LTP 6 mA/side &middot; mirror 100&Omega;+QH</text>
+  <text x="330" y="86" text-anchor="middle">Darlington VAS 10 mA, cascode</text>
+  <!-- Miller -->
+  <path class="w" d="M330 100 V126"/>
+  <text x="342" y="122">Miller: 1 nF + 100&Omega; series (unchanged)</text>
+  <!-- drivers -->
+  <path class="w" d="M430 60 H490"/>
+  <rect class="s" x="490" y="30" width="180" height="70"/>
+  <text class="ttl" x="580" y="52" text-anchor="middle">Diamond drivers, 14 mA</text>
+  <text x="580" y="70" text-anchor="middle">KSC2690A / KSA1220A</text>
+  <text x="580" y="86" text-anchor="middle">stoppers 22&Omega;; on main heatsink</text>
+  <!-- power pair -->
+  <path class="w" d="M670 60 H730"/>
+  <rect class="s" x="730" y="30" width="190" height="70"/>
+  <text class="ttl" x="825" y="52" text-anchor="middle">Power pair, class-A 160 mA</text>
+  <text x="825" y="70" text-anchor="middle">TTC004B / TTA004B, TO-220F</text>
+  <text x="825" y="86" text-anchor="middle">Re 0.47&Omega; &middot; stoppers 4.7&Omega; &middot; Zobel</text>
+  <path class="w" d="M920 60 H1000"/>
+  <circle class="dot" cx="960" cy="60" r="3"/>
+  <text class="net" x="1004" y="64">out</text>
+  <text x="1004" y="82">&rarr; HP mute relay</text>
+  <text x="1004" y="98">(Fig. 4d, bridged pair)</text>
+  <!-- feedback -->
+  <path class="w" d="M960 60 V210 H380"/>
+  <rect class="s" x="740" y="202" width="46" height="16"/>
+  <text class="val" x="763" y="196" text-anchor="middle">Rf 150&Omega;</text>
+  <path class="w" d="M380 210 V108"/>
+  <text x="388" y="230">Rg 196&Omega; to gnd &rarr; fixed gain 1.769; leg pair driven antiphase &rarr; 6 Vrms diff into 32&Omega; bridged</text>
+  <!-- bias networks -->
+  <text class="ttl" x="20" y="262">Bias (all real, Round 20):</text>
+  <text x="20" y="282">Green-LED refs on both rails (2.7k feed, 100&mu;F bypass, rail-tracking) &rarr; tail CCS 91&Omega;/11.3 mA + diamond CCS pair 75&Omega;/14 mA &middot; cascode base 3.3k/3.9k divider +8.1 V, 10&mu;F</text>
+  <!-- results -->
+  <text class="ttl" x="20" y="312">Verified:</text>
+  <text x="20" y="332"><tspan class="val">Bridged 32&Omega;: 1.13 W, THD &minus;126 dB @ 1 k / &minus;98 dB @ 20 k</tspan> &middot; never leaves class A (Imin 29 mA; 16 mA @ 0&deg;C) &middot; noise 3.3 nV/&radic;Hz &rarr; SNR &asymp; 132.7 dB &middot; osc test pV @ 0/27/50&deg;C &middot; sq-wave overshoot 1.5% &middot; diff DC 5 &mu;V @ 0.5% mismatch (no servo/caps) &middot; ~12 W/ch idle, runaway loop gain 0.06</text>
+</svg>
+<figcaption>Fig. 4e — Headphone stage, one leg (4 legs per unit; each channel's pair driven antiphase from the DAC's differential taps, load bridged across the 4-pin XLR). Same verified front end as the line stage with a power output triple biased deep class-A. Architecture committed after three-way comparison vs class-AB (&minus;30 dB worse) and OPA1612+BUF634A composite (genuine TI models). Decks: <code>bfdac_hp4.cir</code> (final w/ real bias, 1&nbsp;kHz), <code>_hp4b</code> (20&nbsp;kHz), <code>_hp4o/tc</code> (oscillation/temp), <code>_hp2</code> (bridged pair), <code>_hp1n/pm</code> (noise/PM).</figcaption>
+</figure>
+
+<h2>5. Supplies &amp; references</h2>
+<figure>
+<svg width="980" height="180" viewBox="0 0 980 180">
+  <text class="net" x="20" y="64">+15 (LDO)</text>
+  <path class="w" d="M100 60 H130"/>
+  <rect class="s" x="130" y="52" width="46" height="16"/>
+  <text class="val" x="153" y="44" text-anchor="middle">0.01&Omega;</text>
+  <path class="w" d="M176 60 H206"/>
+  <path class="s" d="M206 60 q7 -10 14 0 q7 -10 14 0 q7 -10 14 0"/>
+  <text class="val" x="230" y="44" text-anchor="middle">30 nH</text>
+  <path class="w" d="M248 60 H280"/>
+  <!-- bead || damp -->
+  <path class="w" d="M280 60 H300 M300 40 H300"/>
+  <path class="s" d="M300 44 q8 -12 16 0 q8 -12 16 0" transform="translate(0,4)"/>
+  <rect class="s" x="300" y="68" width="32" height="12"/>
+  <path class="w" d="M280 60 V48 H300 M280 60 V74 H300 M332 48 H352 V60 M332 74 H352 V60"/>
+  <text class="val" x="316" y="32" text-anchor="middle">bead 1 &mu;H</text>
+  <text class="val" x="316" y="98" text-anchor="middle">100&Omega; damp</text>
+  <path class="w" d="M352 60 H430"/>
+  <circle class="dot" cx="400" cy="60" r="3"/>
+  <text class="net" x="400" y="48" text-anchor="middle">+15F</text>
+  <!-- C_blk -->
+  <path class="w" d="M400 60 V88 M400 100 V120"/>
+  <path class="s" d="M386 88 H414 M386 100 H414"/>
+  <text class="val" x="420" y="98">10 &mu;F</text>
+  <path class="s" d="M384 120 H416 M390 126 H410 M396 132 H404"/>
+  <!-- C_hf -->
+  <path class="w" d="M430 60 H470 M470 60 V82 M470 118 V128"/>
+  <rect class="s" x="462" y="82" width="16" height="14"/>
+  <path class="s" d="M456 104 H484 M456 114 H484" transform="translate(0,-2)"/>
+  <text class="val" x="488" y="94">0.01&Omega; ESR</text>
+  <text class="val" x="488" y="112">100 nF</text>
+  <path class="s" d="M454 128 H486 M460 134 H480 M466 140 H474"/>
+  <path class="w" d="M470 60 H540"/>
+  <text x="545" y="64">&rarr; feeds R_off only (offset injection)</text>
+
+  <text class="ttl" x="700" y="40">Reference ladder (buffered, low-Z):</text>
+  <text x="700" y="66"><tspan class="net">1.25 V</tspan> &mdash; cell base line (q4_base, via 100&Omega; + 1000&mu;F bypass: in-band ref-noise gain 0.006)</text>
+  <text x="700" y="90"><tspan class="net">1.75 V</tspan> &mdash; vfr: replica emitters + Q5C collectors</text>
+  <text x="700" y="114"><tspan class="net">2.40 V</tspan> &mdash; I/V non-inverting inputs (sum-node set point)</text>
+  <text x="700" y="146" class="tag">All three must be quiet but carry near-constant current</text>
+  <text x="700" y="162" class="tag">(vfr absorbs the two replica currents &asymp; 100&ndash;190 mA total)</text>
+</svg>
+<figcaption>Fig. 5 — Rail filtering ahead of the offset-injection resistors (the sensitive path); raw &plusmn;15 feeds the diamond buffers and current pads. The &minus;15 rail is filtered identically.</figcaption>
+</figure>
+
+<h2>5b. DC offset-current steering / common-mode servo &nbsp;<span class="tag">VERIFIED (servo1/2/3)</span></h2>
+<figure>
+<svg width="1140" height="660" viewBox="0 0 1140 660">
+  <!-- ===== rails ===== -->
+  <path class="w" d="M240 40 H780"/>
+  <text class="net" x="188" y="44">+15</text>
+  <path class="w" d="M200 560 H1060"/>
+  <text class="net" x="148" y="564">&minus;15</text>
+
+  <!-- ===== CM sense ===== -->
+  <text class="net" x="18" y="112">out_p</text>
+  <text class="net" x="18" y="212">out_m</text>
+  <path class="w" d="M20 120 H60 M20 200 H60"/>
+  <rect class="s" x="60" y="112" width="50" height="16"/>
+  <rect class="s" x="60" y="192" width="50" height="16"/>
+  <text class="val" x="85" y="104" text-anchor="middle">10k</text>
+  <text class="val" x="85" y="228" text-anchor="middle">10k</text>
+  <text x="30" y="250">matched thin film</text>
+  <path class="w" d="M110 120 H140 V200 M110 200 H140 M140 160 H280"/>
+  <circle class="dot" cx="140" cy="160" r="3"/>
+  <text class="net" x="180" y="152">cmsen</text>
+
+  <!-- ===== input pair QI1 (left) / QI2 (right, mirrored) ===== -->
+  <path class="s" d="M280 144 V176"/>
+  <path class="s" d="M280 150 L294 136"/>
+  <path class="s" d="M280 170 L294 184 M294 184 V196"/>
+  <path class="sf" d="M294 184 L282 179 L287 172 Z"/>
+  <path class="s" d="M460 144 V176"/>
+  <path class="s" d="M460 150 L446 136"/>
+  <path class="s" d="M460 170 L446 184 M446 184 V196"/>
+  <path class="sf" d="M446 184 L458 179 L453 172 Z"/>
+  <text x="336" y="166" text-anchor="middle">QI1&nbsp;&nbsp;SSM2212&nbsp;&nbsp;QI2</text>
+  <!-- degeneration + tail -->
+  <rect class="s" x="286" y="196" width="16" height="44"/>
+  <rect class="s" x="438" y="196" width="16" height="44"/>
+  <text class="val" x="316" y="222">4.7k</text>
+  <text class="val" x="400" y="222">4.7k</text>
+  <path class="w" d="M294 240 V270 H446 V240"/>
+  <circle class="dot" cx="350" cy="270" r="3"/>
+  <path class="w" d="M350 270 V300"/>
+  <rect class="s" x="342" y="300" width="16" height="46"/>
+  <path class="w" d="M350 346 V560"/>
+  <text class="val" x="366" y="322">143k</text>
+  <text x="366" y="338">100&mu;A tail</text>
+  <!-- iref -->
+  <path class="w" d="M460 160 H520 M570 160 H590 M590 160 V176"/>
+  <text class="net" x="484" y="152">iref</text>
+  <rect class="s" x="520" y="152" width="50" height="16"/>
+  <text class="val" x="545" y="144" text-anchor="middle">5k</text>
+  <path class="s" d="M574 176 H606 M580 182 H600 M586 188 H594"/>
+  <text x="500" y="188">= sense R<tspan baseline-shift="sub" font-size="9">th</tspan> &rarr; I<tspan baseline-shift="sub" font-size="9">b</tspan> drops cancel</text>
+
+  <!-- ===== degenerated PNP mirror + beta-helper ===== -->
+  <path class="w" d="M294 40 V48"/>
+  <rect class="s" x="286" y="48" width="16" height="36"/>
+  <path class="w" d="M294 84 V88"/>
+  <path class="w" d="M446 40 V48"/>
+  <rect class="s" x="438" y="48" width="16" height="36"/>
+  <path class="w" d="M446 84 V88"/>
+  <text class="val" x="270" y="70" text-anchor="end">10k</text>
+  <text class="val" x="462" y="70">10k</text>
+  <!-- QP2 -->
+  <path class="s" d="M280 96 V128"/>
+  <path class="s" d="M280 102 L294 88"/>
+  <path class="sf" d="M281 101 L291 89 L295 97 Z"/>
+  <path class="s" d="M280 122 L294 136"/>
+  <!-- QP1 mirrored -->
+  <path class="s" d="M460 96 V128"/>
+  <path class="s" d="M460 102 L446 88"/>
+  <path class="sf" d="M459 101 L449 89 L445 97 Z"/>
+  <path class="s" d="M460 122 L446 136"/>
+  <text x="338" y="92" text-anchor="middle">QP2 &middot; QP1 (SSM2220)</text>
+  <!-- bm wire -->
+  <path class="w" d="M280 112 H460"/>
+  <circle class="dot" cx="370" cy="112" r="3"/>
+  <!-- QH helper -->
+  <path class="s" d="M356 134 V166"/>
+  <path class="s" d="M356 140 L370 126 M370 126 V112"/>
+  <path class="sf" d="M357 139 L367 127 L371 135 Z"/>
+  <path class="s" d="M356 160 L370 174 M370 174 V560"/>
+  <path class="w" d="M294 136 V150 H356"/>
+  <text x="386" y="156">QH &beta;-helper</text>
+  <circle class="dot" cx="294" cy="136" r="3"/>
+  <text class="net" x="250" y="134" text-anchor="end">nd1</text>
+
+  <!-- ===== vint1 to Darlington ===== -->
+  <circle class="dot" cx="446" cy="136" r="3"/>
+  <path class="w" d="M446 136 H546 V150 H560"/>
+  <text class="net" x="474" y="128">vint1</text>
+  <!-- QS0 -->
+  <path class="s" d="M560 134 V166"/>
+  <path class="s" d="M560 140 L574 126 M574 126 V110"/>
+  <path class="sf" d="M561 139 L571 127 L575 135 Z"/>
+  <path class="s" d="M560 160 L574 174 M574 174 V560"/>
+  <!-- Rbl -->
+  <path class="w" d="M574 40 V54"/>
+  <rect class="s" x="566" y="54" width="16" height="40"/>
+  <path class="w" d="M574 94 V110"/>
+  <text class="val" x="590" y="78">470k</text>
+  <circle class="dot" cx="574" cy="110" r="3"/>
+  <text class="net" x="540" y="106" text-anchor="end">qsb</text>
+  <!-- QS -->
+  <path class="w" d="M574 110 H612"/>
+  <path class="s" d="M612 94 V126"/>
+  <path class="s" d="M612 100 L626 86 M626 86 V40"/>
+  <path class="sf" d="M613 99 L623 87 L627 95 Z"/>
+  <path class="s" d="M612 120 L626 134 M626 134 V306"/>
+  <text x="560" y="196">QS0 + QS Darlington</text>
+  <text x="560" y="212">(kills base-current steal at vint1)</text>
+
+  <!-- ===== QL current-source load ===== -->
+  <path class="s" d="M612 314 V346"/>
+  <path class="s" d="M612 320 L626 306"/>
+  <path class="s" d="M612 340 L626 354 M626 354 V560"/>
+  <path class="sf" d="M626 354 L614 349 L619 342 Z"/>
+  <path class="w" d="M612 330 H680"/>
+  <circle class="dot" cx="680" cy="330" r="3"/>
+  <path class="s" d="M720 314 V346"/>
+  <path class="s" d="M720 320 L706 306 M706 306 V290 H680 V314"/>
+  <path class="s" d="M720 340 L706 354 M706 354 V560"/>
+  <path class="sf" d="M706 354 L718 349 L713 342 Z"/>
+  <path class="w" d="M680 40 V180"/>
+  <rect class="s" x="672" y="180" width="16" height="46"/>
+  <path class="w" d="M680 226 V330"/>
+  <text class="val" x="696" y="202">293k</text>
+  <text x="640" y="390">QL1 &middot; QL0</text>
+  <text x="640" y="406">100&mu;A source</text>
+
+  <!-- ===== Miller integration cap ===== -->
+  <circle class="dot" cx="500" cy="136" r="3"/>
+  <path class="w" d="M500 136 V244"/>
+  <path class="s" d="M488 244 H512 M488 252 H512"/>
+  <path class="w" d="M500 252 V300 H626"/>
+  <text class="val" x="516" y="242">C<tspan baseline-shift="sub" font-size="9">int</tspan> 10&mu;F film</text>
+  <text x="516" y="258">(Miller, servo branch)</text>
+  <circle class="dot" cx="626" cy="300" r="3"/>
+  <text class="net" x="644" y="296">vint2</text>
+
+  <!-- ===== post-filter ===== -->
+  <path class="w" d="M626 300 V380 H660"/>
+  <rect class="s" x="660" y="372" width="50" height="16"/>
+  <text class="val" x="685" y="364" text-anchor="middle">100k</text>
+  <path class="w" d="M710 380 H1000"/>
+  <circle class="dot" cx="770" cy="380" r="3"/>
+  <text class="net" x="748" y="370">vflt</text>
+  <path class="w" d="M770 380 V424"/>
+  <path class="s" d="M758 424 H782 M758 432 H782"/>
+  <path class="w" d="M770 432 V446"/>
+  <path class="s" d="M754 446 H786 M760 452 H780 M766 458 H774"/>
+  <text class="val" x="792" y="428">1&mu;F film</text>
+  <text x="792" y="444">noise wall, 1.6 Hz</text>
+
+  <!-- ===== vernier actuators ===== -->
+  <path class="s" d="M900 364 V396"/>
+  <path class="s" d="M900 370 L914 356 M914 356 V330"/>
+  <path class="s" d="M900 390 L914 404 M914 404 V420"/>
+  <path class="sf" d="M914 404 L902 399 L907 392 Z"/>
+  <rect class="s" x="906" y="420" width="16" height="44"/>
+  <path class="w" d="M914 464 V560"/>
+  <text class="val" x="930" y="446">2k</text>
+  <path class="sf" d="M914 330 L908 344 H920 Z"/>
+  <text class="net" x="880" y="322">to sum_p</text>
+  <path class="s" d="M1000 364 V396"/>
+  <path class="s" d="M1000 370 L1014 356 M1014 356 V330"/>
+  <path class="s" d="M1000 390 L1014 404 M1014 404 V420"/>
+  <path class="sf" d="M1014 404 L1002 399 L1007 392 Z"/>
+  <rect class="s" x="1006" y="420" width="16" height="44"/>
+  <path class="w" d="M1014 464 V560"/>
+  <text class="val" x="1030" y="446">2k</text>
+  <path class="sf" d="M1014 330 L1008 344 H1020 Z"/>
+  <text class="net" x="980" y="322">to sum_m</text>
+  <text x="900" y="494">QA1 &middot; QA2 (matched)</text>
+  <text x="900" y="510">1.43 mA &plusmn;0.71 mA</text>
+  <text x="900" y="526">(&plusmn;40 mV CM authority)</text>
+
+  <!-- ===== verified results ===== -->
+  <text class="ttl" x="30" y="596">Verified (bfdac_servo1/2/3):</text>
+  <text x="30" y="616">Loop: 75.9 dB DC gain &middot; 11.7 mHz crossover &middot; 89&deg; phase margin (post-filter pole 130&times; above). &nbsp;Residual output CM: 95&ndash;135 &mu;V over full &plusmn;40 mV disturbance (+ pair V<tspan baseline-shift="sub" font-size="9">os</tspan> &asymp; 200 &mu;V).</text>
+  <text x="30" y="636">Noise at diff output, 1% actuator mismatch: flat 285 pV/&radic;Hz &rarr; 40 nV rms (20 Hz&ndash;20 kHz) = <tspan class="val">&minus;153.9 dB rel 2 Vrms</tspan> &mdash; invisible in the 128.4 dB budget. &nbsp;Startup: exponential, no windup, sub-mV by ~90 s (covered by output mute relay).</text>
+</svg>
+<figcaption>Fig. 5b — Discrete common-mode servo, one complete instance per mono channel. Senses (out_p+out_m)/2, integrates against 0 V, and trims a &plusmn;1% vernier of the injection current into both summing nodes (alongside the fixed R<sub>off</sub> legs of Fig. 3) &mdash; common drive means actuator mismatch is the only differential path. Both caps live in the servo branch, not the audio path. Matched 5 k source impedances at the pair bases cancel base-current drops; the degenerated + &beta;-helped mirror and Darlington second stage keep systematic offset at the 0.1 mV level.</figcaption>
+</figure>
+
+<h2>6. Operating points</h2>
+<table>
+<tr><th>Node / branch</th><th>Value</th><th>Notes</th></tr>
+<tr><td><code>bus_plus / bus_minus</code></td><td>1.75 V &plusmn; 16 mV over code</td><td>replica-pinned; residual is linear (gain), not INL</td></tr>
+<tr><td><code>casb</code></td><td>2.55&ndash;2.62 V</td><td>1.75 + V<sub>be</sub>(I<sub>rail</sub>)</td></tr>
+<tr><td><code>sum</code></td><td>2.400 V (virtual gnd)</td><td>&lt;1 mV excursion during worst DEM transitions</td></tr>
+<tr><td>Q5 collector current</td><td>52&ndash;95 mA</td><td>code &times; 0.774 mA + 50 mA pad + 1.9 mA bleed</td></tr>
+<tr><td>Q5 base current</td><td>115&ndash;188 &mu;A</td><td>the Round-12 INL mechanism; compensated by Q5C copy</td></tr>
+<tr><td>cell current</td><td>0.774 mA</td><td>(1.25 &minus; V<sub>be</sub>)/750&Omega;</td></tr>
+<tr><td>output swing</td><td>&plusmn;2.4 V per rail, &plusmn;4.8 V differential</td><td>43 mA signal &times; 56&Omega;</td></tr>
+</table>
+
+<h2>7. Verification traceability</h2>
+<table>
+<tr><th>Block</th><th>Deck(s)</th><th>Result</th></tr>
+<tr><td>DEM shaper + mismatch</td><td><code>dem_study.py</code>, <code>shaper_stability.py</code></td><td>SNDR<sub>mis</sub> 130.6 dB; states bounded over 341 ms, all stimuli</td></tr>
+<tr><td>Glitch energy (full stack)</td><td><code>cosim17f/19/19b/20/24</code></td><td>151.7 dB; q<sub>pc</sub> flat to 0.005%; asym 0.70e-4; replica &plusmn;5% / 2 ns tolerant</td></tr>
+<tr><td>Bus caps phase audit</td><td><code>cosim17f/18</code></td><td>10 n C0G: pure +5 ns group delay, no dispersion</td></tr>
+<tr><td>Static INL + I<sub>b</sub>-comp</td><td><code>cosim22b&ndash;n, 23&ndash;23f, 24b</code></td><td>1.17 &rarr; 0.079 ppm; HD3 &minus;143.9 dB; worst temp corner &minus;134.7 dB</td></tr>
+<tr><td>Clock tree / reclock (Fig. 1b, Round 30 RTZ)</td><td><code>rtz_study.py</code> / <code>rtz_noise.py</code> / <code>dwa_tones3.py</code> / <code>bfdac_cosim28j.cir</code></td><td>duty&rarr;gain 164.9 dB; code-dependence &le; 3.3e-4; width jitter @80 fs &rarr; 139.5 dB; sort-shaper tones &le; &minus;168 dBFS</td></tr>
+<tr><td>Clock tree / reclock (superseded NRZ baseline)</td><td><code>reclock_study.py</code></td><td>timing-error SNDR 152.6 dB w/ external FFs vs 129.8 dB direct IOB drive (+23 dB); dominant term = MMCM/BUFG common jitter, removed from output path</td></tr>
+<tr><td>CM servo (Fig. 5b)</td><td><code>servo1/2/3</code></td><td>PM 89&deg; @ 11.7 mHz; residual CM 95&ndash;135 &mu;V; noise &minus;153.9 dB rel 2 Vrms</td></tr>
+<tr><td>Reconstruction filter (Fig. 4b)</td><td><code>filt1</code>, <code>noise2</code>, <code>cosim25b</code></td><td>Bessel 450 kHz; gd 614 ns flat to 17 ps; &minus;41.4 dB @ 3.072 M; 0.93% overshoot, no ringing; glitch into LC unchanged</td></tr>
+<tr><td>Line V-stage (Fig. 4c)</td><td><code>vstage1/1b/1o/1n/1t/2/2b</code></td><td>diff THD &minus;140 dB @ 1 k, &minus;105 dB @ 20 k (600 &Omega;); all taps &le;&minus;136 dB @ 1 k; SNR 132.8 dB @ 6 V; diff offset 0.4 &mu;V; oscillation-free</td></tr>
+<tr><td>Thermal noise, full stack</td><td><code>noise1/1b</code></td><td>flat 4.9 nV/&radic;Hz all codes (with q4_base bypass); 0.693 &mu;V rms 20 Hz&ndash;20 kHz = &minus;133.8 dB rel FS</td></tr>
+<tr><td>System budget</td><td>&mdash;</td><td>distortion: code 133.5 &oplus; mismatch 130.6 &oplus; glitch 151.7 &oplus; static &ge;134.7 &asymp; 128.4 dB; &oplus; noise 133.8 &asymp; <b>127.3 dB THD+N</b> (unweighted; ~+2&ndash;3 dB A-wtd)</td></tr>
+</table>
+
+<p class="sub" style="margin-top:2.5rem">Generated from the verified LTspice decks (final: <code>bfdac_cosim24.cir</code>, servo: <code>bfdac_servo1/2/3.cir</code>, noise: <code>bfdac_noise1/1b/2.cir</code>, filter: <code>bfdac_filt1.cir</code>, <code>bfdac_cosim25b.cir</code>, V-stage: <code>bfdac_vstage1.cir</code>). Netlist values are authoritative; this document is descriptive. <b>Companion BOM: <code>bom.md</code></b> — authoritative pair kept in lock-step; BOM section N documents figure N (§1↔Fig.&nbsp;1b, §2↔Fig.&nbsp;2, §3↔Fig.&nbsp;3, §4↔Fig.&nbsp;4, §5↔4b, §6↔4c, §7↔4d, §8↔4e, §9↔5, §10↔5b). Any part added/removed/revalued in one file must be reflected in the other in the same change.</p>
+
+</body>
+</html>

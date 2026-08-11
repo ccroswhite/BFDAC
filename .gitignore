@@ -1,0 +1,24 @@
+# Vivado / XSim build artifacts
+*.jou
+*.log
+*.pb
+*.wdb
+*.vcd
+*.str
+xsim.dir/
+.Xil/
+*.backup.jou
+*.backup.log
+
+# Synthesis checkpoints (large binaries, regenerable; exceed GitHub 100 MB limit)
+*.dcp
+
+# Questa/ModelSim library
+Xilinx/work/
+
+# Simulation scratch
+Xilinx/Testbench/sim_work/
+
+# Python
+__pycache__/
+*.pyc

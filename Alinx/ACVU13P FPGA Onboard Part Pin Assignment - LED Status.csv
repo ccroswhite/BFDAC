@@ -1,0 +1,3 @@
+Signal Name,FPGA Pin Name,FPGA Pin Number,Remark
+LED1,IO_T1U_N12_6 1,BC33,User LE D
+FPGA_DONE,DONE_ 0,AC12,Config Succes s

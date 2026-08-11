@@ -101,17 +101,19 @@ module fir_polyphase_stereo #(
     // -------------------------------------------------------------------------
     //  URAM288 coefficient storage — NUM_URAMS instances, 2 MACs per URAM
     //
-    //  72-bit word layout:
-    //    [17: 0] = MAC(even) Bank A
-    //    [35:18] = MAC(even) Bank B
-    //    [53:36] = MAC(odd)  Bank A
-    //    [71:54] = MAC(odd)  Bank B
+    //  BWE_MODE = PARITY_INTERLEAVED (UG573): BWE[i] (i=0..7) gates data byte
+    //  DIN[8i+:8] AND its interleaved parity bit DIN[64+i]. It does NOT gate
+    //  9 contiguous bits. Two BWE bits therefore write an independent 18-bit
+    //  quantity: 16 data bits + 2 parity bits.
     //
-    //  WEN[7:0]: each bit gates 9 bits of the 72-bit word (UG573):
-    //    WEN[0] → bits[ 8: 0],  WEN[1] → bits[17: 9]  → MAC(even) Bank A [17:0]
-    //    WEN[2] → bits[26:18],  WEN[3] → bits[35:27]  → MAC(even) Bank B [35:18]
-    //    WEN[4] → bits[44:36],  WEN[5] → bits[53:45]  → MAC(odd)  Bank A [53:36]
-    //    WEN[6] → bits[62:54],  WEN[7] → bits[71:63]  → MAC(odd)  Bank B [71:54]
+    //  Lane k (k = {mac_odd, bank}: 0=evenA, 1=evenB, 2=oddA, 3=oddB) stores:
+    //    coef[15:0]  → data bits DIN[16k +: 16]   (bytes 2k, 2k+1)
+    //    coef[17:16] → parity bits DIN[64+2k +: 2]
+    //  gated by BWE = 2'b11 << 2k.
+    //
+    //  (Previous packing put 18-bit lanes at [17:0]/[35:18]/[53:36]/[71:54],
+    //  which straddles byte boundaries: bits above each 16-bit byte pair were
+    //  never written — odd-MAC coefficients silently lost their upper bits.)
     //
     //  URAM read latency: 2 cycles (IREG_PRE=1, OREG=1).
     //  bank_select mux applied after URAM output register.
@@ -122,15 +124,14 @@ module fir_polyphase_stereo #(
 
             // Determine if this URAM is being written this cycle
             // coef_wmac_r[0]=0 → even MAC (lower lane), [0]=1 → odd MAC (upper lane)
-            wire uram_sel    = (coef_wmac_r[$clog2(NUM_MACS)-1:1] == $clog2(NUM_URAMS)'(u));
+            wire uram_sel    = (int'(coef_wmac_r[$clog2(NUM_MACS)-1:1]) == u);
             wire uram_we     = coef_we_r && uram_sel;
             wire lane_odd    = coef_wmac_r[0];  // 0=even MAC (lower 36b), 1=odd MAC (upper 36b)
 
-            // WEN[7:0]: select the correct 18-bit field within the 72-bit word
-            // Bank A = lower 18b of each 36b lane, Bank B = upper 18b
-            // Even MAC: lanes [1:0]=Bank A, [3:2]=Bank B
-            // Odd  MAC: lanes [5:4]=Bank A, [7:6]=Bank B
-            // Each WEN bit gates 9 bits; 18-bit coef needs 2 WEN bits asserted.
+            // WEN[7:0]: two BWE bits select byte pair 2k,2k+1 (+ parity bits
+            // 64+2k,64+2k+1) for lane k = {lane_odd, bank}.
+            //   even, Bank A → k=0 → 8'h03    even, Bank B → k=1 → 8'h0C
+            //   odd,  Bank A → k=2 → 8'h30    odd,  Bank B → k=3 → 8'hC0
             wire [7:0] uram_wen;
             assign uram_wen = !uram_we ? 8'h00 :
                               (!lane_odd && !bank_load_target_r) ? 8'h03 :  // even, Bank A
@@ -138,16 +139,18 @@ module fir_polyphase_stereo #(
                               ( lane_odd && !bank_load_target_r) ? 8'h30 :  // odd,  Bank A
                                                                    8'hC0;   // odd,  Bank B
 
-            // Write data: place coef_wdata_r into the correct 18-bit lane of the 72-bit word.
-            // Other lanes are don't-care since WEN gates them.
+            // Write data: coef[15:0] replicated across all four byte pairs,
+            // coef[17:16] replicated across all four parity-bit pairs.
+            // WEN gates the lane actually written.
             wire [URAM_DW-1:0] uram_din;
-            assign uram_din = {coef_wdata_r, coef_wdata_r, coef_wdata_r, coef_wdata_r};
+            assign uram_din = {{4{coef_wdata_r[17:16]}},   // [71:64] parity bits
+                               {4{coef_wdata_r[15:0]}}};   // [63: 0] data bytes
 
             // URAM288 read data (2-cycle latency)
             wire [URAM_DW-1:0] uram_dout;
 
-            // synthesis translate_off
-            // Behavioral model for simulation (Vivado XSim doesn't have URAM288 primitive)
+`ifdef SIM
+            // Behavioral model for simulation (XSim does not have URAM288 primitive)
             (* ram_style = "ultra" *) logic [URAM_DW-1:0] uram_mem [0:4095];
             logic [URAM_DW-1:0] uram_rd_s1, uram_rd_s2;
 
@@ -157,10 +160,12 @@ module fir_polyphase_stereo #(
 
             always_ff @(posedge clk) begin
                 if (uram_we) begin
-                    // Byte-enable write: only update enabled 9-bit groups
+                    // PARITY_INTERLEAVED: WEN[b] gates byte [8b+:8] AND parity bit [64+b]
                     for (int b = 0; b < 8; b++) begin
-                        if (uram_wen[b])
-                            uram_mem[coef_waddr_r][b*9 +: 9] <= uram_din[b*9 +: 9];
+                        if (uram_wen[b]) begin
+                            uram_mem[coef_waddr_r][b*8 +: 8] <= uram_din[b*8 +: 8];
+                            uram_mem[coef_waddr_r][64 + b]   <= uram_din[64 + b];
+                        end
                     end
                 end
                 uram_rd_s1 <= uram_mem[URAM_AW'(coef_addr)];
@@ -168,23 +173,16 @@ module fir_polyphase_stereo #(
             end
 
             assign uram_dout = uram_rd_s2;
-            // synthesis translate_on
-
-            // synthesis translate_off is above — for synthesis the URAM288 primitive is used below
-            // synthesis translate_on
-
-`ifndef SYNTHESIS
-            // simulation path already handled above via uram_dout
 `else
             // ----------------------------------------------------------------
             //  Synthesis: explicit URAM288 primitive instantiation
             //  UG974 / PG-Xilinx UltraRAM primitive
             // ----------------------------------------------------------------
             URAM288 #(
-                .OREG_A             ("FALSE"),  // No output reg on write port (write-only)
-                .OREG_B             ("TRUE"),   // Output register on read port (1 extra cycle)
+                .OREG_A             ("FALSE"),   // No output reg on write port (write-only)
+                .OREG_B             ("TRUE"),    // Output register on read port (1 extra cycle)
                 .IREG_PRE_A         ("FALSE"),
-                .IREG_PRE_B         ("TRUE"),   // Input addr register (total 2-cycle read latency)
+                .IREG_PRE_B         ("TRUE"),    // Input addr register (total 2-cycle read latency)
                 .AUTO_SLEEP_LATENCY (8),
                 .AVG_CONS_INACTIVE_CYCLES(10),
                 .BWE_MODE_A         ("PARITY_INTERLEAVED"),
@@ -193,51 +191,68 @@ module fir_polyphase_stereo #(
                 .EN_ECC_RD_A        ("FALSE"),
                 .EN_ECC_RD_B        ("FALSE"),
                 .EN_ECC_WR_A        ("FALSE"),
-                .EN_ECC_WR_B        ("FALSE"),
-                .INIT_VALUE         (72'h000000000000000000),
-                .RST_MODE_A         ("SYNC"),
-                .RST_MODE_B         ("SYNC"),
-                .SELF_ADDR_A        (11'h000),
-                .SELF_ADDR_B        (11'h000),
-                .SELF_MASK_A        (11'h7ff),
-                .SELF_MASK_B        (11'h7ff),
-                .USE_EXT_CE_A       ("FALSE"),
-                .USE_EXT_CE_B       ("FALSE")
+                .EN_ECC_WR_B        ("FALSE")
             ) u_uram (
                 // Port A — Write only (coefficient load)
-                .ADDRA      (URAM_AW'(coef_waddr_r)),
-                .DINA       (uram_din),
-                .BWEa       (uram_wen),
-                .ENA        (uram_we),
+                .ADDR_A     (23'(coef_waddr_r)),
+                .DIN_A      (uram_din),
+                .BWE_A      ({1'b0, uram_wen}),  // 9-bit BWE: pad MSB to 0
+                .EN_A       (uram_we),
                 .RDB_WR_A   (1'b1),              // 1=write mode
-                .DOUTA      (),                  // unused
-                .SLEEP      (1'b0),
-                .RSTA       (1'b0),
+                .DOUT_A     (),                  // unused
+                .RST_A      (1'b0),
 
                 // Port B — Read only (coefficient sweep)
-                .ADDRB      (URAM_AW'(coef_addr)),
-                .DINB       ('0),
-                .BWEb       (8'hFF),
-                .ENB        (1'b1),
+                .ADDR_B     (23'(coef_addr)),
+                .DIN_B      ('0),
+                .BWE_B      (9'h1FF),            // all lanes enabled for read port
+                .EN_B       (1'b1),
                 .RDB_WR_B   (1'b0),              // 0=read mode
-                .DOUTB      (uram_dout),
-                .RSTB       (!rst_n),
+                .DOUT_B     (uram_dout),
+                .RST_B      (!rst_n),
+
+                // Cascade — not used (single URAM, no chaining)
+                .CAS_IN_ADDR_A    (23'h0),
+                .CAS_IN_ADDR_B    (23'h0),
+                .CAS_IN_BWE_A     (9'h0),
+                .CAS_IN_BWE_B     (9'h0),
+                .CAS_IN_DBITERR_A (1'b0),
+                .CAS_IN_DBITERR_B (1'b0),
+                .CAS_IN_DIN_A     (72'h0),
+                .CAS_IN_DIN_B     (72'h0),
+                .CAS_IN_DOUT_A    (72'h0),
+                .CAS_IN_DOUT_B    (72'h0),
+                .CAS_IN_EN_A      (1'b0),
+                .CAS_IN_EN_B      (1'b0),
+                .CAS_IN_RDACCESS_A(1'b0),
+                .CAS_IN_RDACCESS_B(1'b0),
+                .CAS_IN_RDB_WR_A  (1'b0),
+                .CAS_IN_RDB_WR_B  (1'b0),
+                .CAS_IN_SBITERR_A (1'b0),
+                .CAS_IN_SBITERR_B (1'b0),
 
                 .OREG_CE_A  (1'b1),
                 .OREG_CE_B  (1'b1),
+                .OREG_ECC_CE_A (1'b0),
+                .OREG_ECC_CE_B (1'b0),
+                .INJECT_DBITERR_A (1'b0),
+                .INJECT_DBITERR_B (1'b0),
+                .INJECT_SBITERR_A (1'b0),
+                .INJECT_SBITERR_B (1'b0),
+                .SLEEP      (1'b0),
                 .CLK        (clk)
             );
 `endif
 
-            // Extract coef_out for even and odd MAC from registered URAM output
-            // bank_select mux picks Bank A or Bank B slice
+            // Extract coef_out for even and odd MAC from registered URAM output:
+            // lane k = {coef[17:16] @ parity[64+2k+:2], coef[15:0] @ data[16k+:16]}
             assign coef_out[2*u]   = bank_select
-                                     ? signed'(uram_dout[35:18])  // even MAC, Bank B
-                                     : signed'(uram_dout[17:0]);  // even MAC, Bank A
+                                     ? signed'({uram_dout[67:66], uram_dout[31:16]})  // even, Bank B (k=1)
+                                     : signed'({uram_dout[65:64], uram_dout[15: 0]}); // even, Bank A (k=0)
 
             assign coef_out[2*u+1] = bank_select
-                                     ? signed'(uram_dout[71:54])  // odd MAC, Bank B
-                                     : signed'(uram_dout[53:36]); // odd MAC, Bank A
+                                     ? signed'({uram_dout[71:70], uram_dout[63:48]})  // odd, Bank B (k=3)
+                                     : signed'({uram_dout[69:68], uram_dout[47:32]}); // odd, Bank A (k=2)
 
         end
     endgenerate

@@ -4,8 +4,8 @@
 //  COEF_BANK_LOADER
 //
 //  AXI4 read master that fetches a coefficient bank from DDR4 and writes it
-//  into the 256 per-MAC coefficient BRAMs of one fir_polyphase_interpolator
-//  instance. Driven by the coef_bank_manager FSM.
+//  into the URAM288 coefficient storage of fir_polyphase_stereo.
+//  Driven by the coef_bank_manager FSM.
 //
 //  ----------------------------------------------------------------------------
 //  DDR4 BANK LAYOUT (per channel)
@@ -14,14 +14,15 @@
 //    Address                         | Contents
 //    --------------------------------+--------------------------------------
 //    DDR4_BASE_ADDR + bank_id * BS   | Start of bank `bank_id`
-//      offset 0                      | MAC 0  coef[0]   ... coef[2047]
-//      offset 8 KB                   | MAC 1  coef[0]   ... coef[2047]
-//      offset 16 KB                  | MAC 2  ...
+//      offset 0                      | MAC 0  coef[0]   ... coef[1023]
+//      offset 4 KB                   | MAC 1  coef[0]   ... coef[1023]
+//      offset 8 KB                   | MAC 2  ...
 //      ...                           |
-//      offset (255 * 8 KB)           | MAC 255 coef[0]  ... coef[2047]
+//      offset (1023 * 4 KB)          | MAC 1023 coef[0] ... coef[1023]
 //    DDR4_BASE_ADDR + (bank_id+1)*BS | Start of next bank
 //
-//    BS (BANK_SIZE_BYTES) = 256 MACs * 2048 coefs * 4 bytes = 2 MB per bank
+//    BS (BANK_SIZE_BYTES) = 1024 MACs * 1024 coefs * 4 bytes = 4 MB per bank
+//    (2M taps: 2048 MACs * 1024 coefs * 4 bytes = 8 MB per bank)
 //
 //  Each coefficient is stored as a 32-bit signed word in DDR4 (sign-extended
 //  from the underlying 18-bit value). This wastes ~44% of bank storage but
@@ -32,10 +33,10 @@
 //  TIMING BUDGET
 //  ----------------------------------------------------------------------------
 //
-//    Per MAC:        2048 coefs / 4 per beat = 512 beats = 2 bursts of 256
-//    Per bank:       256 MACs * 2 bursts = 512 bursts
+//    Per MAC:        1024 coefs / 4 per beat = 256 beats = 1 burst of 256
+//    Per bank:       1024 MACs * 1 burst = 1024 bursts
 //    Per burst:      ~256 cycles AXI + ~1024 cycles drain (sequential FSM)
-//    Total per bank: ~660K cycles = 1.85 ms at 357 MHz
+//    Total per bank: ~1.3M cycles = 3.6 ms at 357 MHz
 //
 //  Comfortably inside the 5.3 ms fade-out window from coef_mute_envelope.
 //
@@ -57,7 +58,7 @@ module coef_bank_loader #(
     parameter int            AXI_DATA_WIDTH   = 128,
     parameter int            AXI_ADDR_WIDTH   = 32,
     parameter logic [31:0]   DDR4_BASE_ADDR   = 32'h0000_0000,
-    parameter logic [31:0]   BANK_SIZE_BYTES  = 32'h0020_0000     // 2 MB
+    parameter logic [31:0]   BANK_SIZE_BYTES  = 32'(NUM_MACS * COEF_DEPTH * 4) // e.g. 4 MB for 1024x1024
 )(
     input  logic                          clk,
     input  logic                          rst_n,
@@ -94,8 +95,15 @@ module coef_bank_loader #(
     localparam int COEFS_PER_BEAT  = AXI_DATA_WIDTH / 32;          // 4 @128b
     localparam int BEATS_PER_BURST = 256;                          // max AXI burst
     localparam int COEFS_PER_BURST = COEFS_PER_BEAT * BEATS_PER_BURST; // 1024
-    localparam int BURSTS_PER_MAC  = COEF_DEPTH / COEFS_PER_BURST;     // 2
-    localparam int MAC_BYTES       = COEF_DEPTH * 4;                   // 8 KB
+    localparam int BURSTS_PER_MAC  = COEF_DEPTH / COEFS_PER_BURST;     // 1 (TPP=64) .. 4 (TPP=256)
+    localparam int MAC_BYTES       = COEF_DEPTH * 4;                   // 4 KB (TPP=64) .. 16 KB (TPP=256)
+    localparam int BURST_BYTES     = COEFS_PER_BURST * 4;              // 4 KB per AXI burst
+    localparam int BIDX_W          = (BURSTS_PER_MAC > 1) ? $clog2(BURSTS_PER_MAC) : 1;
+
+    initial begin
+        assert (COEF_DEPTH % COEFS_PER_BURST == 0)
+            else $fatal(1, "COEF_DEPTH must be a multiple of COEFS_PER_BURST");
+    end
 
     // -------------------------------------------------------------------------
     //  R-channel FIFO. Holds one full burst (256 x 128b = 4 KB) so the AXI
@@ -160,16 +168,19 @@ module coef_bank_loader #(
     state_t                      state;
     logic [BANK_BITS-1:0]        bank_id;
     logic [$clog2(NUM_MACS)-1:0] mac_idx;
-    logic                        burst_half;    // 0 = first 1024 coefs, 1 = second
+    logic [BIDX_W-1:0]           burst_idx;     // burst within MAC (0..BURSTS_PER_MAC-1)
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
     logic [9:0]                  drain_count;   // 0..1023 within a burst (4 per beat)
 
-    // Bank base address: DDR4_BASE + bank_id * BANK_SIZE_BYTES + mac*8KB + half*4KB
+    // Bank base address: DDR4_BASE + bank_id * BANK_SIZE_BYTES + mac * MAC_BYTES
+    //                    + burst_idx * BURST_BYTES
+    // Each AXI burst = 256 beats x 16 bytes = 4 KB = COEFS_PER_BURST coefs;
+    // BURSTS_PER_MAC bursts cover all COEF_DEPTH coefs of one MAC.
     wire [AXI_ADDR_WIDTH-1:0] burst_addr =
         DDR4_BASE_ADDR
         + (AXI_ADDR_WIDTH'(bank_id) * BANK_SIZE_BYTES)
         + (AXI_ADDR_WIDTH'(mac_idx) * MAC_BYTES)
-        + (burst_half ? AXI_ADDR_WIDTH'(COEFS_PER_BURST * 4) : '0);
+        + (AXI_ADDR_WIDTH'(burst_idx) * BURST_BYTES);
 
     // -------------------------------------------------------------------------
     //  Drain-side: each FIFO beat carries 4 coefs. We slice them out one at
@@ -189,7 +200,7 @@ module coef_bank_loader #(
             state          <= ST_IDLE;
             bank_id        <= '0;
             mac_idx        <= '0;
-            burst_half     <= 1'b0;
+            burst_idx      <= '0;
             beat_count     <= '0;
             drain_count    <= '0;
             beat_slice     <= '0;
@@ -221,7 +232,7 @@ module coef_bank_loader #(
                     if (load_start) begin
                         bank_id    <= load_bank_id;
                         mac_idx    <= '0;
-                        burst_half <= 1'b0;
+                        burst_idx  <= '0;
                         state      <= ST_ISSUE_AR;
                     end
                 end
@@ -240,8 +251,8 @@ module coef_bank_loader #(
                         m_axi_rready  <= 1'b1;
                         beat_count    <= '0;
                         state         <= ST_RECV_R;
-                        $display("[AR_HS @%0t] mac=%0d half=%0d beat_count_now=%0d (resetting to 0)",
-                            $time, mac_idx, burst_half, beat_count);
+                        $display("[AR_HS @%0t] mac=%0d burst=%0d beat_count_now=%0d (resetting to 0)",
+                            $time, mac_idx, burst_idx, beat_count);
                     end
                 end
 
@@ -249,7 +260,7 @@ module coef_bank_loader #(
                 ST_RECV_R: begin
                     if (m_axi_rvalid && m_axi_rready) begin
                         if (beat_count == 0)
-                            $display("[BEAT0 @%0t] mac=%0d half=%0d first beat rvalid+rready", $time, mac_idx, burst_half);
+                            $display("[BEAT0 @%0t] mac=%0d burst=%0d first beat rvalid+rready", $time, mac_idx, burst_idx);
                         // Latch rdata now; fifo_we_d1 fires next cycle to write it.
                         // This breaks any same-cycle dependency on m_axi_rdata.
                         fifo_din   <= m_axi_rdata;
@@ -264,8 +275,8 @@ module coef_bank_loader #(
                             beat_slice   <= '0;
                             drain_count  <= '0;
                             state        <= ST_DRAIN;
-                            $display("[RLAST @%0t] mac=%0d half=%0d beat_cnt=%0d fifo_wptr=%0d fifo_rptr=%0d fifo_cnt=%0d",
-                                $time, mac_idx, burst_half, beat_count+1, fifo_wptr, fifo_rptr, fifo_count+1);
+                            $display("[RLAST @%0t] mac=%0d burst=%0d beat_cnt=%0d fifo_wptr=%0d fifo_rptr=%0d fifo_cnt=%0d",
+                                $time, mac_idx, burst_idx, beat_count+1, fifo_wptr, fifo_rptr, fifo_count+1);
                         end
                     end
                 end
@@ -286,7 +297,7 @@ module coef_bank_loader #(
                             beat_slice  <= '0;
                             if (drain_count == 0)
                                 $display("[BEATBUF0 @%0t] fifo_rdata=%0h (beat0 coef0 expected=%0h)",
-                                    $time, fifo_rdata, mac_idx * COEF_DEPTH);
+                                    $time, fifo_rdata, mac_idx * COEF_DEPTH + burst_idx * COEFS_PER_BURST);
                         end
                     end
 
@@ -294,12 +305,11 @@ module coef_bank_loader #(
                         // Drive write to current MAC at the current depth address
                         coef_we    <= 1'b1;
                         coef_wmac  <= mac_idx;
-                        coef_waddr <= $clog2(COEF_DEPTH)'((burst_half ? COEFS_PER_BURST : 0) +
-                                          drain_count);
+                        coef_waddr <= $clog2(COEF_DEPTH)'(32'(burst_idx) * COEFS_PER_BURST + 32'(drain_count));
                         coef_wdata <= slice_coef;
                         if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS-1) && drain_count < 4)
-                            $display("[DRAIN255 @%0t] half=%0d drain=%0d wdata=%0h",
-                                $time, burst_half, drain_count, slice_coef);
+                            $display("[DRAIN255 @%0t] burst=%0d drain=%0d wdata=%0h",
+                                $time, burst_idx, drain_count, slice_coef);
 
                         drain_count <= drain_count + 1'b1;
                         if (beat_slice == 2'd3) begin
@@ -320,18 +330,18 @@ module coef_bank_loader #(
                 end
 
                 // ----- ADVANCE MAC / BURST counters -----
+                // BURSTS_PER_MAC bursts per MAC (1 @ TPP=64, 4 @ TPP=256);
+                // advance burst_idx first, then the MAC.
                 ST_NEXT: begin
-                    if (!burst_half) begin
-                        burst_half <= 1'b1;
-                        state      <= ST_ISSUE_AR;
+                    if (BURSTS_PER_MAC > 1 && 32'(burst_idx) != BURSTS_PER_MAC - 1) begin
+                        burst_idx <= burst_idx + 1'b1;
+                        state     <= ST_ISSUE_AR;
+                    end else if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS - 1)) begin
+                        state <= ST_DONE;
                     end else begin
-                        burst_half <= 1'b0;
-                        if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS - 1)) begin
-                            state <= ST_DONE;
-                        end else begin
-                            mac_idx <= mac_idx + 1'b1;
-                            state   <= ST_ISSUE_AR;
-                        end
+                        burst_idx <= '0;
+                        mac_idx   <= mac_idx + 1'b1;
+                        state     <= ST_ISSUE_AR;
                     end
                 end
 

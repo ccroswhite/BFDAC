@@ -1,0 +1,50 @@
+--- BIN 5  [matched] ---
+C1        (B=0)      : SNDR  101.9  HD2  -118.9  HD3  -118.9  HD4  -118.9  HD5  -118.9  clamps    0  zone occ  2007 ent  178  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.0  HD2  -121.1  HD3  -121.1  HD4  -121.1  HD5  -121.1  clamps    0  zone occ  2003 ent  151  (5s)
+C5 look1  (B=2,L=1)  : SNDR  102.8  HD2  -119.9  HD3  -119.9  HD4  -119.9  HD5  -119.9  clamps    0  zone occ  1996 ent  235  (8s)
+C5 look2  (B=2,L=2)  : SNDR  102.7  HD2  -119.8  HD3  -119.8  HD4  -119.8  HD5  -119.8  clamps    0  zone occ  2008 ent  187  (40s)
+--- BIN 5  [mismatch x1.10] ---
+C1        (B=0)      : SNDR  101.9  HD2  -119.9  HD3  -118.2  HD4  -117.8  HD5  -118.9  clamps    0  zone occ  2007 ent  178  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.0  HD2  -122.0  HD3  -120.2  HD4  -119.9  HD5  -121.1  clamps    0  zone occ  2003 ent  151  (5s)
+C5 look1  (B=2,L=1)  : SNDR  102.8  HD2  -121.1  HD3  -119.1  HD4  -118.6  HD5  -119.9  clamps    0  zone occ  1996 ent  235  (9s)
+C5 look2  (B=2,L=2)  : SNDR  102.7  HD2  -120.8  HD3  -119.0  HD4  -118.6  HD5  -119.8  clamps    0  zone occ  2008 ent  187  (40s)
+--- BIN 11  [matched] ---
+C1        (B=0)      : SNDR  103.3  HD2  -120.3  HD3  -120.4  HD4  -120.4  HD5  -120.4  clamps    0  zone occ  1990 ent  183  (1s)
+C5 greedy (B=2,L=0)  : SNDR  103.8  HD2  -120.8  HD3  -120.8  HD4  -120.9  HD5  -121.1  clamps    0  zone occ  2005 ent  157  (5s)
+C5 look1  (B=2,L=1)  : SNDR   91.5  HD2  -108.5  HD3  -108.5  HD4  -108.5  HD5  -108.6  clamps    0  zone occ  2001 ent  228  (9s)
+C5 look2  (B=2,L=2)  : SNDR  102.9  HD2  -120.0  HD3  -120.0  HD4  -120.0  HD5  -119.7  clamps    0  zone occ  1995 ent  194  (40s)
+--- BIN 11  [mismatch x1.10] ---
+C1        (B=0)      : SNDR  103.2  HD2  -120.2  HD3  -118.7  HD4  -119.2  HD5  -120.4  clamps    0  zone occ  1990 ent  183  (1s)
+C5 greedy (B=2,L=0)  : SNDR  103.7  HD2  -120.5  HD3  -119.0  HD4  -119.7  HD5  -121.1  clamps    0  zone occ  2005 ent  157  (5s)
+C5 look1  (B=2,L=1)  : SNDR   91.5  HD2  -108.1  HD3  -109.0  HD4  -108.9  HD5  -108.6  clamps    0  zone occ  2001 ent  228  (9s)
+C5 look2  (B=2,L=2)  : SNDR  102.8  HD2  -120.0  HD3  -118.4  HD4  -118.9  HD5  -119.6  clamps    0  zone occ  1995 ent  194  (40s)
+--- BIN 17  [matched] ---
+C1        (B=0)      : SNDR  102.2  HD2  -119.3  HD3  -119.5  HD4  -119.6  HD5  -119.8  clamps    0  zone occ  1995 ent  195  (1s)
+C5 greedy (B=2,L=0)  : SNDR   90.8  HD2  -107.9  HD3  -107.9  HD4  -107.8  HD5  -107.7  clamps    0  zone occ  2007 ent  150  (5s)
+C5 look1  (B=2,L=1)  : SNDR  103.2  HD2  -120.3  HD3  -120.3  HD4  -120.8  HD5  -120.2  clamps    0  zone occ  1998 ent  231  (9s)
+C5 look2  (B=2,L=2)  : SNDR  102.6  HD2  -119.7  HD3  -119.6  HD4  -119.8  HD5  -119.5  clamps    0  zone occ  2000 ent  198  (40s)
+--- BIN 17  [mismatch x1.10] ---
+C1        (B=0)      : SNDR  102.1  HD2  -118.2  HD3  -117.3  HD4  -118.5  HD5  -119.8  clamps    0  zone occ  1995 ent  195  (1s)
+C5 greedy (B=2,L=0)  : SNDR   90.8  HD2  -107.5  HD3  -108.6  HD4  -108.1  HD5  -107.7  clamps    0  zone occ  2007 ent  150  (5s)
+C5 look1  (B=2,L=1)  : SNDR  103.1  HD2  -118.8  HD3  -117.9  HD4  -119.4  HD5  -120.3  clamps    0  zone occ  1998 ent  231  (8s)
+C5 look2  (B=2,L=2)  : SNDR  102.5  HD2  -118.4  HD3  -117.4  HD4  -118.6  HD5  -119.4  clamps    0  zone occ  2000 ent  198  (39s)
+--- BIN 27  [matched] ---
+C1        (B=0)      : SNDR  103.3  HD2  -120.4  HD3  -120.9  HD4  -119.3  HD5  -120.8  clamps    0  zone occ  2006 ent  191  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.6  HD2  -121.9  HD3  -120.3  HD4  -121.8  HD5  -124.5  clamps    0  zone occ  2002 ent  166  (5s)
+C5 look1  (B=2,L=1)  : SNDR  101.6  HD2  -118.7  HD3  -118.9  HD4  -119.8  HD5  -116.7  clamps    0  zone occ  1996 ent  214  (8s)
+C5 look2  (B=2,L=2)  : SNDR  102.3  HD2  -119.3  HD3  -119.1  HD4  -118.9  HD5  -119.5  clamps    0  zone occ  1991 ent  184  (39s)
+--- BIN 27  [mismatch x1.10] ---
+C1        (B=0)      : SNDR  103.3  HD2  -116.7  HD3  -117.2  HD4  -118.3  HD5  -120.5  clamps    0  zone occ  2006 ent  191  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.6  HD2  -116.9  HD3  -116.8  HD4  -120.6  HD5  -124.2  clamps    0  zone occ  2002 ent  166  (5s)
+C5 look1  (B=2,L=1)  : SNDR  101.6  HD2  -115.7  HD3  -115.8  HD4  -118.6  HD5  -116.7  clamps    0  zone occ  1996 ent  214  (8s)
+C5 look2  (B=2,L=2)  : SNDR  102.3  HD2  -115.7  HD3  -115.9  HD4  -117.8  HD5  -119.5  clamps    0  zone occ  1991 ent  184  (39s)
+--- BIN 37  [matched] ---
+C1        (B=0)      : SNDR  104.1  HD2  -121.0  HD3  -122.1  HD4  -118.6  HD5  -128.6  clamps    0  zone occ  2004 ent  208  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.8  HD2  -121.5  HD3  -119.4  HD4  -120.3  HD5  -130.7  clamps    0  zone occ  1998 ent  152  (5s)
+C5 look1  (B=2,L=1)  : SNDR  101.5  HD2  -118.5  HD3  -118.4  HD4  -118.1  HD5  -115.4  clamps    0  zone occ  1994 ent  235  (8s)
+C5 look2  (B=2,L=2)  : SNDR  103.7  HD2  -120.7  HD3  -119.5  HD4  -118.5  HD5  -113.9  clamps    0  zone occ  2006 ent  197  (39s)
+--- BIN 37  [mismatch x1.10] ---
+C1        (B=0)      : SNDR  104.1  HD2  -114.8  HD3  -116.8  HD4  -117.6  HD5  -127.0  clamps    0  zone occ  2004 ent  208  (1s)
+C5 greedy (B=2,L=0)  : SNDR  104.8  HD2  -114.6  HD3  -115.3  HD4  -119.2  HD5  -129.4  clamps    0  zone occ  1998 ent  152  (5s)
+C5 look1  (B=2,L=1)  : SNDR  101.5  HD2  -113.6  HD3  -114.6  HD4  -117.0  HD5  -115.5  clamps    0  zone occ  1994 ent  235  (8s)
+C5 look2  (B=2,L=2)  : SNDR  103.7  HD2  -114.3  HD3  -115.3  HD4  -117.6  HD5  -113.8  clamps    0  zone occ  2006 ent  197  (39s)

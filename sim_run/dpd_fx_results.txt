@@ -1,0 +1,52 @@
+coef ranges: |Q|max 4.238e-06  |STAT|max 1.180e-02  |FIRW|max 3.386e-04  |LUT err|max 4.290e-04 code-LSB
+--- BIN 11 ---
+exact     : SNDR  103.3  HD2  -120.3  HD3  -120.4  HD4  -120.4  HD5  -120.4  clamps 0
+W=18 F=24: SNDR  103.3  HD2  -120.3  HD3  -120.4  HD4  -120.4  HD5  -120.4  clamps 0
+W=18 F=20: SNDR  102.9  HD2  -120.0  HD3  -120.0  HD4  -120.1  HD5  -119.9  clamps 0
+W=18 F=16: SNDR  102.7  HD2  -119.4  HD3  -119.8  HD4  -119.6  HD5  -119.7  clamps 0
+W=14 F=24: SNDR  103.2  HD2  -120.3  HD3  -120.2  HD4  -120.3  HD5  -120.3  clamps 0
+W=14 F=20: SNDR  103.2  HD2  -120.3  HD3  -120.3  HD4  -120.3  HD5  -120.2  clamps 0
+W=14 F=16: SNDR  101.7  HD2  -118.5  HD3  -118.8  HD4  -118.7  HD5  -118.9  clamps 0
+W=12 F=24: SNDR  104.4  HD2  -122.5  HD3  -114.2  HD4  -121.8  HD5  -121.7  clamps 0
+W=12 F=20: SNDR  104.9  HD2  -123.1  HD3  -114.4  HD4  -122.5  HD5  -122.4  clamps 0
+W=12 F=16: SNDR  102.8  HD2  -120.3  HD3  -113.7  HD4  -119.9  HD5  -120.0  clamps 0
+W=10 F=24: SNDR  102.2  HD2  -118.3  HD3  -116.4  HD4  -119.9  HD5  -119.4  clamps 0
+W=10 F=20: SNDR  101.8  HD2  -118.0  HD3  -116.4  HD4  -119.5  HD5  -118.8  clamps 0
+W=10 F=16: SNDR  101.1  HD2  -117.1  HD3  -115.9  HD4  -118.7  HD5  -118.1  clamps 0
+W= 8 F=24: SNDR   92.4  HD2  -115.9  HD3   -97.4  HD4  -109.2  HD5  -111.1  clamps 0
+W= 8 F=20: SNDR   92.6  HD2  -116.6  HD3   -97.4  HD4  -109.4  HD5  -111.3  clamps 0
+W= 8 F=16: SNDR   94.0  HD2  -109.7  HD3   -97.5  HD4  -117.2  HD5  -113.4  clamps 0
+--- BIN 17 ---
+exact     : SNDR  102.2  HD2  -119.3  HD3  -119.5  HD4  -119.6  HD5  -119.8  clamps 0
+W=18 F=24: SNDR  102.3  HD2  -119.3  HD3  -119.4  HD4  -119.2  HD5  -119.3  clamps 0
+W=18 F=20: SNDR  102.1  HD2  -119.2  HD3  -119.3  HD4  -119.6  HD5  -119.8  clamps 0
+W=18 F=16: SNDR  101.2  HD2  -118.0  HD3  -118.4  HD4  -118.3  HD5  -118.1  clamps 0
+W=14 F=24: SNDR  103.2  HD2  -120.4  HD3  -120.4  HD4  -120.8  HD5  -120.9  clamps 0
+W=14 F=20: SNDR  102.1  HD2  -119.2  HD3  -119.2  HD4  -119.6  HD5  -119.2  clamps 0
+W=14 F=16: SNDR  101.5  HD2  -118.3  HD3  -118.6  HD4  -118.5  HD5  -118.9  clamps 0
+W=12 F=24: SNDR  103.4  HD2  -121.5  HD3  -114.1  HD4  -120.9  HD5  -120.6  clamps 0
+W=12 F=20: SNDR  103.1  HD2  -121.1  HD3  -113.6  HD4  -120.6  HD5  -120.9  clamps 0
+W=12 F=16: SNDR  102.8  HD2  -120.3  HD3  -113.7  HD4  -120.0  HD5  -120.2  clamps 0
+W=10 F=24: SNDR  101.0  HD2  -117.3  HD3  -116.1  HD4  -118.8  HD5  -117.9  clamps 0
+W=10 F=20: SNDR  101.5  HD2  -117.8  HD3  -116.3  HD4  -119.4  HD5  -119.0  clamps 0
+W=10 F=16: SNDR  100.6  HD2  -116.7  HD3  -115.8  HD4  -118.3  HD5  -117.9  clamps 0
+W= 8 F=24: SNDR   92.2  HD2  -115.4  HD3   -97.3  HD4  -108.9  HD5  -111.0  clamps 0
+W= 8 F=20: SNDR   93.8  HD2  -109.4  HD3   -97.6  HD4  -116.5  HD5  -112.9  clamps 0
+W= 8 F=16: SNDR   92.5  HD2  -115.8  HD3   -97.4  HD4  -109.2  HD5  -111.2  clamps 0
+--- BIN 37 ---
+exact     : SNDR  104.1  HD2  -121.0  HD3  -122.1  HD4  -118.6  HD5  -128.6  clamps 0
+W=18 F=24: SNDR  104.0  HD2  -121.1  HD3  -120.3  HD4  -117.2  HD5  -138.4  clamps 0
+W=18 F=20: SNDR   91.1  HD2  -108.1  HD3  -108.3  HD4  -107.9  HD5  -107.6  clamps 0
+W=18 F=16: SNDR  103.1  HD2  -120.0  HD3  -121.1  HD4  -118.7  HD5  -123.1  clamps 0
+W=14 F=24: SNDR  104.1  HD2  -121.2  HD3  -119.9  HD4  -119.2  HD5  -129.5  clamps 0
+W=14 F=20: SNDR  103.3  HD2  -120.1  HD3  -119.6  HD4  -121.3  HD5  -133.9  clamps 0
+W=14 F=16: SNDR  103.0  HD2  -119.8  HD3  -120.1  HD4  -116.5  HD5  -124.7  clamps 0
+W=12 F=24: SNDR  105.4  HD2  -123.2  HD3  -114.3  HD4  -122.6  HD5  -125.7  clamps 0
+W=12 F=20: SNDR  103.5  HD2  -121.4  HD3  -114.3  HD4  -120.4  HD5  -134.9  clamps 0
+W=12 F=16: SNDR   90.9  HD2  -107.9  HD3  -106.7  HD4  -107.4  HD5  -105.9  clamps 0
+W=10 F=24: SNDR  102.1  HD2  -118.3  HD3  -115.4  HD4  -120.3  HD5  -143.3  clamps 0
+W=10 F=20: SNDR  102.6  HD2  -118.7  HD3  -116.4  HD4  -121.1  HD5  -126.4  clamps 0
+W=10 F=16: SNDR  101.2  HD2  -117.2  HD3  -114.9  HD4  -119.0  HD5  -124.8  clamps 0
+W= 8 F=24: SNDR   95.7  HD2  -109.0  HD3   -97.6  HD4  -115.9  HD5  -111.3  clamps 0
+W= 8 F=20: SNDR   95.6  HD2  -109.0  HD3   -97.6  HD4  -116.7  HD5  -112.4  clamps 0
+W= 8 F=16: SNDR   95.9  HD2  -109.2  HD3   -97.7  HD4  -114.7  HD5  -110.8  clamps 0

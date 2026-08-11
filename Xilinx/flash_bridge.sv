@@ -49,7 +49,7 @@ module flash_bridge (
 
     // SPI Transactor Logic
     logic [31:0] header_data; // Driven by FSM
-    logic [8:0]  bit_count; 
+    logic [11:0] bit_count; 
     logic        spi_start;
     logic        spi_busy;
     logic [7:0]  spi_rx_data;
@@ -102,7 +102,7 @@ module flash_bridge (
                     if (target_is_write) header_data <= {8'h02, cmd_addr}; 
                     else                 header_data <= {8'hD8, cmd_addr}; 
                     
-                    bit_count <= target_is_write ? 9'd2056 : 9'd32; 
+                    bit_count <= target_is_write ? 12'd2080 : 12'd32; 
                     spi_start <= 1'b1;
                     state     <= EXEC_CMD;
                     if (spi_start) state <= EXEC_WAIT;

@@ -9,7 +9,8 @@
 //   - Boot sequence FSM
 
 module dac_coef_subsys #(
-    parameter int NUM_MACS = 1024   // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int NUM_MACS = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int TAPS_PER_PHASE = 64  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
 )(
     // ui_clk domain (~200 MHz, from MIG)
     input  logic        ui_clk,
@@ -41,7 +42,7 @@ module dac_coef_subsys #(
 
     // Coefficient write bus (dsp_clk domain, to fir_polyphase_stereo)
     output logic        coef_we,
-    output logic [$clog2(16*64)-1:0]     coef_waddr,  // 10 bits: 1024 coefs/MAC
+    output logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,  // coef index within MAC
     output logic signed [17:0]           coef_wdata,
     output logic [$clog2(NUM_MACS)-1:0]  coef_wmac,
 
@@ -64,7 +65,7 @@ module dac_coef_subsys #(
     logic         loader_done_ui;     // Single-cycle pulse in ui_clk domain
     logic         mgr_load_start_ui;  // From bank manager (dsp_clk -> ui_clk via handshake)
     logic         coef_we_ui;
-    logic [$clog2(16*64)-1:0]    coef_waddr_ui;
+    logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr_ui;
     logic signed [17:0]          coef_wdata_ui;
     logic [$clog2(NUM_MACS)-1:0] coef_wmac_ui;
 
@@ -93,7 +94,10 @@ module dac_coef_subsys #(
     // Rising or falling edge on synced toggle = load_start pulse in ui_clk domain
     wire mgr_load_start_ui_sync = load_start_sync_ui[2] ^ load_start_sync_ui[1];
 
-    coef_bank_loader u_coef_loader (
+    coef_bank_loader #(
+        .NUM_MACS   (NUM_MACS),
+        .COEF_DEPTH (16*TAPS_PER_PHASE)
+    ) u_coef_loader (
         .clk             (ui_clk),
         .rst_n           (~ui_clk_sync_rst),
         .load_start      (mgr_load_start_ui_sync),

@@ -70,6 +70,15 @@ set_property IOSTANDARD LVCMOS18 [get_ports clk_ref_ext]
 set_property IOSTANDARD LVCMOS18 [get_ports spi_*]
 set_property SLEW SLOW [get_ports spi_miso]
 
+# SPI Control Bus (ARM master -> FPGA slave)
+# The FPGA captures SPI with 3-stage synchronizers clocked by the 200 MHz
+# control-plane clock. Max SPI_SCLK is roughly 1/4 of that clock -> ~50 MHz.
+# If 125 MHz SPI bus is required, a DDR or ISERDES capture path is needed.
+# MOSI and CS_N are also asynchronous and synchronised; MISO is driven by a
+# control-plane register and sampled by the external master.
+set_false_path -from [get_ports {spi_sclk spi_mosi spi_cs_n}] -to [get_clocks clk_200m]
+set_false_path -from [get_clocks clk_200m] -to [get_ports spi_miso]
+
 set_property IOSTANDARD LVCMOS18 [get_ports i2s_*]
 set_property IOSTANDARD LVCMOS18 [get_ports ext_rst_n]
 
@@ -77,11 +86,25 @@ set_property IOSTANDARD LVCMOS18 [get_ports relay_*]
 set_property DRIVE 12 [get_ports relay_*]
 set_property SLEW SLOW [get_ports relay_*]
 
+set_property IOSTANDARD LVCMOS18 [get_ports fpga_irq_n]
+set_property DRIVE 4 [get_ports fpga_irq_n]
+set_property SLEW SLOW [get_ports fpga_irq_n]
+
+# I2C Master Interface (open-drain, external pull-ups)
+set_property IOSTANDARD LVCMOS18 [get_ports {i2c_sda i2c_scl}]
+set_property DRIVE 4 [get_ports {i2c_sda i2c_scl}]
+set_property SLEW SLOW [get_ports {i2c_sda i2c_scl}]
+
 # 2. DIFFERENTIAL I/O  (LVDS EGRESS TO MAX10 RECEIVER TUBS)
 #    UltraScale+ uses the unified "LVDS" IOSTANDARD on HP banks at 1.8V VCCO.
 set_property IOSTANDARD LVDS [get_ports lvds_*]
 
 # 3. BASE CLOCKS
+# 200 MHz SOM system clock -> used for SPI control plane / I2C master
+# create_clock -name clk_200m -period 5.000 [get_ports clk_200m]
+# set_property IOSTANDARD LVDS [get_ports clk_200m]
+# set_property PACKAGE_PIN <TODO> [get_ports clk_200m]
+#
 # Ultra-low jitter OCXO inputs for audiophile-grade clocking:
 #   45.1584 MHz = 1024 × 44.1 kHz (44.1k family: 44.1k, 88.2k, 176.4k, 352.8k)
 #   49.152 MHz  = 1024 × 48 kHz   (48k family: 48k, 96k, 192k, 384k, 768k)
