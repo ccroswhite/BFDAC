@@ -195,7 +195,11 @@ module halfband_x2 #(
     end
 
     // Stage 1: multiply each pre-add by coefficient
-    logic signed [DATA_WIDTH+COEF_WIDTH:0] products [0:NUM_NONZERO-1];
+    // use_dsp (f9wc route review 2026-08-15): coef_rom is constant after
+    // synthesis, so Vivado lowered these multiplies to fabric shift-add
+    // CARRY8 chains (14 logic levels, -0.41 ns at dsp_clk). Force DSP48E2
+    // (25x18 fits natively; ~96 extra DSPs across all six halfbands).
+    (* use_dsp = "yes" *) logic signed [DATA_WIDTH+COEF_WIDTH:0] products [0:NUM_NONZERO-1];
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin

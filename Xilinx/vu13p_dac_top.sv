@@ -46,7 +46,7 @@
 // =============================================================================
 
 module vu13p_dac_top #(
-    parameter int NUM_MACS = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int NUM_MACS = 1024,  // Any multiple of 64, <=2560 (URAM limit); taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int TAPS_PER_PHASE = 64,  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int MUTE_DELAY_CYCLES = 4_000_000  // 20 ms @ 200 MHz: automute relay
                                                  // physical release before the mux
@@ -95,13 +95,17 @@ module vu13p_dac_top #(
     output logic [63:0] cascode_l,
     output logic [63:0] cascode_r,
 
-    // DDR4 Interface — C0 controller, 5× MT40A1G16KD-062E, banks 61/62/63
-    // 80-bit data bus (5 chips × 16 bits), 10 byte lanes
-    inout  wire  [79:0] ddr4_dq,
-    inout  wire  [9:0]  ddr4_dqs_c,
-    inout  wire  [9:0]  ddr4_dqs_t,
-    inout  wire  [9:0]  ddr4_dm_dbi_n,
-    output wire  [13:0] ddr4_addr,
+    // DDR4 Interface — C0 controller, banks 61/62/63
+    // TOPOLOGY (2026-08-11): SOM has 5× MT40A1G16KD (80 DQ) but the DDR4
+    // MIG controller maxes at 72-bit → 64-bit config (4 chips, 8 GB);
+    // 5th chip unused. 8 byte lanes.
+    input  wire         ddr4_clkref_p,   // on-module 200 MHz C0_DDR4_CLKREF
+    input  wire         ddr4_clkref_n,
+    inout  wire  [63:0] ddr4_dq,
+    inout  wire  [7:0]  ddr4_dqs_c,
+    inout  wire  [7:0]  ddr4_dqs_t,
+    inout  wire  [7:0]  ddr4_dm_dbi_n,
+    output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,
     output wire  [0:0]  ddr4_cs_n,
@@ -302,6 +306,13 @@ module vu13p_dac_top #(
     logic [3:0]  coef_bank_id;
     logic        coef_load_start;
 
+    // Named-filter toggle list (docs/coef_format_v2.md — directory lookup
+    // consumption is TODO v3/v6; unloaded nets trim in synthesis until then)
+    logic [15:0] filter_id;
+    logic [15:0] filter_next_id;
+    logic        filter_load_req;
+    logic        video_mode;
+
     // I2S audio (dsp_clk domain)
     logic [23:0] audio_l;
     logic [23:0] audio_r;
@@ -323,6 +334,8 @@ module vu13p_dac_top #(
     // 1. DDR4 Memory Interface
     // ==============================================================
     dac_ddr4_if u_ddr4_if (
+        .ddr4_clkref_p          (ddr4_clkref_p),
+        .ddr4_clkref_n          (ddr4_clkref_n),
         .sys_rst_n              (sys_rst_n),
         .ddr4_dq                (ddr4_dq),
         .ddr4_dqs_c             (ddr4_dqs_c),
@@ -420,6 +433,10 @@ module vu13p_dac_top #(
         .clk_source_sel         (clk_source_sel),
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
+        .filter_id              (filter_id),
+        .filter_next_id         (filter_next_id),
+        .filter_load_req        (filter_load_req),
+        .video_mode             (video_mode),
         .spi_unmute             (spi_unmute)
     );
 

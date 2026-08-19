@@ -2,25 +2,30 @@
 
 // DDR4 Memory Interface Subsystem
 // Wraps the MIG-generated ddr4_0 IP core.
-// Platform: Alinx ACVU13 SOM — C0 controller, 5× MT40A1G16KD-062E (10 GB)
-//   Banks 61/62/63, 80-bit data bus, 10 byte lanes
+// Platform: Alinx ACVU13 SOM — C0 controller, banks 61/62/63.
+//   TOPOLOGY (2026-08-11): 64-bit data (4× MT40A1G16, 8 GB; DDR4 MIG
+//   controller maxes at 72-bit so the SOM's 5th chip is unused).
 //   DDR4 reference clock: C0_DDR4_CLKREF (AD33/AE33) on-module 200 MHz
 // Exposes AXI4 read-only master for coef_bank_loader and ui_clk for the
 // coefficient subsystem. Write channels are tied off (read-only design).
-// NOTE: Pending regeneration of MIG IP for XCVU13P in Vivado 2026.1.
+// NOTE: this is the SIMULATION STUB. The real MIG wrapper is
+// dac_ddr4_if_mig.sv (+ ip/ddr4_0, ip/axi_dwc_coef) — include exactly one
+// of the two files per fileset.
 
 module dac_ddr4_if (
     // System reset (active-low, from ext_rst_n)
     input  logic        sys_rst_n,
 
-    // DDR4 reference clock is on-module (ACVU13 SOM) — no port here
+    // DDR4 reference clock — on-module 200 MHz differential (unused in stub)
+    input  wire         ddr4_clkref_p,
+    input  wire         ddr4_clkref_n,
 
-    // DDR4 PHY Interface — C0, 80-bit, banks 61/62/63
-    inout  wire  [79:0] ddr4_dq,
-    inout  wire  [9:0]  ddr4_dqs_c,
-    inout  wire  [9:0]  ddr4_dqs_t,
-    inout  wire  [9:0]  ddr4_dm_dbi_n,
-    output wire  [13:0] ddr4_addr,
+    // DDR4 PHY Interface — C0, 64-bit, banks 61/62/63
+    inout  wire  [63:0] ddr4_dq,
+    inout  wire  [7:0]  ddr4_dqs_c,
+    inout  wire  [7:0]  ddr4_dqs_t,
+    inout  wire  [7:0]  ddr4_dm_dbi_n,
+    output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,
     output wire  [0:0]  ddr4_cs_n,

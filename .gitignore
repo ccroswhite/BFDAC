@@ -16,6 +16,23 @@ xsim.dir/
 # Questa/ModelSim library
 Xilinx/work/
 
+# XSim scratch directory (golden .mem sources live in Xilinx/Testbench/)
+Xilinx/sim_stereo/
+
+# Vivado batch-run reports and temp droppings (archived out-of-repo when kept)
+Xilinx/*.rpt
+Xilinx/.tmpCRC/
+Xilinx/clockInfo.txt
+Xilinx/tight_setup_hold_pins.txt
+Xilinx/iter_*_CongestedCLBsAndNets.txt
+
+# Vivado-generated IP output (regenerate via scripts/gen_ddr4_mig.tcl);
+# keep only the source .xci configuration files
+Xilinx/ip/**
+!Xilinx/ip/*/
+!Xilinx/ip/ddr4_0/ddr4_0.xci
+!Xilinx/ip/axi_dwc_coef/axi_dwc_coef.xci
+
 # Simulation scratch
 Xilinx/Testbench/sim_work/
 

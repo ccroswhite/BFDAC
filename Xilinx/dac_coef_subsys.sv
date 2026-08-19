@@ -9,7 +9,7 @@
 //   - Boot sequence FSM
 
 module dac_coef_subsys #(
-    parameter int NUM_MACS = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int NUM_MACS = 1024,  // Any multiple of 64; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int TAPS_PER_PHASE = 64  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
 )(
     // ui_clk domain (~200 MHz, from MIG)

@@ -50,10 +50,19 @@ module dem_sort #(
     logic signed [ACC_WIDTH-1:0] msnap [ARRAY_SIZE];  // frozen metric for this sample
     logic [RW-1:0]               rank  [ARRAY_SIZE];
 
-    typedef enum logic [1:0] {IDLE, RANK, UPDATE} state_t;
+    typedef enum logic [1:0] {IDLE, PRIME, RANK, UPDATE} state_t;
     state_t                 state;
     logic [AMP_WIDTH-1:0]   amp_q;
-    logic [JW-2:0]          jpair;      // 0..31 (pairs of j)
+    logic [JW-2:0]          jpair;      // 0..31 (pairs of j) — FETCH index
+
+    // Rank pipeline (f9wd route review 2026-08-15): the RANK path was a
+    // 32:1 msnap mux + wide compare + rank add in a single cycle (9 logic
+    // levels, -0.16 ns). Split it: fetch msnap[2j]/msnap[2j+1] into mj0/mj1
+    // one cycle ahead (PRIME state primes the first pair), compare against
+    // the registered pair the next cycle. Costs 1 extra cycle per update
+    // (35 total vs a ~45 dsp_clk budget at the 6.144 MHz cell rate).
+    logic signed [ACC_WIDTH-1:0] mj0, mj1;   // prefetched metric pair
+    logic [JW-2:0]               jpair_d;    // index of the pair held in mj0/mj1
 
     // Selection from ranks (comb) — used in UPDATE
     logic [ARRAY_SIZE-1:0] sel_comb;
@@ -85,22 +94,34 @@ module dem_sort #(
                         msnap[i] <= (acc1[i] <<< 1) + acc2[i];
                         rank[i]  <= '0;
                     end
-                    state <= RANK;
+                    state <= PRIME;
+                end
+                PRIME: begin
+                    // Prefetch the first pair (msnap is valid as of this cycle)
+                    mj0     <= msnap[0];
+                    mj1     <= msnap[1];
+                    jpair_d <= '0;
+                    jpair   <= (JW-1)'(1);
+                    state   <= RANK;
                 end
                 RANK: begin
-                    // two comparison lanes: j0 = 2*jpair, j1 = 2*jpair+1
+                    // Compare the REGISTERED pair (mj0/mj1 = pair jpair_d)
                     for (int i = 0; i < ARRAY_SIZE; i++) begin
                         automatic logic [1:0] inc;
-                        automatic int j0 = 2 * int'(jpair);
-                        automatic int j1 = 2 * int'(jpair) + 1;
-                        inc[0] = (msnap[j0] < msnap[i]) ||
-                                 ((msnap[j0] == msnap[i]) && (j0 < i));
-                        inc[1] = (msnap[j1] < msnap[i]) ||
-                                 ((msnap[j1] == msnap[i]) && (j1 < i));
+                        automatic int j0 = 2 * int'(jpair_d);
+                        automatic int j1 = 2 * int'(jpair_d) + 1;
+                        inc[0] = (mj0 < msnap[i]) ||
+                                 ((mj0 == msnap[i]) && (j0 < i));
+                        inc[1] = (mj1 < msnap[i]) ||
+                                 ((mj1 == msnap[i]) && (j1 < i));
                         rank[i] <= rank[i] + {{(RW-2){1'b0}}, inc[0]} +
                                              {{(RW-2){1'b0}}, inc[1]};
                     end
-                    if (jpair == (JW-1)'((ARRAY_SIZE/2) - 1))
+                    // Prefetch the next pair while comparing this one
+                    mj0     <= msnap[2 * int'(jpair)];
+                    mj1     <= msnap[2 * int'(jpair) + 1];
+                    jpair_d <= jpair;
+                    if (jpair_d == (JW-1)'((ARRAY_SIZE/2) - 1))
                         state <= UPDATE;
                     else
                         jpair <= jpair + 1'b1;

@@ -39,6 +39,12 @@ module dac_ctrl_plane (
                                           // OCXO mux (they can never disagree)
     output logic [3:0]  coef_bank_id,
     output logic        coef_load_start,  // Single-cycle pulse
+
+    // Named-filter toggle list (regs 0x08-0x0B; docs/coef_format_v2.md)
+    output logic [15:0] filter_id,        // Currently selected filter (DDR4 directory ID)
+    output logic [15:0] filter_next_id,   // Next list entry — bank manager preload target
+    output logic        filter_load_req,  // Single-cycle pulse on select/advance
+    output logic        video_mode,       // Status flag (host-enforced eligibility)
     output logic        spi_unmute,       // Raw clk_49m-domain unmute command (CDC in top)
     output logic        fpga_irq_n        // Active-low IRQ to ARM (sticky errors)
 );
@@ -51,6 +57,11 @@ module dac_ctrl_plane (
     logic [1:0]  cmd_level;
     logic        cmd_outsel;
     logic        cmd_unmute;
+
+    // Filter toggle list storage
+    logic [15:0] filter_list [0:15];
+    logic [4:0]  filter_list_len;
+    logic [3:0]  filter_cur_index;
 
     // Re-register dsp_clk-domain status inputs on clk_49m before use.
     // Prevents CDC combinatorial paths into the SPI readback mux.
@@ -66,6 +77,10 @@ module dac_ctrl_plane (
     (* ASYNC_REG = "TRUE" *) logic [1:0] switch_busy_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] line_mute_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] hp_mute_sync;
+    // ddr4_init_calib_complete comes from the MIG ui_clk domain (f9wc route
+    // review 2026-08-15: it was consumed raw — the last unconstrained CDC).
+    // Monotonic level, safe through a 2-FF sync.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] ddr4_calib_sync;
 
     always_ff @(posedge clk) begin
         if (!ext_rst_n) begin
@@ -73,11 +88,13 @@ module dac_ctrl_plane (
             switch_busy_sync <= '0;
             line_mute_sync   <= '0;
             hp_mute_sync     <= '0;
+            ddr4_calib_sync  <= '0;
         end else begin
             i2s_err_sync     <= {i2s_err_sync[0], i2s_err};
             switch_busy_sync <= {switch_busy_sync[0], switch_busy};
             line_mute_sync   <= {line_mute_sync[0], line_mute_status};
             hp_mute_sync     <= {hp_mute_sync[0], hp_mute_status};
+            ddr4_calib_sync  <= {ddr4_calib_sync[0], ddr4_init_calib_complete};
         end
     end
 
@@ -107,7 +124,7 @@ module dac_ctrl_plane (
             // Set sticky bits on rising edges / persistent conditions
             if (spi_crc_error && !spi_crc_err_d) sticky_err[0] <= 1'b1;
             if (i2s_err_r)                       sticky_err[1] <= 1'b1;
-            if (!ddr4_init_calib_complete)       sticky_err[2] <= 1'b1;
+            if (!ddr4_calib_sync[1])             sticky_err[2] <= 1'b1;
             if (!clk_locked)                     sticky_err[3] <= 1'b1;
             // Clear on write to register 0x11 (write-1-to-clear)
             if (ctrl_bus_valid &&
@@ -173,8 +190,14 @@ module dac_ctrl_plane (
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
             read_addr_reg   <= 7'h00;
+            filter_list_len  <= 5'd0;
+            filter_cur_index <= 4'd0;
+            filter_id        <= 16'd0;
+            filter_load_req  <= 1'b0;
+            video_mode       <= 1'b0;
         end else begin
             coef_load_start <= 1'b0;    // Default: deassert each cycle
+            filter_load_req <= 1'b0;
             if (ctrl_bus_valid) begin
                 if (ctrl_bus_data[31] == 1'b0) begin
                     // WRITE
@@ -192,6 +215,38 @@ module dac_ctrl_plane (
                         //        a separate clock register allowed the DSP family and
                         //        the physical mclk to disagree)
                         7'h07: cmd_outsel     <= ctrl_bus_data[0]; // 0=line XLR, 1=headphone
+                        7'h08: begin // FILTER_LIST_CTRL: [0]=clear
+                            if (ctrl_bus_data[0]) begin
+                                filter_list_len  <= 5'd0;
+                                filter_cur_index <= 4'd0;
+                            end
+                        end
+                        7'h09: begin // FILTER_LIST_APPEND: [15:0]=filter_id
+                            if (filter_list_len < 5'd16) begin
+                                filter_list[filter_list_len[3:0]] <= ctrl_bus_data[15:0];
+                                filter_list_len <= filter_list_len + 5'd1;
+                            end
+                        end
+                        7'h0A: begin // FILTER_SELECT: [16]=advance, [3:0]=index
+                            if (filter_list_len != 5'd0) begin
+                                logic [3:0] new_index;
+                                if (ctrl_bus_data[16]) begin
+                                    // Advance with wrap (customer toggle action)
+                                    new_index = (filter_cur_index == filter_list_len[3:0] - 4'd1 ||
+                                                 filter_list_len == 5'd16 && filter_cur_index == 4'd15)
+                                                ? 4'd0 : filter_cur_index + 4'd1;
+                                end else begin
+                                    // Explicit index (clamped to list)
+                                    new_index = (ctrl_bus_data[3:0] < filter_list_len[3:0] ||
+                                                 filter_list_len == 5'd16)
+                                                ? ctrl_bus_data[3:0] : 4'd0;
+                                end
+                                filter_cur_index <= new_index;
+                                filter_id        <= filter_list[new_index];
+                                filter_load_req  <= 1'b1;
+                            end
+                        end
+                        7'h0B: video_mode <= ctrl_bus_data[0]; // DAC_MODE
                         default: ;
                     endcase
                 end else begin
@@ -202,26 +257,39 @@ module dac_ctrl_plane (
         end
     end
 
-    // SPI readback MUX
+    // SPI readback MUX — registered (f9wc route review 2026-08-15): the mux
+    // feeds the spi_slave TX CRC-8 cone (4 chained byte CRCs, 9 logic levels
+    // total) which failed clk_200m by -0.59 ns as one combinational cone.
+    // Registering here is free: spi_slave samples tx_data_in only on the
+    // synchronized cs_n falling edge, and read_addr_reg is written by the
+    // PREVIOUS SPI frame, so spi_tx_data is stable many cycles before use.
+    logic [31:0] spi_tx_data_c;
     always_comb begin
         case (read_addr_reg)
             // 0x10: Magic ID
-            7'h10: spi_tx_data = 32'hDAC02026;
+            7'h10: spi_tx_data_c = 32'hDAC02026;
             // 0x11: Sticky error register (write-1-to-clear)
-            7'h11: spi_tx_data = {28'd0, sticky_err};
+            7'h11: spi_tx_data_c = {28'd0, sticky_err};
             // 0x12: Control state
-            7'h12: spi_tx_data = {27'd0, clk_source_sel, base_rate_sel, cmd_outsel, cmd_level};
+            7'h12: spi_tx_data_c = {27'd0, clk_source_sel, base_rate_sel, cmd_outsel, cmd_level};
             // 0x13: Coefficient loader status
-            7'h13: spi_tx_data = {8'd0, mgr_busy_r, coef_load_done_r, clk_source_sel,
-                                  base_rate_sel, current_bank_id_r, coef_bank_id};
+            7'h13: spi_tx_data_c = {8'd0, mgr_busy_r, coef_load_done_r, clk_source_sel,
+                                    base_rate_sel, current_bank_id_r, coef_bank_id};
             // 0x14: Mute / relay status
-            7'h14: spi_tx_data = {27'd0, i2s_err_r, switch_busy_r,
-                                  hp_mute_r, line_mute_r, cmd_unmute};
+            7'h14: spi_tx_data_c = {27'd0, i2s_err_r, switch_busy_r,
+                                    hp_mute_r, line_mute_r, cmd_unmute};
             // 0x15: Clock / PLL status
-            7'h15: spi_tx_data = {30'd0, ddr4_init_calib_complete, clk_locked};
-            default: spi_tx_data = 32'hDEADBEEF;
+            7'h15: spi_tx_data_c = {30'd0, ddr4_calib_sync[1], clk_locked};
+            // 0x16: Filter list status
+            7'h16: spi_tx_data_c = {22'd0, video_mode, filter_list_len, filter_cur_index};
+            // 0x17: Current + next (preload) filter IDs
+            7'h17: spi_tx_data_c = {filter_next_id, filter_id};
+            default: spi_tx_data_c = 32'hDEADBEEF;
         endcase
     end
+
+    always_ff @(posedge clk)
+        spi_tx_data <= spi_tx_data_c;
 
     // Single-register clock control: the LMK00304 mux select is the same
     // register as the DSP base-rate select. The top-level switch sequencer
@@ -230,5 +298,18 @@ module dac_ctrl_plane (
     assign clk_source_sel = base_rate_sel;
 
     assign spi_unmute = cmd_unmute;
+
+    // Next list entry (wrap) — the bank manager's gapless-toggle preload target
+    always_comb begin
+        logic [3:0] nxt;
+        if (filter_list_len == 5'd0) begin
+            filter_next_id = 16'd0;
+        end else begin
+            nxt = (filter_cur_index == filter_list_len[3:0] - 4'd1 ||
+                   filter_list_len == 5'd16 && filter_cur_index == 4'd15)
+                  ? 4'd0 : filter_cur_index + 4'd1;
+            filter_next_id = filter_list[nxt];
+        end
+    end
 
 endmodule

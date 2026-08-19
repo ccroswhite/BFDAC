@@ -51,7 +51,7 @@
 //  current 5.3 ms fade budget.
 // =============================================================================
 module coef_bank_loader #(
-    parameter int            NUM_MACS         = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
+    parameter int            NUM_MACS         = 1024,  // Any multiple of 64; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int            COEF_WIDTH       = 18,
     parameter int            COEF_DEPTH       = 1024,  // 16 phases * 64 taps/phase
     parameter int            BANK_BITS        = 4,                // up to 16 banks

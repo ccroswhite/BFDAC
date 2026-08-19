@@ -20,9 +20,13 @@
 // ns_ef3_gen.py: 136.0 dB in-band SNDR at -1 dBFS / OSR 154 (code budget
 // line: 133.5 dB). e is clamped to +-63 levels for overload recovery.
 //
-// Pipeline (4 stages, one result per enable; enable period is 56-65 dsp_clk):
+// Pipeline (5 stages, one result per enable; enable period is 56-65 dsp_clk):
 //   Stage A : capture u/dither, form the six shift-add partial products
-//   Stage B : f = sum of partials; w = u_off + f
+//   Stage B1: pairwise partial sums (2026-08-18: split from B — the single
+//             3-deep 56-bit add chain was the last WNS path in the routed
+//             5M design at -25 ps; one extra stage is free in the >=56-cycle
+//             enable budget and halves the carry-chain depth)
+//   Stage B2: f = sAB - sC; w = u_off + f
 //   Stage C : d = w + dither; quantize + range select
 //   Stage D : commit y, e (clamped), shift e/f delay lines
 // =============================================================================
@@ -48,14 +52,19 @@ module noise_shaper_ef3 #(
     logic signed [IW-1:0] e1, e2, e3;
     logic signed [IW-1:0] f1, f2, f3;
 
-    logic [3:0] en_pipe;
+    logic [4:0] en_pipe;
 
     // Stage A registers: six dyadic partial products + input snapshot
     logic signed [IW-1:0] pe1_r, pe2_r, pe3_r, pf1_r, pf2_r, pf3_r;
     logic signed [IW-1:0] u_off_r;
     logic signed [FRAC_WIDTH-1:0] dith_a;
 
-    // Stage B registers
+    // Stage B1 registers: pairwise partial sums
+    logic signed [IW-1:0] sAB_r, sC_r;
+    logic signed [IW-1:0] u_off_b1;
+    logic signed [FRAC_WIDTH-1:0] dith_b1;
+
+    // Stage B2 registers
     logic signed [IW-1:0] f_r, w_r;
     logic signed [FRAC_WIDTH-1:0] dith_b;
 
@@ -74,11 +83,12 @@ module noise_shaper_ef3 #(
             pe1_r <= '0; pe2_r <= '0; pe3_r <= '0;
             pf1_r <= '0; pf2_r <= '0; pf3_r <= '0;
             u_off_r <= '0; dith_a <= '0;
+            sAB_r <= '0; sC_r <= '0; u_off_b1 <= '0; dith_b1 <= '0;
             f_r <= '0; w_r <= '0; dith_b <= '0;
             w_c <= '0; code_c <= '0; range_c <= 2'b00;
             dem_drive_out <= 7'd32;
         end else begin
-            en_pipe <= {en_pipe[2:0], enable};
+            en_pipe <= {en_pipe[3:0], enable};
 
             // --- Stage A: dyadic partial products --------------------------
             if (enable) begin
@@ -92,15 +102,23 @@ module noise_shaper_ef3 #(
                 dith_a <= dither_in;
             end
 
-            // --- Stage B: f and quantizer input ----------------------------
+            // --- Stage B1: pairwise partial sums ---------------------------
             if (en_pipe[0]) begin
-                f_r    <= ((pe1_r - pe2_r) + (pe3_r + pf1_r)) - (pf2_r - pf3_r);
-                w_r    <= u_off_r + (((pe1_r - pe2_r) + (pe3_r + pf1_r)) - (pf2_r - pf3_r));
-                dith_b <= dith_a;
+                sAB_r    <= (pe1_r - pe2_r) + (pe3_r + pf1_r);
+                sC_r     <= pf2_r - pf3_r;
+                u_off_b1 <= u_off_r;
+                dith_b1  <= dith_a;
+            end
+
+            // --- Stage B2: f and quantizer input ---------------------------
+            if (en_pipe[1]) begin
+                f_r    <= sAB_r - sC_r;
+                w_r    <= u_off_b1 + (sAB_r - sC_r);
+                dith_b <= dith_b1;
             end
 
             // --- Stage C: dither + quantize + range select -----------------
-            if (en_pipe[1]) begin
+            if (en_pipe[2]) begin
                 w_c    <= w_r;
                 code_c <= d_comb[FRAC_WIDTH +: OUT_WIDTH];
                 if (!d_comb[IW-1] && (|d_comb[IW-2 : FRAC_WIDTH+OUT_WIDTH-1]))
@@ -112,7 +130,7 @@ module noise_shaper_ef3 #(
             end
 
             // --- Stage D: commit output + error, shift delay lines ---------
-            if (en_pipe[2]) begin
+            if (en_pipe[3]) begin
                 automatic logic [OUT_WIDTH-1:0] y;
                 automatic logic signed [IW-1:0] e_raw;
                 case (range_c)

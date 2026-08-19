@@ -199,9 +199,13 @@ module dac_dsp_core #(
     //    effective_volume = (sys_volume * boot_envelope_gain) >> 16
     //    DSP48 pipeline: AREG(1) + MREG(1) + PREG(1) + output reg = 4 cycles
     // =========================================================================
-    logic [31:0] combined_volume;
-    always_comb
-        combined_volume = (sys_volume * {16'h0, boot_envelope_gain}) >> 16;
+    // Registered (f9wd route review 2026-08-15): as always_comb this 32x16
+    // multiply rode combinationally from u_boot_envelope/gain_r through a DSP
+    // into the vol_b_r1 capture (-0.16 ns). Both inputs are slow controls
+    // (volume pot / boot ramp), so one extra cycle of gain latency is free.
+    (* use_dsp = "yes" *) logic [31:0] combined_volume;
+    always_ff @(posedge dsp_clk)
+        combined_volume <= (sys_volume * {16'h0, boot_envelope_gain}) >> 16;
 
     // Left volume pipeline
     logic signed [47:0] vol_a_l_r1;

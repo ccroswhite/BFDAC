@@ -344,7 +344,7 @@ Decisions (a)–(d) now closed → Step 4D.1 (correction engine RTL) unblocked
 ## Design Decisions — Confirmed
 | Decision | Value | Confirmed |
 |---|---|---|
-| Target FPGA | XCVU13P on ACVU13 SOM | ⚠️ UNDER RE-EVALUATION 2026-08-09 — see "FPGA Target Re-evaluation" below |
+| Target FPGA | XCVU13P on ACVU13 SOM | ✅ RE-RATIFIED 2026-08-11 — KU15P rejected on CX tenets, see below |
 | Single FPGA (no dual-FPGA) | Yes | ✅ |
 | Coefficient storage | URAM288, 2 MACs/URAM | ✅ |
 | NUM_MACS production | 1024 (upgrade path: 2048) | ⚠️ tied to tap-count re-evaluation below |
@@ -426,6 +426,62 @@ Decisive run: KU15P full RTL, NUM_MACS=512/ch, TPP=256, storage-folded →
 2M taps: 1024 DSP (52%), 64 URAM (50%, 98% internal fill), sweep 4100/7437
 (55%), window LUTRAM ~19%. Fold is REQUIRED for KU15P (unfolded 2M = 97.6%
 of device URAM). Loader + coef-layout tooling change with the fold.
+
+**DECISION (USER RATIFIED 2026-08-11): KU15P campaign TERMINATED — target
+remains XCVU13P on ACVU13 SOM.** The KU15P plan was tested against customer-
+experience tenets and failed on two counts:
+1. **Min-phase / short-latency filter options are a COMMITTED product tenet.**
+   Min-phase coefficients are asymmetric → cannot use the symmetric storage
+   fold. The fold was REQUIRED for KU15P (unfolded 2M = 97.6% URAM), so
+   KU15P architecturally excludes min-phase filters. Tenet-breaking.
+2. **Instant A/B filter switching is a differentiating feature.** KU15P
+   memory scarcity forced dual-bank removal → reload-under-mute (~23 ms
+   audible blip on filter change). Dual-bank gapless switching is RETAINED
+   on VU13P.
+3. Additional headroom motive: future features (digital EQ etc.) need spare
+   DSP/URAM/routing; KU15P was already congestion-marginal with zero margin.
+CONSEQUENCES: fold (f3) and dual-bank removal (f4) are CANCELLED as
+requirements — coefficient storage stays unfolded, dual-bank-in-word,
+supporting symmetric AND asymmetric (min-phase) filter sets uniformly.
+The TAPS_PER_PHASE plumbing + multi-burst loader (f2, verified) is KEPT —
+it is target-independent and needed for any tap-count growth. Fitment
+campaign redirects to the VU13P datum run (former corner (c)): full RTL
+synth + P&R at production scale, DDR4 MIG included. Tap target (2M vs 4M
+headline) to be settled by that run's resource/timing margins.
+
+### Filter UX Features (2026-08-11, user-directed — codified, final ratification pending)
+**FEATURE 1 — VIDEO MODE (Chord-style low-latency mode).** Rationale:
+linear-phase megatap group delay (~0.7 s @ 1M … ~2.9 s @ 4M) breaks lip
+sync; min-phase group delay is ms-class regardless of tap count. Video mode
+= a mode that constrains the selectable filter set to a curated low-latency
+subset (min-phase filters + optionally one short linear-phase ~16k-tap
+entry). Manual engagement (no video signaling on I2S/USB/SPDIF inputs).
+Latency budget target: ≤20 ms end-to-end incl. halfbands and ingress
+buffering; every filter in the menu carries a published latency figure.
+Mode entry is a normal dual-bank gapless flip. RTL cost is minimal: an SPI
+command + load-filter logic that restricts selection to min-phase-tagged
+sets.
+
+**FEATURE 2 — NAMED FILTERS + USER-CURATED TOGGLE LIST (A/B/x playlist).**
+The customer specifies, by name, an explicit ordered list of filters to
+cycle through with the filter-toggle control — a single favorite as
+default, an A/B pair for comparison, or a longer evaluation sequence.
+Toggling through the list is seamless (dual-bank preload of the next
+entry). This changes which/how filters load and is NOT currently
+supported. Required work:
+1. **SPI command set**: define/select the active filter list (ordered names
+   or IDs), query available filters, report current selection + latency;
+2. **Named filter loading from DDR4**: loader resolves a filter by name/ID
+   to its DDR4 coefficient region (directory/index structure in DDR4,
+   populated at QSPI→DDR4 staging time);
+3. **Coefficient file format v2**: current format is bare coefficients —
+   add a header with name label, plus (while we're in there) metadata the
+   features above need: phase type (linear/min-phase → video-mode
+   eligibility), tap count, sample-rate family, latency figure, format
+   version, checksum;
+4. **Tooling update**: filter-design/packing scripts emit the v2 format
+   with embedded name + metadata; DDR4 bank layout generator builds the
+   filter directory.
 
 ---
 

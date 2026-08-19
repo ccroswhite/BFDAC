@@ -74,9 +74,20 @@ module sys_clock_gen (
         // Increase CLKOUT0_DIVIDE_F to 2.750 for ~328/357 MHz after P&R validation
         .CLKOUT0_DIVIDE_F(3.500),
 
-        // CLKOUT1 = VCO/20 = mclk frequency (45.1584/49.152 MHz), phase-aligned
-        // to mclk — cascode IOB launch clock (cell_clk)
+        // CLKOUT1 = VCO/20 = mclk frequency (45.1584/49.152 MHz) — cascode IOB
+        // launch clock (cell_clk).
+        // CLKOUT1_PHASE = 90° (2026-08-14, f9wb route review): with 0° the MMCM
+        // feedback alignment puts the IOB launch edge essentially coincident
+        // with the mclk pad edge (fast-corner insertion −0.56 ns), so data could
+        // reach the external MC100EP52 D pins with near-zero margin against the
+        // SAME ff_clk edge — hold failed by −1.74 ns against the budgeted
+        // 1.5 ns pad. Launching a quarter period (5.09 ns) after the ff_clk
+        // edge gives real margin on BOTH sides: ~3.5 ns hold, ~11 ns setup
+        // (capture on the next ff_clk edge, 15.26 ns away). The RTZ pattern is
+        // shifted uniformly by 5.09 ns — pulse widths and the 6-of-8 duty are
+        // untouched, and the EP52 resampling erases the shift entirely.
         .CLKOUT1_DIVIDE(20),
+        .CLKOUT1_PHASE(90.000),
 
         .DIVCLK_DIVIDE(1)
     ) u_mmcm (

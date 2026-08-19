@@ -56,13 +56,18 @@ module tb_fir_window #(
         .coef_addr_out    (coef_addr)
     );
 
-    // ---- behavioral coef store: URAM model, 2-cycle registered read --------
+    // ---- behavioral coef store: models fir_polyphase_stereo's presentation --
+    // 2-stage address broadcast tree (2026-08-13 timing fix) + URAM 2-cycle
+    // registered read (IREG + OREG): coef_in valid at T+5 from coef_addr_out
+    // at T+1, co-timed with the DUT's window broadcast tree (win_q2 at T+5).
     logic signed [CW-1:0]  cmem [0:NM-1][0:CD-1];
-    logic [$clog2(CD)-1:0] addr_q;
+    logic [$clog2(CD)-1:0] addr_s2, addr_s3, addr_q;
     logic signed [CW-1:0]  cq [0:NM-1];
 
     always_ff @(posedge clk) begin
-        addr_q <= coef_addr;
+        addr_s2 <= coef_addr;
+        addr_s3 <= addr_s2;
+        addr_q  <= addr_s3;
         for (int m = 0; m < NM; m++)
             cq[m] <= cmem[m][addr_q];
     end
