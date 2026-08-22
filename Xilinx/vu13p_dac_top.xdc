@@ -527,6 +527,35 @@ set_max_delay -datapath_only 5.0 \
 #    2-FF synchronizer in dac_ctrl_plane (added f9wc route review 2026-08-15).
 set_false_path -to [get_pins {u_ctrl_plane/ddr4_calib_sync_reg[0]/D}]
 
+# --- clk_200m <-> dsp_clk CDC (cal_coef_store, Step 6.3/6.7 Aug 2026) ---------
+# ARM-computed temperature-corrected cal coefficients: toggle-synchronized
+# write/commit into dsp_clk, quasi-static readback and status coming back.
+
+# 7) cal write + commit toggles clk_200m -> dsp_clk (3-FF chains in the store)
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/cal_wr_toggle_reg u_ctrl_plane/cal_commit_toggle_reg}] \
+    -to   [get_cells {u_cal_store/wr_tg_sync_dsp_reg[0] u_cal_store/commit_tg_sync_dsp_reg[0]}]
+
+# 8) cal write bus clk_200m -> dsp_clk: cal_wr_addr/wr_data are stable when the
+#    toggle flips (one word per SPI frame, microseconds apart) and sampled only
+#    on the synced wr_pulse 2-3 dsp_clk later — same pattern as the coef bus.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/cal_wr_addr_reg[*] u_ctrl_plane/cal_wr_data_reg[*]}] \
+    -to   [get_cells -hierarchical -filter {NAME =~ u_cal_store/mem*_reg*}]
+
+# 9) cal readback address clk_200m -> dsp_clk: quasi-static SPI register
+#    (written frames before the readback frame), resampled through 2 FFs.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/cal_rd_addr_reg[*]}] \
+    -to   [get_cells {u_cal_store/rd_addr_meta_reg[*]}]
+
+# 10) cal readback data + status dsp_clk -> clk_200m: rd_data_dsp is
+#     quasi-static after commit; active/pending are single-bit into 2-FF syncs.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_cal_store/rd_data_dsp_reg[*]}] \
+    -to   [get_cells {u_cal_store/rd_data_reg[*]}]
+set_false_path -to [get_pins {u_cal_store/active_sync_ctrl_reg[0]/D u_cal_store/pending_sync_ctrl_reg[0]/D}]
+
 # -----------------------------------------------------------------------------
 # 10. User LED (debug / status indicator)
 # -----------------------------------------------------------------------------

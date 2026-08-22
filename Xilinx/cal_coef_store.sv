@@ -1,0 +1,162 @@
+`timescale 1ns / 1ps
+
+// =============================================================================
+// Calibration Coefficient Store (Step 6.3 / 6.7 — DECIDED Aug 2026)
+//
+// Architecture decision: the APPLICATION PROCESSOR reads the board temperature
+// sensors (I2C stays on the app board) and computes the final, temperature-
+// corrected calibration coefficient values (static LUT + Volterra kernel +
+// FIR nuisance taps, per channel). The FPGA performs NO temperature math —
+// it only stores the values and applies them to every conversion.
+//
+// This module is the store: a dual-bank (ping-pong) coefficient memory.
+//   - ARM writes the INACTIVE bank word-by-word over the SPI control plane
+//     (each word arrives as one SPI frame — microseconds apart, so simple
+//     toggle handshakes cross ctrl_clk -> dsp_clk with huge margin).
+//   - A commit toggle flips the active bank pointer ATOMICALLY at the next
+//     sample tick (same gapless pattern as the FIR bank_select switch): no
+//     conversion ever sees a half-updated coefficient set.
+//   - The ACTIVE bank is continuously readable by the (Phase 6) DPD datapath
+//     on the dpd_rd_* port — values are applied to every conversion by
+//     construction, with no per-sample fetch transaction.
+//   - A verification read port lets ARM read back the ACTIVE bank over SPI
+//     (quasi-static after commit, so the ctrl-domain resample is safe).
+//
+// Word layout per channel (addr[8] = channel: 0 = L, 1 = R):
+//   addr[7:0]  0 -  63 : static LUT   (64 entries, one per cascode cell)
+//             64 - 102 : Volterra kernel (39 terms)
+//            103 - 118 : FIR nuisance taps (16)
+//            119 - 255 : reserved
+// Words are 24-bit (the SPI write payload width); field scaling/format is
+// owned by the cal tooling (volterra_id2.py / dpd_study.py port, Step 6.4).
+// =============================================================================
+module cal_coef_store (
+    // --- dsp_clk domain ------------------------------------------------------
+    input  logic        dsp_clk,
+    input  logic        dsp_rst_n,
+    input  logic        sample_tick,     // commit alignment (768k sample tick)
+
+    // Phase 6 DPD datapath port — active bank, 1-cycle registered read.
+    // Tied off until the predistortion stage lands in dac_dsp_core.
+    input  logic [8:0]  dpd_rd_addr,
+    output logic [23:0] dpd_rd_data,
+
+    // --- ctrl_clk domain (SPI control plane, 200 MHz) ------------------------
+    input  logic        ctrl_clk,
+    input  logic        ctrl_rst_n,
+    input  logic        wr_toggle,       // flips once per word write
+    input  logic [8:0]  wr_addr,         // stable when wr_toggle flips
+    input  logic [23:0] wr_data,         // stable when wr_toggle flips
+    input  logic        commit_toggle,   // flips once per commit request
+    input  logic [8:0]  rd_addr,         // verification readback (active bank)
+    output logic [23:0] rd_data,         // quasi-static after commit
+    output logic        active_bank,     // status, resynced to ctrl_clk
+    output logic        commit_pending   // status, resynced to ctrl_clk
+);
+
+    // =========================================================================
+    // Storage: two banks, 512 x 24 each (distributed RAM scale)
+    // =========================================================================
+    logic [23:0] mem0 [0:511];
+    logic [23:0] mem1 [0:511];
+
+    // Power-up zero (synthesizable distributed-RAM init; matches bitstream)
+    initial begin
+        for (int i = 0; i < 512; i++) begin
+            mem0[i] = '0;
+            mem1[i] = '0;
+        end
+    end
+
+    // =========================================================================
+    // ctrl_clk -> dsp_clk CDC: write and commit toggles
+    // =========================================================================
+    (* ASYNC_REG = "TRUE" *) logic [2:0] wr_tg_sync_dsp;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] commit_tg_sync_dsp;
+
+    logic wr_pulse_dsp, commit_pulse_dsp;
+
+    always_ff @(posedge dsp_clk) begin
+        if (!dsp_rst_n) begin
+            wr_tg_sync_dsp     <= '0;
+            commit_tg_sync_dsp <= '0;
+        end else begin
+            wr_tg_sync_dsp     <= {wr_tg_sync_dsp[1:0],     wr_toggle};
+            commit_tg_sync_dsp <= {commit_tg_sync_dsp[1:0], commit_toggle};
+        end
+    end
+
+    assign wr_pulse_dsp     = wr_tg_sync_dsp[2]     ^ wr_tg_sync_dsp[1];
+    assign commit_pulse_dsp = commit_tg_sync_dsp[2] ^ commit_tg_sync_dsp[1];
+
+    // =========================================================================
+    // Write into the INACTIVE bank. wr_addr/wr_data are set by the SPI frame
+    // that flips wr_toggle and stay stable until the next frame (microseconds)
+    // — sampled here 2-3 dsp_clk after the toggle edge (XDC: datapath-only
+    // max_delay on the bus, same pattern as the coef write bus CDC).
+    // =========================================================================
+    logic        active_sel;      // which bank the datapath reads
+    logic        pending;         // commit requested, waiting for sample_tick
+
+    always_ff @(posedge dsp_clk) begin
+        if (wr_pulse_dsp) begin
+            if (active_sel) mem0[wr_addr] <= wr_data;  // bank1 active -> write bank0
+            else            mem1[wr_addr] <= wr_data;  // bank0 active -> write bank1
+        end
+    end
+
+    // =========================================================================
+    // Atomic commit at the sample boundary
+    // =========================================================================
+    always_ff @(posedge dsp_clk) begin
+        if (!dsp_rst_n) begin
+            active_sel <= 1'b0;
+            pending    <= 1'b0;
+        end else begin
+            if (commit_pulse_dsp)
+                pending <= 1'b1;
+            if (pending && sample_tick) begin
+                active_sel <= ~active_sel;
+                pending    <= 1'b0;
+            end
+        end
+    end
+
+    // =========================================================================
+    // Active-bank read ports (registered)
+    // =========================================================================
+    always_ff @(posedge dsp_clk) begin
+        dpd_rd_data <= active_sel ? mem1[dpd_rd_addr] : mem0[dpd_rd_addr];
+    end
+
+    // Verification readback: rd_addr is quasi-static (an SPI register written
+    // frames before the readback frame), so resampling the multibit address
+    // and returning the multibit data across domains is safe.
+    (* ASYNC_REG = "TRUE" *) logic [8:0] rd_addr_meta, rd_addr_dsp;
+    logic [23:0] rd_data_dsp;
+
+    always_ff @(posedge dsp_clk) begin
+        rd_addr_meta <= rd_addr;
+        rd_addr_dsp  <= rd_addr_meta;
+        rd_data_dsp  <= active_sel ? mem1[rd_addr_dsp] : mem0[rd_addr_dsp];
+    end
+
+    always_ff @(posedge ctrl_clk)
+        rd_data <= rd_data_dsp;    // quasi-static resample (XDC max_delay)
+
+    // Status back to ctrl domain (single-bit levels, 2-FF sync each)
+    (* ASYNC_REG = "TRUE" *) logic [1:0] active_sync_ctrl, pending_sync_ctrl;
+    always_ff @(posedge ctrl_clk) begin
+        if (!ctrl_rst_n) begin
+            active_sync_ctrl  <= '0;
+            pending_sync_ctrl <= '0;
+        end else begin
+            active_sync_ctrl  <= {active_sync_ctrl[0],  active_sel};
+            pending_sync_ctrl <= {pending_sync_ctrl[0], pending};
+        end
+    end
+
+    assign active_bank    = active_sync_ctrl[1];
+    assign commit_pending = pending_sync_ctrl[1];
+
+endmodule

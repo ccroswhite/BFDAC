@@ -404,6 +404,13 @@ module vu13p_dac_top #(
         .coef_load_done         (coef_load_done)
     );
 
+    // Calibration coefficient store wiring (see section 3b)
+    logic        cal_wr_toggle, cal_commit_toggle;
+    logic [8:0]  cal_wr_addr, cal_rd_addr;
+    logic [23:0] cal_wr_data, cal_rd_data;
+    logic        cal_active_bank, cal_commit_pending;
+    logic [23:0] cal_dpd_rd_data;   // Phase 6 DPD consumer (unused for now)
+
     // ==============================================================
     // 3. Control Plane (SPI + relays)
     // ==============================================================
@@ -437,7 +444,40 @@ module vu13p_dac_top #(
         .filter_next_id         (filter_next_id),
         .filter_load_req        (filter_load_req),
         .video_mode             (video_mode),
-        .spi_unmute             (spi_unmute)
+        .spi_unmute             (spi_unmute),
+        .cal_wr_toggle          (cal_wr_toggle),
+        .cal_wr_addr            (cal_wr_addr),
+        .cal_wr_data            (cal_wr_data),
+        .cal_commit_toggle      (cal_commit_toggle),
+        .cal_rd_addr            (cal_rd_addr),
+        .cal_rd_data            (cal_rd_data),
+        .cal_active_bank        (cal_active_bank),
+        .cal_commit_pending     (cal_commit_pending)
+    );
+
+    // ==============================================================
+    // 3b. Calibration Coefficient Store (Step 6.3/6.7, DECIDED Aug 2026)
+    // ARM computes temperature-corrected cal values and writes them here over
+    // SPI; the store swaps banks atomically at a sample boundary. The active
+    // bank feeds the Phase 6 DPD stage in dac_dsp_core (port tied off until
+    // that stage lands — the SPI readback keeps the store logic live).
+    // ==============================================================
+    cal_coef_store u_cal_store (
+        .dsp_clk        (dsp_clk),
+        .dsp_rst_n      (sys_rst_n),
+        .sample_tick    (sample_768k_tick),
+        .dpd_rd_addr    (9'd0),            // Phase 6: driven by the DPD stage
+        .dpd_rd_data    (cal_dpd_rd_data),
+        .ctrl_clk       (clk_200m),
+        .ctrl_rst_n     (ext_rst_n),
+        .wr_toggle      (cal_wr_toggle),
+        .wr_addr        (cal_wr_addr),
+        .wr_data        (cal_wr_data),
+        .commit_toggle  (cal_commit_toggle),
+        .rd_addr        (cal_rd_addr),
+        .rd_data        (cal_rd_data),
+        .active_bank    (cal_active_bank),
+        .commit_pending (cal_commit_pending)
     );
 
     // ==============================================================

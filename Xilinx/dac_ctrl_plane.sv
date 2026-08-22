@@ -46,8 +46,26 @@ module dac_ctrl_plane (
     output logic        filter_load_req,  // Single-cycle pulse on select/advance
     output logic        video_mode,       // Status flag (host-enforced eligibility)
     output logic        spi_unmute,       // Raw clk_49m-domain unmute command (CDC in top)
-    output logic        fpga_irq_n        // Active-low IRQ to ARM (sticky errors)
+    output logic        fpga_irq_n,       // Active-low IRQ to ARM (sticky errors)
+
+    // Calibration coefficient store (regs 0x0C-0x0F, 0x18-0x19; Step 6.3/6.7
+    // DECIDED Aug 2026: ARM computes the temperature-corrected values, FPGA
+    // only stores + applies them — see cal_coef_store.sv for the bank model)
+    output logic        cal_wr_toggle,    // Flips once per shadow-bank word write
+    output logic [8:0]  cal_wr_addr,      // [8]=channel, [7:0]=word
+    output logic [23:0] cal_wr_data,
+    output logic        cal_commit_toggle,// Flips once per atomic bank-swap request
+    output logic [8:0]  cal_rd_addr,      // Active-bank verification readback address
+    input  logic [23:0] cal_rd_data,      // Quasi-static readback data
+    input  logic        cal_active_bank,  // Synced status from cal_coef_store
+    input  logic        cal_commit_pending
 );
+
+    // Cal shadow-bank write pointer. cal_wr_addr (the exported CDC bus) holds
+    // the PRE-increment address of the last write so it is stable when the
+    // wr_toggle edge reaches the dsp_clk domain 2-3 cycles later; the pointer
+    // itself auto-increments immediately for the next 0x0D frame.
+    logic [8:0] cal_wr_ptr;
 
     logic [31:0] ctrl_bus_data;
     logic        ctrl_bus_valid;
@@ -195,6 +213,12 @@ module dac_ctrl_plane (
             filter_id        <= 16'd0;
             filter_load_req  <= 1'b0;
             video_mode       <= 1'b0;
+            cal_wr_toggle     <= 1'b0;
+            cal_wr_ptr        <= 9'd0;
+            cal_wr_addr       <= 9'd0;
+            cal_wr_data       <= 24'd0;
+            cal_commit_toggle <= 1'b0;
+            cal_rd_addr       <= 9'd0;
         end else begin
             coef_load_start <= 1'b0;    // Default: deassert each cycle
             filter_load_req <= 1'b0;
@@ -247,6 +271,15 @@ module dac_ctrl_plane (
                             end
                         end
                         7'h0B: video_mode <= ctrl_bus_data[0]; // DAC_MODE
+                        7'h0C: cal_wr_ptr <= ctrl_bus_data[8:0]; // CAL_ADDR: shadow write pointer
+                        7'h0D: begin // CAL_DATA: write word to shadow bank, auto-increment
+                            cal_wr_data   <= ctrl_bus_data[23:0];
+                            cal_wr_addr   <= cal_wr_ptr;   // stable for the CDC sample
+                            cal_wr_toggle <= ~cal_wr_toggle;
+                            cal_wr_ptr    <= cal_wr_ptr + 9'd1;
+                        end
+                        7'h0E: cal_commit_toggle <= cal_commit_toggle ^ ctrl_bus_data[0]; // CAL_COMMIT
+                        7'h0F: cal_rd_addr <= ctrl_bus_data[8:0]; // CAL_RDADDR (active-bank readback)
                         default: ;
                     endcase
                 end else begin
@@ -284,6 +317,10 @@ module dac_ctrl_plane (
             7'h16: spi_tx_data_c = {22'd0, video_mode, filter_list_len, filter_cur_index};
             // 0x17: Current + next (preload) filter IDs
             7'h17: spi_tx_data_c = {filter_next_id, filter_id};
+            // 0x18: Cal store status
+            7'h18: spi_tx_data_c = {21'd0, cal_wr_ptr, cal_commit_pending, cal_active_bank};
+            // 0x19: Cal active-bank readback (address set via 0x0F)
+            7'h19: spi_tx_data_c = {8'd0, cal_rd_data};
             default: spi_tx_data_c = 32'hDEADBEEF;
         endcase
     end
