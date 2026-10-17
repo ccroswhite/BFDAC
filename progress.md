@@ -3970,3 +3970,22 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       PCB-seed whitespace preserved. No full synthesis/P&R was run. The
       mezzanine mating-part/footprint selections remain provisional and
       precede physical layout; this checkpoint is not manufacturing sign-off.
+
+    - SYSTEM ARCHITECTURE / SENIOR ENGINEERING REVIEW HANDOFF:
+      Created docs/SYSTEM_ARCHITECTURE.md revision 0.1 against Git baseline
+      a7483c1bce6efacb386d27e6f2965bb8e24da593, linked from README.md.
+      Covers intent/acceptance, signal and numeric flow, clock/reset/CDC,
+      memory/boot/control/calibration, converter/I-V interface, power/ground,
+      PCB/mechanical intent, manual tests and verification limitations.
+      Includes 20 open findings with evidence, proposed priority and closure
+      actions, plus architecture/FPGA/circuit/layout/physical review gates.
+      Concrete source disagreements include I2S direction, MCLK signaling,
+      clock-select polarity and SPI cell-test versus automute busy semantics.
+      Additional review concerns include rate/watchdog compatibility, DPD
+      deadline at the actual 45/46-cycle cadence, AP isolation crossing,
+      coefficient-bank consistency, calibration operating point and safety.
+      Prior passing unit/ERC checks do not close these integration findings.
+      Documentation-only work: no RTL/circuit fixes or new hardware claims.
+      Source links checked against tracked files; clock/rate/delay arithmetic
+      checked. Existing verification results are labelled reported evidence,
+      not tests rerun during document preparation. Senior review still owed.
