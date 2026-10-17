@@ -4039,3 +4039,24 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       not yet established. FPGA place-and-route remains ON HOLD per user.
       R03 enable-voltage hardware check, physical capture-phase qualification,
       R05 DPD deadline and remaining audit findings are not closed.
+
+    - SYSTEM DESIGN DOCUMENT REBUILT (user-directed):
+      docs/SYSTEM_ARCHITECTURE.md revision 1.0 now describes the intended
+      product and complete system: goals, AP/SoM/carrier roles, audio path,
+      rate matrix, FPGA processing, clock ownership/distribution, analog
+      cells/cascodes/replica/I-V, power/ground/thermal architecture, planned
+      physical arrangement, operating sequences, calibration and bring-up.
+      Added system, processing, clock, power/domain and operating-flow views.
+      The earlier audit is preserved in docs/IMPLEMENTATION_REVIEW.md,
+      including finding identifiers R01-R20 and their closure gates. Its
+      baseline and later RTL-draft context remain explicit; no findings
+      were silently closed and no detached verification logs were inspected.
+      README now introduces the system design first and links the review
+      separately. Existing rate-matrix links retain their Section 4.2 anchor.
+      User clarification recorded: PCB LAYOUT HAS NOT STARTED. All floorplan,
+      placement, routing and mechanical assembly discussion is design intent;
+      the existing SoM connector seed is a mechanical reference only.
+      Documentation-only changes; no RTL, schematics or PCB edits.
+      Validation: 103 local document links/anchors checked, rate-matrix
+      arithmetic checked for all eight rates, code fences/whitespace checked.
+      Findings R01-R20 and review gates match the pre-rebuild record unchanged.

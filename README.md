@@ -1,40 +1,35 @@
 # BFDAC
 
-FPGA-controlled stereo discrete current-steering DAC on an Alinx ACVU13P/XCVU13P
-SoM and a custom analog carrier.
+BFDAC is a high-performance stereo DAC built around an Alinx ACVU13P/XCVU13P
+SoM and a discrete current-steering analog carrier. The application processor
+supplies PCM audio; the FPGA owns audio timing and conversion processing;
+externally reclocked current cells and I/V stages produce balanced XLR outputs.
 
-## Engineering review: start here
+## Design documentation
 
-[System Architecture and Engineering Review Specification](docs/SYSTEM_ARCHITECTURE.md)
+Start with the [System Design Specification](docs/SYSTEM_ARCHITECTURE.md).
+It explains the product goals, complete system, component responsibilities,
+audio and clock flows, power architecture, planned physical arrangement,
+operating sequences, calibration and manual bring-up.
 
-This is the current system-level handoff document. It explains design intent,
-FPGA implementation, analog conversion, power/grounding, PCB interfaces,
-calibration, bring-up and verification evidence against a named Git baseline.
-It includes **20 open review findings and explicit release gates**.
+Use the [Implementation Review and Gap Analysis](docs/IMPLEMENTATION_REVIEW.md)
+alongside it to assess the implementation. That companion preserves the audit
+evidence, findings R01–R20 and qualification gates against their named baselines.
+It is separate from the description of the intended system.
 
-**The design is not manufacturing- or bitstream-release approved.** Known
-RTL/schematic disagreements include I2S clock ownership, master-clock signaling
-and family polarity. Sample-rate/watchdog behavior, real-cadence DPD deadlines,
-SPI diagnostic gating, isolation and output protection also need review.
-Passing unit tests or schematic ERC is not a complete system correctness proof.
-Read the specification's open-findings section before relying on older notes.
+The [control/coefficient protocol](docs/coef_format_v2.md) contains the detailed
+register, image-layout and host-operation contracts.
 
-The working-tree R01–R04 RTL draft adds FPGA-master I2S and an eight-rate PCM
-configuration through 384 kHz. Its compile/regression results are pending;
-it does not close the electrical timing or remaining architecture findings.
-See the stream-rate section of the protocol document and
-`Xilinx/Testbench/run_stream_rates.ps1`. Place-and-route is on hold.
+## Hardware and implementation sources
 
-## Supporting sources
-
-- [BOM and circuit rationale](bom.md)
-- [Requirements, decisions and historical evidence](progress.md)
-- [SPI/coefficient formats and bring-up procedures](docs/coef_format_v2.md)
-- [FPGA RTL](Xilinx) and [pin/timing constraints](Xilinx/vu13p_dac_top.xdc)
+- [BOM and circuit realization](bom.md)
 - [KiCad project](hw/kicad/bfdac_analog.kicad_pro) and [schematic generator](utils/gen_kicad.py)
 - [Analog reference netlist](hw/ref_netlist.md)
-- [Archived implementation plan](BFDAC_IMPLEMENTATION_PLAN.md) — historical, not a current architecture specification
+- [FPGA RTL](Xilinx) and [pin/timing constraints](Xilinx/vu13p_dac_top.xdc)
+- [Decision and verification history](progress.md)
+- [Archived implementation plan](BFDAC_IMPLEMENTATION_PLAN.md)
 
-For verification entry points and their limitations, see Section 11 of the
-system specification. FPGA implementation and hardware qualification remain
-separate from documentation and unit-test completion.
+**PCB layout has not started.** The SoM connector seed is a mechanical
+reference for later layout. FPGA implementation and physical qualification
+are also distinct from unit-test or documentation completion; their evidence
+and remaining work are tracked in the review companion.

@@ -577,7 +577,7 @@ requests and report the applied configuration/readiness after a muted transition
 This supersedes higher native-input-rate claims; it is a design ruling, not
 completed RTL or isolation-timing sign-off. See
 [system specification Section 4.2](docs/SYSTEM_ARCHITECTURE.md#42-rates-and-capacity)
-and open findings R01–R04.
+and [implementation findings R01–R04](docs/IMPLEMENTATION_REVIEW.md#12-open-findings-and-review-actions).
 
 The coefficient QSPI (item 18) is FPGA-only — no isolator. The **AP → FPGA
 register SPI** (SCLK, MOSI, CS → FPGA; MISO ← FPGA; optional IRQ ← FPGA)
