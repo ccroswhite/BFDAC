@@ -8,7 +8,7 @@
 //      the inactive bank (target=1 while select=0)
 //  T4  first request is the legacy slot 0 (== reset current_bank_id): it must
 //      NOT be swallowed by the same-bank shortcut while bank_valid=0
-//  T5  load_done -> swap: bank_select=1, bank_valid=1, current_bank_id=req
+//  T5  successful load waits for one complete FIR input-frame boundary
 //  T6  same-bank request after valid -> silently consumed, no load
 //  T7  failed load -> no swap, current/bank_valid unchanged
 //  T8  most-recent-wins queue while LOADING
@@ -23,6 +23,7 @@ module tb_coef_bank_manager;
     logic [REQ_BITS-1:0] bank_select_req = '0;
     logic                bank_select_pulse = 0;
     logic                ddr4_ready = 0;
+    logic                sample_tick = 0;
     logic                load_done = 0;
     logic                load_failed = 0;
 
@@ -30,7 +31,7 @@ module tb_coef_bank_manager;
     logic [REQ_BITS-1:0] load_bank_id, current_bank_id;
 
     coef_bank_manager #(.REQ_BITS(REQ_BITS)) dut (
-        .clk(clk), .rst_n(rst_n), .sample_tick(1'b0),
+        .clk(clk), .rst_n(rst_n), .sample_tick(sample_tick),
         .bank_select_req(bank_select_req), .bank_select_pulse(bank_select_pulse),
         .ddr4_ready(ddr4_ready),
         .bank_select(bank_select), .bank_load_target(bank_load_target),
@@ -65,8 +66,14 @@ module tb_coef_bank_manager;
         load_done   <= 1'b1;
         @(posedge clk);
         load_done   <= 1'b0;
-        repeat (3) @(posedge clk);   // LOADING -> SWITCHING -> IDLE
+        repeat (3) @(posedge clk);   // LOADING -> WAIT_BOUNDARY (or IDLE on failure)
         load_failed <= 1'b0;
+    endtask
+
+    task automatic finish_input_frame;
+        @(negedge clk); sample_tick = 1'b1;
+        @(negedge clk); sample_tick = 1'b0;
+        repeat (3) @(posedge clk);   // boundary -> SWITCHING -> IDLE
     endtask
 
     initial begin
@@ -95,8 +102,17 @@ module tb_coef_bank_manager;
         check("T3 load_bank_id",          load_bank_id, {1'b0, 16'h0000});
         check("T4 slot-0 not swallowed",  busy,        1);
 
+        // A boundary during loading is irrelevant; the finished shadow image
+        // must not switch banks in the middle of the current FIR frame.
+        @(negedge clk); sample_tick = 1'b1;
+        @(negedge clk); sample_tick = 1'b0;
+        check("T5 no swap during load", bank_select, 0);
+
         // T5
         finish_load(0);
+        check("T5 waits for frame boundary", bank_select, 0);
+        check("T5 reports busy while waiting", busy, 1);
+        finish_input_frame();
         check("T5 bank_select swapped",   bank_select, 1);
         check("T5 bank_valid",            bank_valid,  1);
         check("T5 current_bank_id",       current_bank_id, {1'b0, 16'h0000});
@@ -126,11 +142,16 @@ module tb_coef_bank_manager;
         request({1'b1, 16'h0002});
         request({1'b1, 16'h0003});
         finish_load(0);
+        check("T8 loaded image waits for frame boundary", current_bank_id,
+              {1'b0, 16'h0000});
+        check("T8 pending boundary keeps manager busy", busy, 1);
+        finish_input_frame();
         check("T8 swapped to id 1",       current_bank_id, {1'b1, 16'h0001});
         repeat (2) @(posedge clk);
         check("T8 queued id 3 started",   load_starts, 4);
         check("T8 load_bank_id = 3",      load_bank_id, {1'b1, 16'h0003});
         finish_load(0);
+        finish_input_frame();
         check("T8 current = id 3",        current_bank_id, {1'b1, 16'h0003});
         check("T8 bank_select back to 1", bank_select, 1);
 

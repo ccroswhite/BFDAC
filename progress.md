@@ -4118,3 +4118,15 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       No synthesis, place-and-route, timing/CDC report, real-MIG simulation,
       analog capture or board test was run. The 3.25 divider's FPGA Fmax,
       DPD physical deadline and all remaining manufacturing gates remain open.
+
+    - 2026-10-17 FIR FILTER-BANK BOUNDARY FOLLOW-UP (verification pending):
+      Confirmed the filter-bank manager switched immediately on loader
+      load_done; its former sample_tick input was tied low. Added an FIR
+      input_frame_done marker after all rate-selected polyphase outputs for a
+      native input sample. The manager now waits for this boundary before
+      swapping, allowing the bank-select read-mux pipeline to settle before
+      the next sweep. Added manager boundary-wait checks and native-frame
+      completion counts to the 8-rate pipeline regression. Detached Vivado
+      suite process 33632 is running; logs will be at
+      `logs/fir_bank_boundary_v1/summary.log`. This follow-up is local and
+      uncommitted. No synthesis/place/route or hardware evidence is implied.

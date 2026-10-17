@@ -70,6 +70,7 @@ module fir_polyphase_interpolator #(
     // Oversampled Output
     output logic signed [ACC_WIDTH-1:0]          interpolated_out,
     output logic                                 interpolated_valid,
+    output logic                                 input_frame_done,
 
     // -- Coefficient input from shared BRAMs (one value per MAC per cycle) --
     input  logic signed [COEF_WIDTH-1:0]         coef_in [0:NUM_MACS-1],
@@ -79,6 +80,28 @@ module fir_polyphase_interpolator #(
 );
 
     localparam int COEF_DEPTH = NUM_PHASES * TAPS_PER_PHASE;
+    localparam int PHASE_COUNT_WIDTH = $clog2(NUM_PHASES + 1);
+    logic [PHASE_COUNT_WIDTH-1:0] output_phase_count;
+
+    // One native input sample emits NUM_PHASES >> rate_shift outputs.
+    // Report completion only after the final phase has been captured.
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            output_phase_count <= '0;
+            input_frame_done <= 1'b0;
+        end else begin
+            input_frame_done <= 1'b0;
+            if (new_sample_valid)
+                output_phase_count <= '0;
+            else if (interpolated_valid) begin
+                if (output_phase_count == PHASE_COUNT_WIDTH'((NUM_PHASES >> rate_shift) - 1)) begin
+                    input_frame_done <= 1'b1;
+                    output_phase_count <= '0;
+                end else
+                    output_phase_count <= output_phase_count + 1'b1;
+            end
+        end
+    end
 
     // =================================---------------------------------------
     // 1. Per-MAC Audio Window RAMs + systolic handoff

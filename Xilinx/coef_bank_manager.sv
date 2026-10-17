@@ -11,9 +11,10 @@
 //
 //      1. Identify inactive bank (bank_select ^ 1).
 //      2. Pulse load_start to coef_bank_loader, target = inactive bank.
-//      3. Wait for load_done (coefficients now in shadow BRAMs).
-//      4. Toggle bank_select to swap active/shadow banks (atomic, gapless).
-//      5. Back to IDLE, audio continues uninterrupted with new coefficients.
+//      3. Wait for load_done (coefficients now in shadow URAMs).
+//      4. Wait for the complete native input frame (all active interpolation
+//         phases) to finish before swapping active/shadow banks.
+//      5. Propagate bank_select through the read mux before the next FIR sweep.
 //
 //  Boot behavior (revised 2026-09-03, TODO-16):
 //
@@ -49,7 +50,7 @@ module coef_bank_manager #(
 )(
     input  logic                       clk,
     input  logic                       rst_n,
-    input  logic                       sample_tick,       // 768 kHz tick (unused in gapless)
+    input  logic                       sample_tick,       // pulse after all FIR phases for one input frame
 
     // -- Host request interface (from SPI control plane) -------------------
     input  logic [REQ_BITS-1:0]        bank_select_req,
@@ -75,13 +76,14 @@ module coef_bank_manager #(
 );
 
     // -------------------------------------------------------------------------
-    //  FSM - Gapless dual-bank switching
+    //  FSM - swap only between complete FIR input-frame calculations
     // -------------------------------------------------------------------------
-    typedef enum logic [1:0] {
-        ST_BOOT_WAIT = 2'd0,
-        ST_IDLE      = 2'd1,
-        ST_LOADING   = 2'd2,
-        ST_SWITCHING = 2'd3    // One-cycle atomic bank swap
+    typedef enum logic [2:0] {
+        ST_BOOT_WAIT    = 3'd0,
+        ST_IDLE         = 3'd1,
+        ST_LOADING      = 3'd2,
+        ST_WAIT_BOUNDARY= 3'd3,
+        ST_SWITCHING    = 3'd4    // One-cycle bank swap after the frame boundary
     } state_t;
 
     state_t                  state;
@@ -150,8 +152,15 @@ module coef_bank_manager #(
                 ST_LOADING: begin
                     if (load_done) begin
                         // Failed lookup: keep the active bank, report via ctrl plane
-                        state <= load_failed ? ST_IDLE : ST_SWITCHING;
+                        state <= load_failed ? ST_IDLE : ST_WAIT_BOUNDARY;
                     end
+                end
+
+                // The shadow image is ready, but the current input's FIR
+                // convolution may still be using the active bank.
+                ST_WAIT_BOUNDARY: begin
+                    if (sample_tick)
+                        state <= ST_SWITCHING;
                 end
 
                 // -------------------------------------------------------------

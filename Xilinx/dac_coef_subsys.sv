@@ -4,7 +4,7 @@
 // Combines:
 //   - coef_bank_loader  (AXI4 read master, runs at ui_clk 300 MHz)
 //   - CDC bridge        (ui_clk -> dsp_clk for coef write bus)
-//   - coef_bank_manager (gapless dual-bank switching FSM, dsp_clk)
+//   - coef_bank_manager (dual-bank switching at complete FIR-frame boundary, dsp_clk)
 //   - coef_mute_envelope (boot-time fade-in, dsp_clk)
 //   - Boot sequence: hold requests until the QSPI boot loader has staged
 //     DDR4 (boot_ok); output stays fully muted until the FIRST successful
@@ -27,6 +27,7 @@ module dac_coef_subsys #(
 
     // Sample tick from DSP core (768 kHz, dsp_clk domain)
     input  logic        sample_768k_tick,
+    input  tri0         fir_frame_done,
 
     // SPI control inputs (clk_200m domain — registers held stable after the
     // pulse; pulses are level-synced into dsp_clk here before use)
@@ -349,7 +350,7 @@ module dac_coef_subsys #(
     ) u_coef_mgr (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
-        .sample_tick        (1'b0),         // Unused in gapless switching
+        .sample_tick        (fir_frame_done),
         .bank_select_req    (req_data_dsp),
         .bank_select_pulse  (req_pulse_dsp),
         .ddr4_ready         (boot_ok_sync[1]),

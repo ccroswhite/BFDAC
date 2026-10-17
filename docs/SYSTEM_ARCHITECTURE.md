@@ -420,10 +420,12 @@ compatibility, layout and integrity. Invalid images must not replace a valid
 active filter. The image-building, transport and loader definitions must agree
 on byte order, CRC coverage, dimensions, padding and rate encoding.
 
-The inactive bank is filled while the current bank is in use. Activation must
-preserve the coefficient set for each complete calculation, including
-in-flight work. The same consistency requirement applies to serial DPD
-coefficient reads during calibration updates.
+The inactive bank is filled while the current bank is in use. FIR-bank
+activation waits for the native input frame's final active interpolation phase;
+the bank-select tree then settles before the next FIR sweep. This prevents a
+single native frame from using coefficients from two filter banks. The same
+consistency requirement applies to serial DPD coefficient reads during
+calibration updates.
 
 ### 4.4 Numeric and temporal contracts
 
@@ -897,8 +899,9 @@ oscillator does not need to change.
 ### 9.3 Filter and calibration updates
 
 Filter data is written into an inactive bank and checked before activation.
-Activation must occur at a boundary that preserves complete calculations
-and the required audio transition behavior.
+The bank manager commits a loaded filter only after the full native input
+frame (all active interpolation phases) completes. The distributed bank-select
+tree settles before the next input frame starts its FIR sweep.
 
 Calibration follows the same principle. The AP prepares a complete
 temperature-corrected dataset, writes the inactive calibration bank,

@@ -722,6 +722,15 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Action/closure:** prove each output calculation sees one complete coefficient set, or explicitly define and bound the transition. Stress commits/swaps at every pipeline phase with deliberately distinguishable banks; cover reset, duplicate commits, pending writes and no-audio conditions. Decide whether any update must mute, drain or crossfade.
 
+**Current RTL follow-up (simulation pending):** the FIR bank manager no longer
+swaps directly on loader `load_done`. A new `fir_frame_done` pulse follows the
+last active interpolation phase for a native input sample; the manager waits
+for that pulse before changing `bank_select`, leaving the distributed select
+tree time to settle before the next input-frame sweep. The controller unit test
+and eight-rate pipeline test now cover boundary waiting and per-frame pulse
+counts. Process 33632 is running the expanded suite; no test result is claimed
+until its logs are reviewed.
+
 ### R11 — P1: CDC/reset sign-off and historical timing assumptions
 
 **Evidence:** clock-wide false paths coexist with held-bus max-delay constraints; reset deassertion and source/destination reset epochs differ among blocks. The DSP reset is derived directly from lock; volume and calibration use toggles with independently reset destinations. Current board interfaces differ from the historically routed timing model.

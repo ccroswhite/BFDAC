@@ -373,6 +373,7 @@ module vu13p_dac_top #(
 
     // Sample tick (dsp_clk domain)
     logic        sample_768k_tick;
+    logic        fir_frame_done;
 
     // QSPI flash subsystem (clk_200m domain unless noted — 2026-08-22)
     logic [7:0]  flash_cmd_opcode, flash_buf_wdata, flash_buf_waddr;
@@ -622,6 +623,7 @@ module vu13p_dac_top #(
         .stream_rate            (applied_stream_rate),
         .enforce_stream_rate    (1'b1),
         .sample_768k_tick       (sample_768k_tick),
+        .fir_frame_done         (fir_frame_done),
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
         .filter_id              (filter_id),
@@ -900,6 +902,7 @@ module vu13p_dac_top #(
         .dpd_busy               (core_dpd_busy),
         .dpd_deadline_miss      (dpd_deadline_miss),
         .sample_768k_tick       (sample_768k_tick),
+        .fir_frame_done         (fir_frame_done),
         .cascode_l              (cascode_l),
         .cascode_r              (cascode_r)
     );

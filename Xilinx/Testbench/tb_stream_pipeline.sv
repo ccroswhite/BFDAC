@@ -4,6 +4,7 @@ module tb_stream_pipeline;
     logic [1:0] shift=0;
     real cp=20.345052083, dp=3.560384115;
     wire bclk, lrclk, sample_valid, serial_error, serial_fault, stream_fault;
+    wire fir_frame_done;
     wire [23:0] audio_l, audio_r;
     wire [63:0] cascode_l, cascode_r;
     int cases=0;
@@ -19,12 +20,18 @@ module tb_stream_pipeline;
         .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n),
         .audio_l(audio_l), .audio_r(audio_r), .new_sample(sample_valid), .force_zero(1'b0),
         .rate_shift(shift), .stream_fault(stream_fault),
+        .fir_frame_done(fir_frame_done),
         .coef_we(1'b0), .coef_waddr(8'd0), .coef_wdata(18'd0), .coef_wmac(2'd0),
         .bank_select(1'b0), .bank_load_target(1'b0), .sys_volume(32'hffffffff),
         .boot_envelope_gain(16'hffff), .dpd_enable(1'b0), .dpd_cal_data('0),
         .cell_test_cfg('0), .cell_test_req(2'd0), .cell_test_safe(1'b0),
         .bench_req(1'b0), .bench_cmd(11'd0), .cascode_l(cascode_l), .cascode_r(cascode_r)
     );
+    int fir_frame_count=0;
+    always @(posedge dsp_clk) begin
+        if(!rst_n) fir_frame_count<=0;
+        else if(fir_frame_done) fir_frame_count<=fir_frame_count+1;
+    end
     initial begin
         for(int f=0;f<2;f++) begin
             for(int r=0;r<4;r++) begin
@@ -41,6 +48,16 @@ module tb_stream_pipeline;
                 while(frames<32) begin
                     @(posedge dsp_clk); #0.01;
                     if(sample_valid) frames++;
+                end
+                begin
+                    int wait_cycles;
+                    wait_cycles=0;
+                    while(fir_frame_count<frames && wait_cycles<20000) begin
+                        @(posedge dsp_clk); wait_cycles++;
+                    end
+                    if(fir_frame_count!=frames)
+                        $fatal(1,"FIR input-frame boundary count %0d expected %0d",
+                               fir_frame_count,frames);
                 end
                 if(!core.pace_started || stream_fault || serial_fault)
                     $fatal(1,"stream failed to prime/conserve samples family=%0d shift=%0d",f,r);

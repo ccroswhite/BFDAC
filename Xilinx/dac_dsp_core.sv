@@ -68,6 +68,7 @@ module dac_dsp_core #(
 
     // Sample tick output (768 kHz post-FIR, to dac_coef_subsys)
     output logic        sample_768k_tick,
+    output logic        fir_frame_done,
     output logic        dpd_busy,
     output logic        dpd_deadline_miss,
 
@@ -129,6 +130,7 @@ module dac_dsp_core #(
         .interpolated_l_valid (interp_l_valid),
         .interpolated_r       (interp_r),
         .interpolated_r_valid (interp_r_valid),
+        .input_frame_done     (fir_frame_done),
         .coef_we              (coef_we),
         .coef_waddr           (coef_waddr),
         .coef_wdata           (coef_wdata),

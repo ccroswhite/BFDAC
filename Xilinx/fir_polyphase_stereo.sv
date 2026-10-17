@@ -51,6 +51,7 @@ module fir_polyphase_stereo #(
     output logic                          interpolated_l_valid,
     output logic signed [ACC_WIDTH-1:0]   interpolated_r,
     output logic                          interpolated_r_valid,
+    output logic                          input_frame_done,
 
     // Coefficient write bus (from coef_bank_loader, dsp_clk domain)
     input  logic                               coef_we,
@@ -348,7 +349,9 @@ module fir_polyphase_stereo #(
     //  Left channel interpolator
     // -------------------------------------------------------------------------
     logic overrun_l, overrun_r;
+    logic frame_done_l, frame_done_r;
     assign input_overrun = overrun_l || overrun_r;
+    assign input_frame_done = frame_done_l;
     fir_polyphase_interpolator #(
         .NUM_MACS       (NUM_MACS),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
@@ -362,6 +365,7 @@ module fir_polyphase_stereo #(
         .new_sample_data    (new_sample_l),
         .rate_shift         (rate_shift),
         .input_overrun      (overrun_l),
+        .input_frame_done   (frame_done_l),
         .interpolated_out   (interpolated_l),
         .interpolated_valid (interpolated_l_valid),
         .coef_in            (coef_out),
@@ -388,6 +392,7 @@ module fir_polyphase_stereo #(
         .new_sample_data    (new_sample_r),
         .rate_shift         (rate_shift),
         .input_overrun      (overrun_r),
+        .input_frame_done   (frame_done_r),
         .interpolated_out   (interpolated_r),
         .interpolated_valid (interpolated_r_valid),
         .coef_in            (coef_out),
