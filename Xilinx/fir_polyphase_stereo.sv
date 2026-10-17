@@ -38,6 +38,8 @@ module fir_polyphase_stereo #(
 )(
     input  logic                          clk,
     input  logic                          rst_n,
+    input  tri0 [1:0]                     rate_shift,
+    output logic                         input_overrun,
 
     // Baseband inputs (one per channel)
     input  logic                          new_sample_valid,
@@ -345,6 +347,8 @@ module fir_polyphase_stereo #(
     // -------------------------------------------------------------------------
     //  Left channel interpolator
     // -------------------------------------------------------------------------
+    logic overrun_l, overrun_r;
+    assign input_overrun = overrun_l || overrun_r;
     fir_polyphase_interpolator #(
         .NUM_MACS       (NUM_MACS),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
@@ -356,6 +360,8 @@ module fir_polyphase_stereo #(
         .rst_n              (rst_n),
         .new_sample_valid   (new_sample_valid),
         .new_sample_data    (new_sample_l),
+        .rate_shift         (rate_shift),
+        .input_overrun      (overrun_l),
         .interpolated_out   (interpolated_l),
         .interpolated_valid (interpolated_l_valid),
         .coef_in            (coef_out),
@@ -380,6 +386,8 @@ module fir_polyphase_stereo #(
         .rst_n              (rst_n),
         .new_sample_valid   (new_sample_valid),
         .new_sample_data    (new_sample_r),
+        .rate_shift         (rate_shift),
+        .input_overrun      (overrun_r),
         .interpolated_out   (interpolated_r),
         .interpolated_valid (interpolated_r_valid),
         .coef_in            (coef_out),

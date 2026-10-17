@@ -19,6 +19,12 @@ SPI diagnostic gating, isolation and output protection also need review.
 Passing unit tests or schematic ERC is not a complete system correctness proof.
 Read the specification's open-findings section before relying on older notes.
 
+The working-tree R01–R04 RTL draft adds FPGA-master I2S and an eight-rate PCM
+configuration through 384 kHz. Its compile/regression results are pending;
+it does not close the electrical timing or remaining architecture findings.
+See the stream-rate section of the protocol document and
+`Xilinx/Testbench/run_stream_rates.ps1`. Place-and-route is on hold.
+
 ## Supporting sources
 
 - [BOM and circuit rationale](bom.md)

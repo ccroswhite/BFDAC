@@ -16,10 +16,12 @@
 // =============================================================================
 module tb_fir_window #(
     parameter int NM  = 8,
-    parameter int TPP = 16
+    parameter int TPP = 16,
+    parameter int RATE_SHIFT = 0
 );
 
     localparam int NP  = 16;
+    localparam int ACTIVE_NP = NP >> RATE_SHIFT;
     localparam int CD  = NP * TPP;    // 256
     localparam int K   = NM * TPP;    // 128
     localparam int DW  = 24;
@@ -48,6 +50,7 @@ module tb_fir_window #(
     ) dut (
         .clk              (clk),
         .rst_n            (rst_n),
+        .rate_shift       (2'(RATE_SHIFT)),
         .new_sample_valid (nsv),
         .new_sample_data  (nsd),
         .interpolated_out (y),
@@ -97,7 +100,7 @@ module tb_fir_window #(
 
     always @(posedge clk) begin
         if (yv) begin
-            if (out_cnt < NP && y !== yref[out_cnt]) begin
+            if (out_cnt < ACTIVE_NP && y !== yref[out_cnt]) begin
                 if (err_cnt < 24)
                     $display("MISMATCH samp %0d phase %0d: dut=%0d ref=%0d diff=%0d",
                              samp_idx, out_cnt, y, yref[out_cnt], y - yref[out_cnt]);
@@ -114,9 +117,9 @@ module tb_fir_window #(
         for (int k = 0; k < K; k++)
             xhist[k] = '0;
 
-        repeat (5) @(posedge clk);
+        repeat (TPP + 12) @(posedge clk);
         rst_n = 1'b1;
-        repeat (5) @(posedge clk);
+        repeat (TPP + 12) @(posedge clk);
 
         for (samp_idx = 0; samp_idx < NSAMP; samp_idx++) begin
             for (int k = K - 1; k > 0; k--)
@@ -131,18 +134,18 @@ module tb_fir_window #(
             @(negedge clk);
             nsv = 1'b0;
 
-            repeat (CD + 150) @(posedge clk);   // shift(4) + sweep(CD) + shadow tail
+            repeat ((CD >> RATE_SHIFT) + 150) @(posedge clk);
 
-            if (out_cnt != NP) begin
+            if (out_cnt != ACTIVE_NP) begin
                 $display("FAIL samp %0d: %0d outputs seen, expected %0d",
-                         samp_idx, out_cnt, NP);
+                         samp_idx, out_cnt, ACTIVE_NP);
                 err_cnt++;
             end
         end
 
         if (err_cnt == 0)
             $display("PASS: %0d samples x %0d phases bit-exact (2048-tap small config)",
-                     NSAMP, NP);
+                     NSAMP, ACTIVE_NP);
         else
             $display("FAIL: %0d errors", err_cnt);
         $finish;

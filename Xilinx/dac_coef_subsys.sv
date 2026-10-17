@@ -22,6 +22,8 @@ module dac_coef_subsys #(
     // dsp_clk domain (~357 MHz)
     input  logic        dsp_clk,
     input  logic        sys_rst_n,
+    input  tri0 [2:0]   stream_rate,
+    input  tri0         enforce_stream_rate,
 
     // Sample tick from DSP core (768 kHz, dsp_clk domain)
     input  logic        sample_768k_tick,
@@ -125,6 +127,8 @@ module dac_coef_subsys #(
     ) u_coef_loader (
         .clk             (ui_clk),
         .rst_n           (~ui_clk_sync_rst),
+        .stream_rate     (stream_rate),
+        .enforce_stream_rate(enforce_stream_rate),
         .load_start      (mgr_load_start_ui_sync),
         .load_by_id      (mgr_load_req_dsp[16]),
         .load_bank_id    (mgr_load_req_dsp[3:0]),

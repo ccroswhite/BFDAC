@@ -66,16 +66,11 @@ module tb_vu13p_mig;
     always #(PREF/2) clk_ref  = ~clk_ref;
     always #(P49/2)  clk_49m  = ~clk_49m;
     always #(P45/2)  clk_45m  = ~clk_45m;
-    assign mclk = clk_sel ? clk_49m : clk_45m;
+    assign mclk = clk_sel ? clk_45m : clk_49m;
 
     // I2S source (768 kHz frame) — keeps the ingress watchdog quiet
-    logic       i2s_bclk = 0, i2s_lrclk = 0, i2s_data = 0;
-    logic [4:0] bclk_div = 0;
-    always #(P49/2) i2s_bclk = ~i2s_bclk;
-    always @(negedge i2s_bclk) begin
-        bclk_div <= bclk_div + 1;
-        if (bclk_div == 5'd31) i2s_lrclk <= ~i2s_lrclk;
-    end
+    wire i2s_bclk, i2s_lrclk;
+    logic i2s_data = 0;
 
     // ---- SPI / misc pins ----------------------------------------------------------------------
     logic spi_sclk = 0, spi_cs_n = 1, spi_mosi = 0;
@@ -306,7 +301,7 @@ module tb_vu13p_mig;
         flash_mem[p + 0] = FILT_ID[7:0];
         flash_mem[p + 1] = FILT_ID[15:8];
         flash_mem[p + 2] = 8'd1;                 // phase_type
-        flash_mem[p + 3] = 8'd0;                 // rate_family
+        flash_mem[p + 3] = 8'd1;                 // metadata 1 = 44.1k-family; reset stream rate
         put32(p + 4,  32'(16 * NUM_MACS * TAPS_PER_PHASE));   // tap_count
         put32(p + 8,  BANK_DDR4 >> 4);           // ddr4_offset (16 B units)
         put32(p + 12, BANK_SIZE);                // payload_bytes

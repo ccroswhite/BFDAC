@@ -83,6 +83,8 @@ module tb_coef_bank_loader;
     logic                         load_done;
     logic                         load_err;
     logic [1:0]                   load_err_code;
+    logic enforce_stream_rate = 0;
+    logic [2:0] stream_rate = 0;
 
     // Expected bank base for the slave model / AR checker (legacy: slot*BANK_SZ;
     // ID mode: the directory entry's ddr4_offset*16)
@@ -155,6 +157,8 @@ module tb_coef_bank_loader;
     ) dut (
         .clk             (clk),
         .rst_n           (rst_n),
+        .stream_rate     (stream_rate),
+        .enforce_stream_rate(enforce_stream_rate),
         .load_start      (load_start),
         .load_by_id      (load_by_id),
         .load_bank_id    (load_bank_id),
@@ -845,6 +849,40 @@ module tb_coef_bank_loader;
         $display("TEST 9 done. errors=%0d", error_count);
     endtask
 
+    task test_rate_rejection;
+        integer rate_errors;
+        rate_errors = 0;
+        $display("TEST 10: production rejects untagged/incompatible filters");
+        apply_reset();
+        setup_directory();
+        enforce_stream_rate = 1;
+        stream_rate = 3'd7;
+        pulse_load_by_id(16'h0101, DIR_IMG_A);
+        wait_for_load_done();
+        if (!load_err || load_err_code != 3 || total_writes != 0) begin
+            $display("ERROR: incompatible rate metadata accepted");
+            error_count++;
+        end
+        rate_errors = error_count;
+        for (int family=0; family<2; family++) begin
+            apply_reset();
+            setup_directory();
+            stream_rate = {2'd3, 1'(family)};
+            dir_beat0[0][31:24] = family ? 8'd0 : 8'd1;
+            dir_beat0[0][63:32] = (NUM_MACS * COEF_DEPTH) >> 3;
+            dir_beat1[0][47:40] = 8'd3;
+            pulse_load_by_id(16'h0101, DIR_IMG_A);
+            wait_for_load_done();
+            if (load_err || total_writes != NUM_MACS * COEF_DEPTH) begin
+                $display("ERROR: matching native-rate filter rejected");
+                error_count++;
+            end
+            rate_errors += error_count;
+        end
+        error_count = rate_errors;
+        enforce_stream_rate = 0;
+    endtask
+
     // -------------------------------------------------------------------------
     //  Main stimulus
     // -------------------------------------------------------------------------
@@ -878,6 +916,9 @@ module tb_coef_bank_loader;
         final_errors += error_count;
 
         test_dir_packed_size();
+        final_errors += error_count;
+
+        test_rate_rejection();
         final_errors += error_count;
 
         repeat(20) @(posedge clk);

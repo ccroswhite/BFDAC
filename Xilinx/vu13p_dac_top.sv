@@ -13,7 +13,7 @@
 //   dac_ddr4_if      : DDR4 MIG wrapper (uses on-module DDR4)
 //   dac_coef_subsys  : Coefficient loading + bank management + CDC
 //   dac_ctrl_plane   : SPI register file + relays
-//   dac_i2s_ingress  : I2S receiver + stereo FIFO
+//   i2s_master_ingress: FPGA-master serial clocks and tagged return-data capture
 //   dac_dsp_core     : FIR×16 + HB1/2/3 + volume + dither + 7th-order NS
 //                      + 64-element DEM + IOB-registered cascode outputs
 //                        (1 pin per cell, 128 total; complement generated at
@@ -58,9 +58,9 @@ module vu13p_dac_top #(
     // Base Clocks & Reset (all differential)
     input  logic        clk_200m_p,    // SOM 200 MHz system clock (+ side)
     input  logic        clk_200m_n,    // SOM 200 MHz system clock (- side)
-    input  logic        mclk_p,        // LMK00304 output: selected OCXO master clock (+ side)
-    input  logic        mclk_n,        // LMK00304 output: selected OCXO master clock (- side)
-    output logic        clk_sel,       // LMK00304 CLKin_SEL: 0 = 45.1584 MHz, 1 = 49.152 MHz
+    input  logic        mclk_p,        // Carrier single-ended LVCMOS18 clock copy
+    input  logic        mclk_n,        // Reserved, unused (carrier no-connect)
+    output logic        clk_sel,       // Carrier enable polarity: 0=49.152, 1=45.1584 MHz
 
     input  logic        ext_rst_n,
     input  logic        test_select_n,
@@ -69,8 +69,8 @@ module vu13p_dac_top #(
     output logic        test_led,
 
     // I2S Ingress
-    input  logic        i2s_bclk,
-    input  logic        i2s_lrclk,
+    output logic        i2s_bclk,
+    output logic        i2s_lrclk,
     input  logic        i2s_data,
 
     // ARM SPI Interface (Control Plane)
@@ -149,71 +149,36 @@ module vu13p_dac_top #(
         .O  (clk_200m)
     );
 
-    IBUFDS u_ibufds_mclk (
+    IBUF u_ibuf_mclk (
         .I  (mclk_p),
-        .IB (mclk_n),
         .O  (mclk)
     );
 
     // --------------------------------------------------------------
-    // External clock-mux switch sequencer (clk_200m domain)
-    //
-    // Single SPI register (0x03) commands the rate-family change; this
-    // sequencer enforces the safe order IN HARDWARE (no host protocol
-    // dependency). The LMK00304 mux is not glitch-free, so on any
-    // clk_source_sel change:
-    //   1. MUTE_WAIT: dsp_clk is still running; the automute FSM has
-    //      already seen the same register change (rate_changed) and
-    //      dropped the relay drives + force_zero. Wait MUTE_DELAY_CYCLES
-    //      for the mechanical relay contacts to actually open.
-    //   2. Hold the MMCM in reset, flip clk_sel, keep reset asserted
-    //      for MUX_SETTLE_CYCLES (mux switch + OCXO output settle).
-    //   3. Release; clk_locked reasserts (~100 us) and sys_rst_n
-    //      releases the dsp_clk domain through reset (all pipelines -
-    //      FIR, halfbands, NS, DEM, staging, cascode IOBs - flush; the
-    //      128 cascode pins are held at 0 so the external EP52 FFs
-    //      clock in a static all-off pattern while mclk is switching).
-    // A new register change during MUTE_WAIT simply retargets (counter
-    // restarts); a change during the reset phase is picked up on the
-    // next pass because clk_source_sel_q keeps tracking.
+    // Stream-rate transaction owns oscillator selection and path reset.
+    // Mute precedes reset/switch/relock. The startup guard clears FIR history
+    // before serial clocks restart. DDR remains running across rate changes.
     // --------------------------------------------------------------
-    localparam int MUX_SETTLE_CYCLES = 2048;   // 10.24 us @ 200 MHz
-
-    logic        clk_source_sel_q;
-    logic [25:0] mute_wait_cnt;
-    logic [11:0] mux_settle_cnt;
-    logic        mmcm_rst;
-
-    always_ff @(posedge clk_200m or negedge ext_rst_n) begin
-        if (!ext_rst_n) begin
-            clk_source_sel_q <= 1'b0;
-            clk_sel          <= 1'b0;
-            mute_wait_cnt    <= '0;
-            mux_settle_cnt   <= '0;
-            mmcm_rst         <= 1'b0;
-        end else begin
-            if (clk_source_sel != clk_source_sel_q && !mmcm_rst) begin
-                // 1. Register changed: automute is muting; arm the relay-
-                //    release delay (restart if it changes again mid-wait)
-                mute_wait_cnt <= MUTE_DELAY_CYCLES[25:0];
-                clk_source_sel_q <= clk_source_sel;
-            end else if (mute_wait_cnt != 0) begin
-                mute_wait_cnt <= mute_wait_cnt - 1'b1;
-                if (mute_wait_cnt == 26'd1) begin
-                    mmcm_rst       <= 1'b1;    // 2. reset first, then switch
-                    mux_settle_cnt <= MUX_SETTLE_CYCLES[11:0];
-                end
-            end else if (mmcm_rst) begin
-                clk_sel <= clk_source_sel_q;   // flip mux while MMCM held in reset
-                if (mux_settle_cnt != 0)
-                    mux_settle_cnt <= mux_settle_cnt - 1'b1;
-                else
-                    mmcm_rst <= 1'b0;          // 3. release -> relock -> flush
-            end else begin
-                clk_source_sel_q <= clk_source_sel;
-            end
-        end
+    logic mmcm_rst, stream_path_reset, stream_busy, stream_clock_ready, serial_enable;
+    logic [2:0] stream_rate_request, applied_stream_rate;
+    logic stream_rate_toggle, stream_rate_ack, stream_source_valid;
+    logic [4:0] i2s_rx_trim;
+    logic core_stream_fault, serial_fault;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
+    always_ff @(posedge clk_200m) begin
+        if (!ext_rst_n) stream_fault_sync <= 0;
+        else stream_fault_sync <= {stream_fault_sync[0], core_stream_fault || serial_fault};
     end
+    stream_rate_controller #(
+        .MUTE_CYCLES(MUTE_DELAY_CYCLES),
+        .STARTUP_CYCLES(TAPS_PER_PHASE * 2 + 4096)
+    ) u_stream_rate (
+        .clk(clk_200m), .rst_n(ext_rst_n), .clk_locked(clk_locked),
+        .requested_rate(stream_rate_request), .req_toggle(stream_rate_toggle),
+        .ack_toggle(stream_rate_ack), .applied_rate(applied_stream_rate),
+        .busy(stream_busy), .ready(stream_clock_ready), .mmcm_rst(mmcm_rst),
+        .path_reset(stream_path_reset), .clk_sel(clk_sel), .serial_enable(serial_enable)
+    );
 
     // SPI control signals (clk_200m -> dsp_clk)
     (* MARK_DEBUG = "TRUE" *) logic spi_unmute;
@@ -228,7 +193,13 @@ module vu13p_dac_top #(
     logic outsel_target;
     logic outsel_target_sync;
 
-    assign sys_rst_n = ext_rst_n & clk_locked;
+    wire dsp_reset_release = ext_rst_n && clk_locked && !stream_path_reset;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] dsp_reset_sync;
+    always_ff @(posedge dsp_clk or negedge dsp_reset_release) begin
+        if (!dsp_reset_release) dsp_reset_sync <= 0;
+        else dsp_reset_sync <= {dsp_reset_sync[0], 1'b1};
+    end
+    assign sys_rst_n = dsp_reset_sync[1];
 
     // CDC: SPI control signals from clk_200m to dsp_clk domain.
     // level_target / outsel_target are quasi-static: they are written by SPI
@@ -250,7 +221,7 @@ module vu13p_dac_top #(
             outsel_target_sync_chain <= '0;
         end else begin
             unmute_sync_chain        <= {unmute_sync_chain[0], spi_unmute};
-            rate_sel_sync_chain      <= {rate_sel_sync_chain[0], base_rate_sel};
+            rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
             level_req_sync_chain     <= {level_req_sync_chain[0], level_switch_req};
             level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
             outsel_req_sync_chain    <= {outsel_req_sync_chain[0], outsel_switch_req};
@@ -437,7 +408,7 @@ module vu13p_dac_top #(
     dac_ddr4_if u_ddr4_if (
         .ddr4_clkref_p          (ddr4_clkref_p),
         .ddr4_clkref_n          (ddr4_clkref_n),
-        .sys_rst_n              (sys_rst_n),
+        .sys_rst_n              (ext_rst_n),
         .ddr4_dq                (ddr4_dq),
         .ddr4_dqs_c             (ddr4_dqs_c),
         .ddr4_dqs_t             (ddr4_dqs_t),
@@ -647,6 +618,8 @@ module vu13p_dac_top #(
         .ui_clk_sync_rst        (ddr4_ui_clk_sync_rst),
         .dsp_clk                (dsp_clk),
         .sys_rst_n              (sys_rst_n),
+        .stream_rate            (applied_stream_rate),
+        .enforce_stream_rate    (1'b1),
         .sample_768k_tick       (sample_768k_tick),
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
@@ -710,7 +683,7 @@ module vu13p_dac_top #(
     bench_test_controller u_bench_ctrl (
         .clk(clk_200m), .rst_n(ext_rst_n), .select_n(test_select_n), .step_n(test_step_n),
         .available(bench_available), .ready(&bench_ctrl_sync),
-        .healthy(bench_ctrl_sync[2] && bench_ctrl_sync[1]), .rate_48(base_rate_sel),
+        .healthy(bench_ctrl_sync[2] && bench_ctrl_sync[1]), .rate_48(applied_stream_rate[0]),
         .cmd_ack(bench_ack), .cmd_req(bench_req), .cmd(bench_cmd),
         .busy(bench_busy), .led(test_led), .status(bench_status)
     );
@@ -740,7 +713,7 @@ module vu13p_dac_top #(
         .current_bank_id        (current_bank_id),
         .coef_load_err          (coef_load_err),
         .coef_load_err_code     (coef_load_err_code),
-        .i2s_err                (i2s_err),
+        .i2s_err                (i2s_err || core_stream_fault),
         .switch_busy            (switch_busy),
         .clk_locked             (clk_locked),
         .ddr4_init_calib_complete (ddr4_init_calib_complete),
@@ -787,7 +760,15 @@ module vu13p_dac_top #(
         .cell_test_ack          (cell_test_ack),
         .bench_busy             (bench_busy),
         .bench_status           (bench_status),
-        .bench_available        (bench_available)
+        .bench_available        (bench_available),
+        .stream_rate_request    (stream_rate_request),
+        .stream_rate_toggle     (stream_rate_toggle),
+        .stream_source_valid    (stream_source_valid),
+        .i2s_rx_trim            (i2s_rx_trim),
+        .stream_busy            (stream_busy),
+        .stream_clocks_ready    (stream_clock_ready),
+        .stream_applied_rate    (applied_stream_rate),
+        .stream_fault           (stream_fault_sync[1])
     );
 
     // ==============================================================
@@ -817,16 +798,22 @@ module vu13p_dac_top #(
     // ==============================================================
     // 4. I2S Ingress
     // ==============================================================
-    dac_i2s_ingress u_i2s_ingress (
+    i2s_master_ingress u_i2s_ingress (
         .dsp_clk                (dsp_clk),
-        .sys_rst_n              (sys_rst_n),
+        .cell_clk               (cell_clk),
+        .rst_n                  (sys_rst_n),
+        .enable                 (serial_enable),
+        .source_valid           (stream_source_valid),
+        .rate_shift             (applied_stream_rate[2:1]),
+        .rx_trim                (i2s_rx_trim),
         .i2s_bclk               (i2s_bclk),
         .i2s_lrclk              (i2s_lrclk),
         .i2s_data               (i2s_data),
         .audio_l                (audio_l),
         .audio_r                (audio_r),
         .new_sample             (new_sample),
-        .i2s_err                (i2s_err)
+        .i2s_err                (i2s_err),
+        .transport_fault        (serial_fault)
     );
 
     // ==============================================================
@@ -835,9 +822,9 @@ module vu13p_dac_top #(
     automute_controller u_automute (
         .clk              (dsp_clk),
         .rst_n            (sys_rst_n),
-        .spi_unmute       (spi_unmute_sync),
+        .spi_unmute       (spi_unmute_sync && !stream_busy && stream_clock_ready && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
-        .i2s_err          (i2s_err),
+        .i2s_err          (i2s_err || core_stream_fault),
         .level_switch_req (level_switch_req_sync),
         .level_target     (level_target_sync),
         .outsel_switch_req(outsel_switch_req_sync),
@@ -850,12 +837,13 @@ module vu13p_dac_top #(
         .switch_busy      (switch_busy)
     );
 
-    assign relay_line_mute = line_mute_drive;
+    assign relay_line_mute = line_mute_drive && stream_clock_ready && stream_source_valid &&
+                             !stream_fault_sync[1] && !bench_busy;
     assign relay_hp_mute   = hp_mute_drive;
     assign relay_hp_rails  = hp_rails_drive;
     assign relay_level     = 2'b00;   // no level relays on the board (bom 7, 2026-10-07)
 
-    assign led_debug = {clk_locked, ddr4_init_calib_complete, i2s_err, force_zero};
+    assign led_debug = {clk_locked, ddr4_init_calib_complete, (i2s_err || core_stream_fault), force_zero};
 
     // Debug ILA (control-plane clock, captures SPI/automute status)
     // Enable with +define+ILA_EN during synthesis
@@ -882,6 +870,8 @@ module vu13p_dac_top #(
         .audio_r                (audio_r),
         .new_sample             (new_sample),
         .force_zero             (force_zero),
+        .rate_shift             (applied_stream_rate[2:1]),
+        .stream_fault           (core_stream_fault),
         .coef_we                (coef_we),
         .coef_waddr             (coef_waddr),
         .coef_wdata             (coef_wdata),

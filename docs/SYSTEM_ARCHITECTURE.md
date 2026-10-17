@@ -1,8 +1,22 @@
 # BFDAC System Architecture and Engineering Review Specification
 
-**Revision:** 0.1 — review draft, not release approval
+**Revision:** 0.2 — review draft with clock/rate ownership locked 2026-10-16, not release approval
 
 **Audited implementation baseline:** `a7483c1bce6efacb386d27e6f2965bb8e24da593`
+
+The 2026-10-16 ownership/rate ruling below is a subsequent design decision. It does not imply that the audited RTL has been updated or that findings R01–R04 are closed.
+
+**Working-tree RTL update (2026-10-16):** implementation drafts now include
+`stream_rate_controller.sv`, `i2s_master_ingress.sv`, 16/8/4/2 active FIR phases,
+filter-rate metadata validation, explicit AP readiness and synchronized path
+reset. The FPGA clock-copy input now uses IBUF/LVCMOS18 and the physical
+oscillator-select polarity matches the generator. These changes postdate the
+audited baseline. Compile/elaboration and new rate-matrix regressions are
+pending; the baseline descriptions/findings below remain evidence, not claims
+that this draft is verified. See `coef_format_v2.md` for the proposed register
+and coefficient-layout extension. No synthesis/place-and-route has been run
+for this update. In particular, R03 enable voltage levels, physical return-data
+timing and R05 DPD deadlines remain open.
 
 **Audience:** senior FPGA, mixed-signal/analog, PCB, firmware and verification engineers
 
@@ -168,7 +182,56 @@ Evidence: [dac_dsp_core.sv](../Xilinx/dac_dsp_core.sv).
 
 ### 4.2 Rates and capacity
 
-For the intended base-rate input path:
+**LOCKED 2026-10-16 — AP/FPGA ownership and maximum native PCM rate.**
+The AP knows the stream's sample rate and PCM format and notifies the FPGA.
+The FPGA validates the request and owns the coherent conversion configuration:
+carrier oscillator selection, interpolation ratio, I2S clock dividers and the
+safe transition sequence. The AP does not independently set the oscillator,
+core-clock multiplier or interpolation multiplier. The maximum native PCM
+input rate for this revision is **384 kHz**, with the following rate matrix:
+
+| AP-reported PCM rate / FPGA LRCLK | Carrier MCLK selected by FPGA | Total interpolation | FPGA-to-AP BCLK (64 clocks/frame) | Converter update rate |
+|---|---:|---:|---:|---:|
+| 44.1 kHz | 45.1584 MHz | x128 | 2.8224 MHz | 5.6448 MHz |
+| 48 kHz | 49.152 MHz | x128 | 3.072 MHz | 6.144 MHz |
+| 88.2 kHz | 45.1584 MHz | x64 | 5.6448 MHz | 5.6448 MHz |
+| 96 kHz | 49.152 MHz | x64 | 6.144 MHz | 6.144 MHz |
+| 176.4 kHz | 45.1584 MHz | x32 | 11.2896 MHz | 5.6448 MHz |
+| 192 kHz | 49.152 MHz | x32 | 12.288 MHz | 6.144 MHz |
+| 352.8 kHz | 45.1584 MHz | x16 | 22.5792 MHz | 5.6448 MHz |
+| 384 kHz | 49.152 MHz | x16 | 24.576 MHz | 6.144 MHz |
+
+The carrier oscillators remain the physical low-jitter MCLK source, directly
+feeding the converter's external reclock tree and a clock copy to the FPGA.
+The FPGA is the I2S master: it supplies BCLK/LRCLK to the AP, which transmits
+DATA as an I2S slave. “Setting the I2S clock” means setting these derived
+serial clocks; the prior **no separate MCLK export to the AP** decision stands.
+The frame uses two 32-bit slots; supported PCM word formats require explicit
+validation (the current receiver retains 24 bits).
+
+The DSP MMCM ratio is an FPGA implementation/timing choice, not a host tuning
+control. It need not change between native rates within a family. The total
+interpolation ratio does change. How that ratio is distributed across FIR/HB
+stages, per-rate tap counts, coefficient normalization and scheduling remains
+implementation work; a variable x16/x8/x4/x2 FIR followed by x8 halfbands is a
+candidate, not a completed or separately ratified datapath.
+
+Unsupported rates/formats must be rejected. This includes 705.6/768 kHz native
+input for this revision; it does not prohibit those frequencies at internal
+processing stages. AP filter choice remains policy, but the FPGA must validate
+filter/rate compatibility before activation. A rate change must mute, quiesce
+old-format traffic, apply the matching clock/filter/processing configuration,
+flush or reset affected state, and report applied-rate/readiness or rejection.
+The AP must supply the matching stream, with an explicit ready/underrun contract,
+before the agreed unmute sequence resumes playback. FPGA-generated frame clocks
+alone cannot distinguish an absent AP from legitimate zero-valued audio.
+
+**Implementation status:** the existing RATE register is only a family bit,
+not a complete stream-rate request. The new request/status encoding, I2S-master
+RTL, variable interpolation, watchdog changes and end-to-end timing verification
+are pending. A 384 kHz cap does not by itself qualify the isolation round trip.
+
+For comparison, the currently implemented fixed-x128 chain corresponds to:
 
 | Point | 44.1 kHz family | 48 kHz family |
 |---|---:|---:|
@@ -179,7 +242,7 @@ For the intended base-rate input path:
 | HB3 / converter update | 5.6448 MHz | 6.144 MHz |
 | MCLK / cell launch clock | 45.1584 MHz | 49.152 MHz |
 
-Claims elsewhere of 384/768 kHz I2S support must not be interpreted as a demonstrated compatible input mode for this fixed x128 chain. No corresponding input-rate-dependent bypass/ratio selection was established in this audit. R04 requires a single rate contract covering ingress, watchdog, FIR throughput, FIFO and converter cadence.
+Historical claims of 384/768 kHz I2S support are not evidence that the fixed-x128 implementation supports those inputs. The locked rate matrix above is the implementation target; input-rate-dependent processing and the matching ingress/watchdog contract remain R04 work.
 
 `vu13p_dac_top` defaults to `NUM_MACS=256`, `TAPS_PER_PHASE=256`. Stored FIR taps are:
 
@@ -557,7 +620,9 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Consequence:** the intended clock nets have no FPGA clock generator/output in the inspected RTL. An external-master testbench bypasses this physical disagreement.
 
-**Action/closure:** choose the master, implement corresponding ports/clock generation/receiver timing, reconcile XDC and isolation directions, and run a top-level serial-audio test with the actual pin directions and isolation delay model.
+**Decision locked 2026-10-16:** FPGA owns I2S timing; AP reports stream rate/format and transmits DATA as a slave. This confirms the earlier master-ownership ruling rather than reopening it.
+
+**Action/closure:** implement the FPGA-master ports/clock generation/receiver timing, reconcile XDC and isolation directions, and run a top-level serial-audio test with the actual pin directions and isolation delay model. The decision is closed; the implementation finding remains open.
 
 ### R02 — P0: Single-ended clock drawn, differential input implemented (confirmed)
 
@@ -579,7 +644,9 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Consequence:** base-rate input can assert I2S error between valid frames; feeding 384/768 kHz instead overloads or otherwise conflicts with the fixed interpolation/pacer contract. A faster test source alone is not a fix.
 
-**Action/closure:** enumerate supported input rates, ratios/bypass modes, FIR acceptance cadence, buffer depths and watchdog thresholds. Run sustained full-path PCM tests at every supported rate and with clock drift, missing frames, underrun and overflow. Require status-visible errors rather than simulation-only warnings.
+**Decision locked 2026-10-16:** the eight native PCM rates and total interpolation ratios in Section 4.2, up to 384 kHz, are the target. AP reports the stream; FPGA derives the complete configuration.
+
+**Action/closure:** implement that matrix and define per-rate processing, FIR acceptance cadence, buffer depths, compatible filter sets and watchdog/stream-readiness behavior. Run sustained full-path PCM tests at every supported rate and with clock drift, missing frames, underrun and overflow. Require status-visible errors rather than simulation-only warnings. Register encoding and implementation verification remain open.
 
 ### R05 — P0: DPD real-time deadline is not covered by the passing TB
 

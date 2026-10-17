@@ -352,7 +352,7 @@ write addr latches sticky[5].
 |------|-------|------|-------------|
 | 0x01 | Write | VOLUME | 24-bit volume, LEFT-justified into the 32-bit multiplier word: sys_volume = {data[23:0], 8'h00}; 0xFFFFFF = unity (2026-10-09 fix, was right-justified = -48 dB cap) |
 | 0x02 | Write | LEVEL | output level cap [2:0], DIGITAL gain: 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms (applied by automute while muted; survives mute; reset 2V) |
-| 0x03 | Write | RATE | base_rate_sel [0]: 0=44.1k family, 1=48k family (also drives LMK00304 clk_sel; 0x06 merged here) |
+| 0x03 | Write | RATE | RTL draft: alias of STREAM_RATE 0x1A, three-bit native-rate code; old 0/1 meanings retained; verification pending |
 | 0x04 | Write | UNMUTE | spi_unmute [0] |
 | 0x05 | Write | BANK_LOAD (legacy) | coef_bank_id [3:0] + load trigger — fixed DDR4 slot, bypasses directory |
 | 0x07 | Write | OUTSEL | 0=line XLR, 1=headphone |
@@ -374,6 +374,9 @@ write addr latches sticky[5].
 | 0x17 | Write | FILTER_SELECT_ID | [15:0]=directory filter_id, bypasses the list (cur_index untouched) → `filter_load_req` |
 | 0x18 | Write | CELL_TEST_L | [7]=enable, [6]=test-cell contribution (0 baseline / 1 add cell), [5:0]=cell index 0..63; [23:8]=0; independent left channel |
 | 0x19 | Write | CELL_TEST_R | Same format, independent right channel |
+| 0x1A | Write | STREAM_RATE | [2:0]={rate_shift[1:0],family48}; codes 0..7 = 44.1/48/88.2/96/176.4/192/352.8/384 kHz; other bits zero |
+| 0x1B | Write | STREAM_VALID | [0]=AP-ready; zero on source stop/underrun; other bits zero |
+| 0x1C | Write | I2S_RX_TRIM | [4:0]=additional DSP capture cycles (reset 8); source stopped/muted only |
 | 0x10 | Read  | MAGIC | 0xDAC02026 |
 | 0x11 | Read  | STICKY_ERR | [0] SPI CRC, [1] I2S err, [2] DDR4 calib lost, [3] MMCM unlock, [4] SPI frame length, [5] bad write addr, [6] rejected cmd OR filter load failed, [7] boot/flash error — any set bit asserts `fpga_irq_n` |
 | 0x12 | Read  | CTRL_STATE | {clk_source_sel, base_rate_sel, outsel, level[1:0]} |
@@ -390,6 +393,7 @@ write addr latches sticky[5].
 | 0x1D | Read | CELL_TEST_L | [8]=CDC command pending, [7:0]=last accepted L command; not an analog-settled indicator |
 | 0x1E | Read | CELL_TEST_R | Same status for R |
 | 0x1F | Read | BENCH_STATUS | Local button controller: busy[0], LED[1], mode[3:2], R-channel[4], step[11:5], rate[12], FSM[15:13], press count[18:16], cancel[19], fault[20]; full protocol in docs/coef_format_v2.md |
+| 0x20 | Read | STREAM_STATUS | busy[0], clocks-ready[1], AP-ready[2], bank-valid[3], fault[4], applied rate[7:5], requested rate[10:8], capture trim[15:11] |
 
 Names/addresses/reason codes are defined once in `Xilinx/spi_regs.svh` (`SPI_W_*`, `SPI_R_*`, `SPI_ERR_*`, `SPI_STICKY_*`); `dac_ctrl_plane.sv` decodes exclusively through those macros. TBs keep numeric literals (they document the wire protocol).
 
@@ -3989,3 +3993,49 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       Source links checked against tracked files; clock/rate/delay arithmetic
       checked. Existing verification results are labelled reported evidence,
       not tests rerun during document preparation. Senior review still owed.
+
+    - 2026-10-16 STREAM CLOCK/RATE OWNERSHIP LOCKED (user):
+      AP owns knowledge/notification of the PCM stream sample rate and format.
+      FPGA validates the request and owns coherent MCLK selection, interpolation
+      ratio and derived I2S BCLK/LRCLK, including safe transition/readiness.
+      FPGA = I2S master; AP = slave transmitter. Oscillators remain the physical
+      converter/reclock MCLK source; no separate AP MCLK export.
+      Maximum native PCM input = 384kHz. Supported-rate intent:
+      44.1/48 -> x128; 88.2/96 -> x64; 176.4/192 -> x32; 352.8/384 -> x16.
+      Conversion remains 5.6448/6.144MHz; BCLK=64*Fs for two 32-bit slots.
+      AP does not independently program oscillator/core/interpolation ratios.
+      AP filter selection is policy; FPGA validates rate compatibility.
+      Unsupported rate/format requests rejected; mute/quiesce, configure,
+      flush/reset and applied-rate/readiness precede normal playback.
+      Source-ready/underrun contract still needed: locally generated clocks
+      do not prove the AP is transmitting valid audio.
+      Recorded in SYSTEM_ARCHITECTURE.md revision 0.2, bom.md and the protocol
+      document. The existing RATE family bit and fixed-x128 datapath do not
+      implement this contract. Register encoding, rate-dependent filters and
+      processing, I2S master RTL, watchdog and timing validation remain pending.
+      R01/R04 ownership/rate decisions are settled; R01-R04 implementation
+      findings remain open. Documentation update only; no RTL changes.
+
+    - 2026-10-16 R01-R04 RTL IMPLEMENTATION DRAFT (verification pending):
+      Added stream_rate_controller (mute/reset/select/relock/startup) and
+      i2s_master_ingress (BCLK/LRCLK outputs, 32-bit slots/24-bit capture,
+      tagged delayed DATA sampling, source-ready and frame-cadence checks).
+      Added rate codes 0..7, source-ready and RX-trim SPI writes/status.
+      Master-clock copy uses IBUF/LVCMOS18; physical clk_sel=~family48.
+      FIR executes 16/8/4/2 active phases; memory retains full sixteen-phase
+      bank layout, unused phases padded, per-rate filters required.
+      FIR history clears on path reset; pacer primes with 128 entries and
+      exposes sticky overflow/underflow plus FIR input-overrun faults.
+      Production loader validates directory family/shift/active tap count;
+      incompatible metadata/legacy untagged slots fail with code 3.
+      DDR reset now follows external reset, not audio PLL/rate reset.
+      Rate changes clear source-ready, unmute, DPD enable and bank-valid;
+      AP must reload/verify required state and explicitly resume.
+      Updated top/MIG testbench pin directions and clock-family mapping;
+      added controller, serial-delay/rate matrix and full-pipeline tests;
+      extended FIR, filter-loader and SPI tests. Detached runner:
+      Xilinx/Testbench/run_stream_rates.ps1 (Vivado syntax/elaboration +
+      simulation; no synthesis/place/route). Compile/regression outcomes
+      not yet established. FPGA place-and-route remains ON HOLD per user.
+      R03 enable-voltage hardware check, physical capture-phase qualification,
+      R05 DPD deadline and remaining audit findings are not closed.

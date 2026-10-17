@@ -18,20 +18,20 @@ set_property IOSTANDARD LVDS     [get_ports {clk_200m_p clk_200m_n}]
 set_property PACKAGE_PIN G20     [get_ports clk_200m_p]
 set_property PACKAGE_PIN G19     [get_ports clk_200m_n]
 
-# Master audio clock (differential) ? externally-muxed OCXO from LMK00304.
+# Master audio clock: carrier oscillator/fanout copy, single-ended LVCMOS18.
 # Carries EITHER 45.1584 MHz (22.151 ns) or 49.152 MHz (20.345 ns); constrain
 # at the faster 49.152 MHz rate so both families are timing-covered.
 # Bank 65 TRUE GC pair B65_L12 (J6-C30/C29) - moved from B71_L12 (J1-A17/A16,
 # J28/J29) on 2026-10-08: the clock block sits on the analog/right edge next to
 # J6, J1 is the noisy/left edge.  Carrier drives mclk_p single-ended LVCMOS18
-# (schematic STEP 8b) and leaves mclk_n no-connect; IBUFDS -> IBUF + LVCMOS18
-# conversion of this port is still a carried TODO (gen_kicad / progress.md).
+# and leaves mclk_n reserved/no-connect. RTL uses IBUF on mclk_p.
 create_clock -name clk_mclk -period 20.345 [get_ports mclk_p]
-set_property IOSTANDARD LVDS     [get_ports {mclk_p mclk_n}]
+set_property IOSTANDARD LVCMOS18 [get_ports {mclk_p mclk_n}]
 set_property PACKAGE_PIN AW28    [get_ports mclk_p]
 set_property PACKAGE_PIN AY28    [get_ports mclk_n]
 
-# Clock source select ? drives LMK00304 CLKin_SEL (0 = 45.1584 M, 1 = 49.152 M).
+# Physical oscillator enable: 0 = 49.152 MHz, 1 = 45.1584 MHz.
+# This is the inverse of the stream-rate code's family48 bit.
 # Quasi-static control output; B65_L16_P (J6-A19) since 2026-10-08 (was
 # B71_L13_P / J26, J1-B5) - same move as mclk, drives the XO enables in the
 # clock block on the analog edge.
@@ -41,12 +41,10 @@ set_property SLEW        SLOW    [get_ports clk_sel]
 set_property PACKAGE_PIN AR25    [get_ports clk_sel]
 set_false_path -to [get_ports clk_sel]
 
-# I2S bit clock ? asynchronous to all internal clocks; treated as input-only.
-# Vivado does not need to time paths through it because i2s_rx is its own
-# clock domain and all outputs cross into dsp_clk via a toggle synchronizer.
-# Placed on bank 71 GC pin B71_L11_P (J1-B17) so it gets dedicated clock
-# routing ? the previous CLOCK_DEDICATED_ROUTE=FALSE waiver on R27 is gone.
-create_clock -name i2s_bclk -period 20.345 [get_ports i2s_bclk]
+# I2S BCLK is an output generated from cell_clk; DATA returns through isolation.
+# BCLK is an FPGA output. Worst-case native rate is 384k: MCLK/2.
+# Slower stream modes divide by 4/8/16. Physical return timing must be
+# qualified against the programmed capture phase and isolator/AP delays.
 set_property IOSTANDARD LVCMOS18 [get_ports i2s_bclk]
 
 # -----------------------------------------------------------------------------
@@ -86,9 +84,12 @@ set_false_path -from [get_clocks clk_200m] -to [get_clocks dsp_clk]
 # Signals: i2s_err, switch_busy, line_mute_status, hp_mute_status (synchronised in dac_ctrl_plane)
 set_false_path -from [get_clocks dsp_clk] -to [get_clocks clk_200m]
 
-# i2s_bclk -> dsp_clk
-# toggle synchronizer in dac_i2s_ingress for data_valid crossing
-set_false_path -from [get_clocks i2s_bclk] -to [get_clocks dsp_clk]
+# Serial DATA synchronizer and tagged launch-event crossing.
+set_false_path -from [get_ports i2s_data] -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
+set_false_path -to [get_pins {u_i2s_ingress/enable_cell_reg[0]/D u_i2s_ingress/enable_sync_reg[0]/D u_i2s_ingress/valid_sync_reg[0]/D}]
+set_max_delay -datapath_only 3.5 \
+    -from [get_cells {u_i2s_ingress/launch_toggle_reg u_i2s_ingress/launch_bit_reg[*]}] \
+    -to [get_cells {u_i2s_ingress/launch_sync_reg[0] u_i2s_ingress/tag_pipe_reg[0][*]}]
 
 # cell_clk -> dsp_clk (CDC audit, Step 4C.2)
 # pace_tgl (cell_clk /8 tick toggle in dac_dsp_core section 6) crosses to the
@@ -103,10 +104,8 @@ set_max_delay -datapath_only 3.5 \
 # Asynchronous external reset ? reset synchronizers handle the CDC
 set_false_path -from [get_ports ext_rst_n]
 
-# Async assert into the i2s_bclk-domain reset synchronizer in dac_i2s_ingress
-# (sys_rst_n = ext_rst_n & clk_locked; deassert is synchronized by the 2-FF
-# chain itself). Mirrors the cell_rst_sync exception in section 8.
-set_false_path -to [get_pins -hierarchical -filter {NAME =~ *bclk_rst_sync_reg*/CLR}]
+# Async reset assertion; release is synchronized in DSP and serial cell domains.
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *dsp_reset_sync_reg*/CLR || NAME =~ *cell_reset_reg*/CLR}]
 
 # -----------------------------------------------------------------------------
 # 4. SPI Control Bus (ARM SPI master -> FPGA slave, clk_200m domain)
@@ -138,18 +137,25 @@ set_property IOSTANDARD LVCMOS18 [get_ports ext_rst_n]
 set_property PACKAGE_PIN R27     [get_ports ext_rst_n]
 
 # -----------------------------------------------------------------------------
-# 6. I2S Ingress (asynchronous to all FPGA clocks)
+# 6. FPGA-master I2S with asynchronously returning serial DATA
 # -----------------------------------------------------------------------------
 set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data}]
-# J1 connector, bank 71. bclk on GC pin B71_L11_P (J1-B17) for dedicated
-# clock routing; lrclk/data on ordinary I/O (they are data, sampled by bclk).
+# J1 bank 71. BCLK/LRCLK are outputs; DATA is sampled with a qualified delay.
 # R27 (B71_L2_N, J1-A1) = ext_rst_n (5b).
 set_property PACKAGE_PIN H27     [get_ports i2s_bclk]
 set_property PACKAGE_PIN T27     [get_ports i2s_lrclk]
 set_property PACKAGE_PIN N28     [get_ports i2s_data]
+set_property DRIVE 4 [get_ports {i2s_bclk i2s_lrclk}]
+set_property SLEW SLOW [get_ports {i2s_bclk i2s_lrclk}]
+set_property IOB TRUE [get_cells {u_i2s_ingress/i2s_bclk_reg u_i2s_ingress/i2s_lrclk_reg}]
+create_generated_clock -name i2s_bclk -source [get_pins u_clk_gen/u_mmcm/CLKOUT1] -divide_by 2 [get_ports i2s_bclk]
+set_max_delay -datapath_only 5.0 -to [get_ports {i2s_bclk i2s_lrclk}]
+set_false_path -to [get_pins {u_stream_rate/lock_sync_reg[0]/D stream_fault_sync_reg[0]/D}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_stream_rate/applied_rate_reg[*]}] \
+    -to [get_cells {u_coef_subsys/u_coef_loader/rate_r_reg[*]}]
 
-# i2s_rx is clocked by i2s_bclk; its outputs cross to dsp_clk via toggle sync.
-# No timing constraint needed on the raw I2S input ports beyond the clock above.
+# Review capture delay against the complete clock/AP/DATA round-trip budget.
 
 # -----------------------------------------------------------------------------
 # 7. Hardware Relay Outputs (slow, relay coil drive)
@@ -777,4 +783,3 @@ set_property CFGBVS                        GND      [current_design]
 set_property BITSTREAM.CONFIG.CONFIGFALLBACK ENABLE [current_design]
 # Golden-build only (leave commented for update builds):
 # set_property BITSTREAM.CONFIG.NEXT_CONFIG_ADDR 0x04000000 [current_design]
-

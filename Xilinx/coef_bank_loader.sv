@@ -117,6 +117,8 @@ module coef_bank_loader #(
 )(
     input  logic                          clk,
     input  logic                          rst_n,
+    input  tri0                           enforce_stream_rate,
+    input  tri0 [2:0]                     stream_rate,
 
     // -- Control interface (from coef_bank_manager) ----------------------
     input  logic                          load_start,
@@ -247,6 +249,8 @@ module coef_bank_loader #(
     logic [DIDX_W-1:0]           dir_idx;
     logic [AXI_DATA_WIDTH-1:0]   dir_beat0;
     logic [AXI_DATA_WIDTH-1:0]   dir_beat1;
+    logic [2:0] rate_r;
+    logic enforce_rate_r;
     logic                        packed_r;      // current load uses the packed payload
     logic [31:0]                 pk_burst;      // packed: burst number (0..PK_BURSTS-1)
     logic [8:0]                  pk_burst_beats;// packed: beats in the current burst
@@ -279,6 +283,9 @@ module coef_bank_loader #(
     wire [7:0]  dir_packing       = dir_beat1[39:32];
     wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1);
     wire [31:0] dir_expect_bytes  = (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
+    wire dir_rate_ok = dir_beat0[31:24] == {7'd0, ~rate_r[0]} &&
+                       dir_beat1[47:40] == {6'd0, rate_r[2:1]} &&
+                       dir_beat0[63:32] == (32'(NUM_MACS * COEF_DEPTH) >> rate_r[2:1]);
 
     // Packed burst address: beats issued so far x 16 B
     wire [AXI_ADDR_WIDTH-1:0] pk_burst_addr =
@@ -311,6 +318,8 @@ module coef_bank_loader #(
             dir_idx        <= '0;
             dir_beat0      <= '0;
             dir_beat1      <= '0;
+            rate_r         <= 0;
+            enforce_rate_r <= 0;
             packed_r       <= 1'b0;
             pk_burst       <= '0;
             pk_burst_beats <= '0;
@@ -360,9 +369,14 @@ module coef_bank_loader #(
                         pk_left       <= 32'(PK_TOTAL_COEFS);
                         load_err      <= 1'b0;
                         load_err_code <= 2'd0;
+                        rate_r <= stream_rate;
+                        enforce_rate_r <= enforce_stream_rate;
                         if (load_by_id) begin
                             dir_idx <= '0;
                             state   <= ST_DIR_AR;
+                        end else if (enforce_stream_rate) begin
+                            load_err_code <= 2'd3;
+                            state <= ST_ERR;
                         end else begin
                             bank_base <= DDR4_BASE_ADDR
                                        + (AXI_ADDR_WIDTH'(load_bank_id) * BANK_SIZE_BYTES);
@@ -407,7 +421,10 @@ module coef_bank_loader #(
                         load_err_code <= 2'd1;
                         state         <= ST_ERR;
                     end else if (dir_filter_id == filter_id_r) begin
-                        if (!dir_packing_ok || dir_payload_bytes != dir_expect_bytes) begin
+                        if (enforce_rate_r && !dir_rate_ok) begin
+                            load_err_code <= 2'd3;
+                            state <= ST_ERR;
+                        end else if (!dir_packing_ok || dir_payload_bytes != dir_expect_bytes) begin
                             load_err_code <= 2'd2;
                             state         <= ST_ERR;
                         end else begin

@@ -39,10 +39,8 @@ module tb_vu13p_top;
     logic ext_rst_n = 0;
 
     // I2S (768 kHz frame: BCLK = 64 x LRCLK = 49.152 MHz)
-    logic       i2s_en   = 1;
-    logic       i2s_bclk = 0;
-    logic [4:0] bclk_div = 0;   // 5-bit: LRCLK toggles every 32 BCLK -> 64-BCLK frame = 768 kHz
-    logic       i2s_lrclk = 0;
+    wire        i2s_bclk;
+    wire        i2s_lrclk;
     logic       i2s_data  = 0;
 
     // SPI
@@ -69,9 +67,9 @@ module tb_vu13p_top;
     wire [63:0] cascode_r;
 
     // DDR4 (stubbed inside dac_ddr4_if; pins float / tie off)
-    wire [79:0] ddr4_dq;
-    wire [9:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
-    wire [13:0] ddr4_addr;
+    wire [63:0] ddr4_dq;
+    wire [7:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
+    wire [16:0] ddr4_addr;
     wire [1:0]  ddr4_ba;
     wire [0:0]  ddr4_bg, ddr4_cs_n, ddr4_cke, ddr4_odt, ddr4_ck_t, ddr4_ck_c;
     wire        ddr4_act_n, ddr4_reset_n;
@@ -85,15 +83,7 @@ module tb_vu13p_top;
 
     // Behavioral LMK00304 2:1 mux (real part is not glitch-free; the DUT
     // holds its MMCM in reset across switches, so zero-delay mux is fine)
-    assign mclk = clk_sel ? clk_49m : clk_45m;
-
-    // I2S source: BCLK 49.152 MHz gated by i2s_en; LRCLK = BCLK/64 (768 kHz)
-    always #(P49/2) i2s_bclk = i2s_en ? ~i2s_bclk : i2s_bclk;
-
-    always @(negedge i2s_bclk) begin
-        bclk_div <= bclk_div + 1;
-        if (bclk_div == 5'd31) i2s_lrclk <= ~i2s_lrclk;
-    end
+    assign mclk = clk_sel ? clk_45m : clk_49m;
 
     // ------------------------------------------------------------------
     // DUT (automute timers shortened for simulation)
@@ -113,6 +103,7 @@ module tb_vu13p_top;
         .mclk_n         (~mclk),
         .clk_sel        (clk_sel),
         .ext_rst_n      (ext_rst_n),
+        .ddr4_clkref_p  (clk_200m), .ddr4_clkref_n(~clk_200m),
         .test_select_n  (1'b1), .test_step_n(1'b1), .pg_all(1'b1), .test_led(),
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
@@ -250,6 +241,11 @@ module tb_vu13p_top;
             $display("[%0t] INFO: fpga_irq_n low as expected (DDR4 stub calib=0 sticky)", $time);
 
         // --- TEST 3: SPI volume + unmute -> line relay --------------------
+        wait (u_dut.stream_clock_ready);
+        // This stub-based test supplies filter-valid explicitly. The real MIG
+        // test and loader tests cover directory validation and bank loading.
+        force u_dut.bank_valid = 1'b1;
+        spi_write(7'h1B, 24'd1);
         spi_write(7'h01, 24'h123456);            // volume (smoke: CRC path)
         spi_write(7'h04, 24'h000001);            // unmute
         repeat (100) @(posedge clk_200m);
@@ -312,15 +308,16 @@ module tb_vu13p_top;
 
         // --- TEST 5: single-register clock switch (0x03) ------------------
         // One write must: mute (automute rate_changed), wait relay release,
-        // flip clk_sel while MMCM in reset, relock, then auto-re-unmute
-        // (cmd_unmute is still 1 in the clk_200m domain).
+        // flip clk_sel while MMCM is reset; recovery requires explicit
+        // source readiness, a valid filter and a fresh unmute request.
+        release u_dut.bank_valid;
         spi_write(7'h03, 24'h000001);            // 44.1k family -> 48k family
         wdog = 0;                                // a) automute drops the relay
         while (relay_line_mute !== 1'b0 && wdog < 20000) begin
             @(posedge clk_200m); wdog++;
         end
-        if (relay_line_mute === 1'b0 && clk_sel === 1'b0) begin
-            $display("[%0t] PASS: rate write muted BEFORE mux flip (relay=0, clk_sel still 0)", $time);
+        if (relay_line_mute === 1'b0 && clk_sel === 1'b1) begin
+            $display("[%0t] PASS: rate write muted BEFORE mux flip", $time);
             pass_count++;
         end else begin
             $display("[%0t] FAIL: mute-before-switch order: relay=%b clk_sel=%b",
@@ -328,10 +325,10 @@ module tb_vu13p_top;
             fail_count++;
         end
         wdog = 0;                                // b) mux flips after mute delay
-        while (clk_sel !== 1'b1 && wdog < 20000) begin
+        while (clk_sel !== 1'b0 && wdog < 20000) begin
             @(posedge clk_200m); wdog++;
         end
-        if (clk_sel === 1'b1 && led_debug[3] === 1'b0) begin
+        if (clk_sel === 1'b0 && led_debug[3] === 1'b0) begin
             $display("[%0t] PASS: clk_sel flipped with MMCM in reset (locked=0)", $time);
             pass_count++;
         end else begin
@@ -342,12 +339,18 @@ module tb_vu13p_top;
         while (led_debug[3] !== 1'b1 && wdog < 100000) begin
             @(posedge clk_200m); wdog++;
         end
-        wdog = 0;                                // d) automute re-unmutes by itself
+        wait (u_dut.stream_clock_ready);
+        if (relay_line_mute || u_dut.spi_unmute || u_dut.stream_source_valid)
+            $fatal(1, "rate change automatically resumed playback");
+        force u_dut.bank_valid = 1'b1;
+        spi_write(7'h1B, 24'd1);
+        spi_write(7'h04, 24'd1);
+        wdog = 0;
         while (relay_line_mute !== 1'b1 && wdog < 400000) begin
             @(posedge clk_49m); wdog++;
         end
         if (led_debug[3] === 1'b1 && relay_line_mute === 1'b1) begin
-            $display("[%0t] PASS: relocked on new OCXO and auto-re-unmuted", $time);
+            $display("[%0t] PASS: relocked and resumed only after explicit readiness/unmute", $time);
             pass_count++;
         end else begin
             $display("[%0t] FAIL: post-switch recovery: locked=%b relay=%b",
@@ -356,7 +359,7 @@ module tb_vu13p_top;
         end
 
         // --- TEST 6: I2S watchdog -> automute drop ------------------------
-        i2s_en = 0;                              // stop BCLK -> no frames
+        spi_write(7'h1B, 24'd0);                 // AP reports source stopped/underrun
         wdog = 0;                                // first: watchdog must fire
         while (led_debug[1] !== 1'b1 && wdog < 20000) begin
             @(posedge clk_49m); wdog++;
@@ -385,4 +388,3 @@ module tb_vu13p_top;
     end
 
 endmodule
-

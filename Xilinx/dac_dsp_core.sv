@@ -41,6 +41,8 @@ module dac_dsp_core #(
     input  logic [23:0] audio_r,
     input  logic        new_sample,
     input  logic        force_zero,    // 1: clamp FIR input to 0 (mute / relay sequencing)
+    input  tri0 [1:0]   rate_shift,
+    output logic       stream_fault,
 
     // Coefficient write bus (from dac_coef_subsys, dsp_clk domain)
     input  logic                            coef_we,
@@ -102,6 +104,8 @@ module dac_dsp_core #(
     // =========================================================================
     logic signed [47:0] interp_l,     interp_r;
     logic               interp_l_valid, interp_r_valid;
+    logic fir_overrun, pace_fault;
+    assign stream_fault = fir_overrun || pace_fault;
 
     assign sample_768k_tick = interp_l_valid;
 
@@ -114,6 +118,8 @@ module dac_dsp_core #(
     ) u_stereo_fir (
         .clk                  (dsp_clk),
         .rst_n                (sys_rst_n),
+        .rate_shift           (rate_shift),
+        .input_overrun        (fir_overrun),
         .new_sample_valid     (new_sample),
         .new_sample_l         (gated_audio_l),
         .new_sample_r         (gated_audio_r),
@@ -287,6 +293,7 @@ module dac_dsp_core #(
     logic [8:0]  pace_count;
     logic        pace_valid;
     logic signed [47:0] paced_l, paced_r;
+    logic pace_started;
     // synthesis translate_off
     logic        pace_ovf_warned = 1'b0;
     // synthesis translate_on
@@ -346,6 +353,8 @@ module dac_dsp_core #(
             pace_valid <= 1'b0;
             paced_l    <= '0;
             paced_r    <= '0;
+            pace_started <= 0;
+            pace_fault <= 0;
         end else begin
             pace_valid <= 1'b0;
             if (volumed_valid && pace_count != 9'd256) begin
@@ -358,12 +367,15 @@ module dac_dsp_core #(
                 pace_ovf_warned <= 1'b1;
             end
             // synthesis translate_on
-            if (pace_tick && pace_count != 0) begin
+            if (pace_tick && !pace_started && pace_count >= 128) pace_started <= 1;
+            if (pace_tick && pace_started && pace_count == 0) pace_fault <= 1;
+            if (volumed_valid && pace_count == 256) pace_fault <= 1;
+            if (pace_tick && pace_started && pace_count != 0) begin
                 {paced_l, paced_r} <= pace_fifo[pace_rptr];
                 pace_rptr  <= pace_rptr + 8'd1;
                 pace_valid <= 1'b1;
             end
-            case ({volumed_valid && pace_count != 9'd256, pace_tick && pace_count != 0})
+            case ({volumed_valid && pace_count != 9'd256, pace_tick && pace_started && pace_count != 0})
                 2'b10:   pace_count <= pace_count + 9'd1;
                 2'b01:   pace_count <= pace_count - 9'd1;
                 default: pace_count <= pace_count;
@@ -372,6 +384,8 @@ module dac_dsp_core #(
                 pace_count <= 0;
                 pace_wptr <= 0;
                 pace_rptr <= 0;
+                pace_started <= 0;
+                pace_fault <= 0;
                 pace_valid <= pace_tick && bench_audio;
                 paced_l <= bench_sample_l;
                 paced_r <= bench_sample_r;

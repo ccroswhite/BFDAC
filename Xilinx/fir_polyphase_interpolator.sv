@@ -60,6 +60,8 @@ module fir_polyphase_interpolator #(
 )(
     input  logic                                 clk,
     input  logic                                 rst_n,
+    input  tri0 [1:0]                             rate_shift,
+    output logic                                 input_overrun,
 
     // Baseband Input
     input  logic                                 new_sample_valid,
@@ -101,6 +103,18 @@ module fir_polyphase_interpolator #(
     //      Audio (win_q2) and coef therefore arrive CO-TIMED at the MACs.
     // =================================---------------------------------------
     localparam int WIN_AW = $clog2(TAPS_PER_PHASE);
+    logic [WIN_AW-1:0] history_clear_addr;
+    logic history_clear;
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            history_clear <= 1;
+            history_clear_addr <= 0;
+        end else if (history_clear) begin
+            if (history_clear_addr == WIN_AW'(TAPS_PER_PHASE - 1))
+                history_clear <= 0;
+            else history_clear_addr <= history_clear_addr + 1'b1;
+        end
+    end
 
     // -- Broadcast pipeline (2026-08-13 timing fix, f9 datum route) ----------
     // The global window read/write address, write strobes and phase_sync fan
@@ -230,7 +244,7 @@ module fir_polyphase_interpolator #(
         end else begin
             case (state)
                 ST_IDLE: begin
-                    if (new_sample_valid) begin
+                    if (new_sample_valid && !history_clear) begin
                         ns_reg    <= new_sample_data;
                         shift_cnt <= '0;
                         state     <= ST_SHIFT;
@@ -246,7 +260,7 @@ module fir_polyphase_interpolator #(
                 end
 
                 ST_SWEEP: begin
-                    if (new_sample_valid) begin
+                    if (new_sample_valid && !history_clear) begin
                         ns_reg    <= new_sample_data;
                         shift_cnt <= '0;
                         state     <= ST_SHIFT;
@@ -285,7 +299,9 @@ module fir_polyphase_interpolator #(
                 win_q2[w] <= win_q[w];
                 if (cap_s3[GRP])
                     boundary_reg[w] <= win_q[w];
-                if (we_s3[GRP])
+                if (history_clear)
+                    win[history_clear_addr] <= '0;
+                else if (we_s3[GRP])
                     win[wr_addr_s3[GRP]] <= (w == 0) ? ns_reg : boundary_reg[w-1];
             end
         end
@@ -301,6 +317,10 @@ module fir_polyphase_interpolator #(
     logic        sweep_active;
     logic        sweep_done;     // prevents re-trigger after sweep completes
     logic        sweep_first;    // suppresses shadow capture on sweep-start phase_sync
+    always_ff @(posedge clk) begin
+        if (!rst_n) input_overrun <= 0;
+        else if (new_sample_valid && (history_clear || sweep_active)) input_overrun <= 1;
+    end
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -313,7 +333,7 @@ module fir_polyphase_interpolator #(
         end else begin
             phase_sync <= 1'b0;
 
-            if (new_sample_valid) begin
+            if (new_sample_valid && !history_clear) begin
                 master_coef_addr <= '0;
                 tap_counter      <= '0;
                 sweep_active     <= 1'b0;
@@ -332,7 +352,7 @@ module fir_polyphase_interpolator #(
                     phase_sync  <= 1'b1;
                     sweep_first <= 1'b0;    // first real phase boundary; suppress flag cleared
                 end
-                if (master_coef_addr == $bits(master_coef_addr)'(COEF_DEPTH - 1)) begin
+                if (master_coef_addr == $bits(master_coef_addr)'((COEF_DEPTH >> rate_shift) - 1)) begin
                     sweep_active <= 1'b0;
                     sweep_done   <= 1'b1;
                 end

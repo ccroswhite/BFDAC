@@ -28,7 +28,7 @@ archive.
 | 0x4A | 1 | phase_type | 0=linear-phase, 1=minimum-phase, 2=other/asymmetric |
 | 0x4B | 1 | video_mode_eligible | 0/1 — tooling metadata only (2026-09-04: exactly ONE filter is flagged; it is the video-mode filter). Never shown to customers. |
 | 0x4C | 4 | tap_count | total taps N |
-| 0x50 | 4 | taps_per_phase | TPP as stored (N / 16 phases) |
+| 0x50 | 4 | taps_per_phase | Filter-phase length N / active_phases; NUM_MACS * per-MAC TAPS_PER_PHASE in the multirate layout |
 | 0x54 | 1 | coef_width_bits | 18 |
 | 0x55 | 1 | rate_family | 0=48k-family, 1=44.1k-family |
 | 0x56 | 2 | base_sample_rate_hz_div100 | e.g. 441, 480, 960 … |
@@ -37,12 +37,13 @@ archive.
 | 0x60 | 4 | payload_crc32 | CRC-32 (IEEE) over payload |
 | 0x64 | 4 | header_crc32 | CRC-32 over bytes 0x00–0x63 |
 | 0x68 | 1 | packing | 0 = 32-bit words (v1), 1 = 18-bit packed, 7 per 16-byte beat (2026-10-05). Copied to directory byte 0x14. |
-| 0x69 | 151 | reserved | zero-filled |
+| 0x69 | 1 | rate_shift | Native/base ratio is 2^rate_shift, 0..3; copied to directory byte 0x15 (multirate RTL draft) |
+| 0x6A | 150 | reserved | zero-filled |
 
 ### Payload
 Two layouts, selected by the `packing` byte (header 0x68 / directory 0x14):
 
-**packing = 0 (v1, 32-bit words).** `tap_count` coefficients, 18-bit
+**packing = 0 (v1, 32-bit words).** A complete fixed-capacity bank, 18-bit
 signed, one per 32-bit word (sign-extended) in DDR4 burst order as
 consumed by `coef_bank_loader` (MAC-major, multi-burst per MAC at
 TPP>64). `payload_bytes = NUM_MACS * COEF_DEPTH * 4`.
@@ -61,7 +62,8 @@ Implemented and verified (`tb_coef_bank_loader` T8/T9 at TPP 64 and 256).
 
 **Symmetric (linear-phase) filters.** The payload holds the coefficients
 the FIR *stores*, not the mathematical tap count. With the current
-unfolded `fir_polyphase_*` all taps are stored (`tap_count` = stored).
+unfolded `fir_polyphase_*`, active taps are stored; the multirate layout below
+also reserves unused phase slots in each fixed-capacity bank.
 The 10M-tap target (bom 18) is only reachable with the **folded FIR**
 (DSP48E2 pre-adder: `h[k] * (x[n-k] + x[n-(N-1-k)])`), where the stored
 set is the unique half (5,242,880) and the mirror is a datapath property
@@ -71,6 +73,25 @@ an asymmetric filter (minimum-phase video filter) on a folded build runs
 with the fold disabled at half the tap count (`tap_count = NUM_MACS *
 COEF_DEPTH`, zero-padded). The fold-enable flag is derived from
 `phase_type` by the loader/bank manager (RTL pending, item 18 (b)).
+
+### Multirate bank layout — RTL draft, verification pending
+
+The memory bank retains `NUM_MACS * 16 * TAPS_PER_PHASE` coefficient slots at
+every rate. Only `L = 16 >> rate_shift` phases are processed. For MAC m, active
+phase p and tap t, address `p*TAPS_PER_PHASE+t` holds
+`h[p + L*(TAPS_PER_PHASE*m+t)]`; unused phase slots p>=L must be zero-padded.
+`tap_count = NUM_MACS * L * TAPS_PER_PHASE` counts active filter taps, while
+payload size includes all sixteen phase slots. A higher-rate filter must be
+designed and normalized for its rate; taking an arbitrary subset of a
+base-rate filter does not establish the intended response. No new production
+filter set or image builder is supplied by this RTL change.
+
+Production top-level enables `enforce_stream_rate`: the loader validates
+directory rate family, rate_shift and active tap count before loading. Missing
+or incompatible tags produce load_err_code=3 / CMD_ERR_INFO FILT_RATE (0xF);
+the active bank is not swapped. Untagged legacy slot loads are rejected in this
+mode. The standalone loader defaults this input low for existing test fixtures;
+that default is not the production top-level policy.
 
 ## DDR4 Filter Directory (built at staging, consumed by RTL)
 Placed at a fixed DDR4 base address (`coef_bank_loader` parameter
@@ -90,7 +111,8 @@ hang a load:
 | 0x0C | 4 | payload_bytes |
 | 0x10 | 4 | latency_us |
 | 0x14 | 1 | packing (0 = v1 32-bit, 1 = 18-bit packed; any other value → FILT_SIZE) |
-| 0x15 | 11 | reserved |
+| 0x15 | 1 | rate_shift (0..3); native/base ratio 1, 2, 4 or 8 |
+| 0x16 | 10 | reserved |
 
 Names are NOT in the directory — the host keeps the id↔name map from the
 `.bfc` headers and exposes names over the UI/app. SPI commands carry
@@ -101,14 +123,15 @@ host sends only eligible IDs).
 - `filter_load_req` from the ctrl plane -> `coef_bank_manager` issues a
   load with `load_by_id=1`. The loader walks the directory from entry 0
   until `filter_id` matches, the all-zero terminator is hit, or
-  `DIR_MAX_ENTRIES` are scanned. Only beat 0 (bytes 0x00-0x0F) is decoded;
-  `latency_us`/reserved are ignored by RTL.
+  `DIR_MAX_ENTRIES` are scanned. Both beats are captured; beat 1 supplies
+  packing and rate_shift. `latency_us`/remaining reserved bytes are ignored.
 - On a match, `payload_bytes` must equal the build-time bank size for
   the entry's `packing` (`NUM_MACS * COEF_DEPTH * 4` for v1,
   `ceil(NUM_MACS * COEF_DEPTH / 7) * 16` for packed). Mismatch = filter
   built for another NUM_MACS/TAPS_PER_PHASE (or a wrong packing byte); it
   is rejected (code 2) instead of loaded as garbage. Both beats of the
-  entry are read; beat 1 contributes only the packing byte.
+  entry are read. Rate-incompatible filters are separately rejected with code 3
+  when production rate validation is enabled.
 - Coefficients are fetched from `ddr4_offset * 16` (absolute AXI byte
   address, NOT relative to `DDR4_BASE_ADDR`), `BANK_SIZE_BYTES` long.
 - `load_done` pulses at the end of every attempt. `load_err` is a level
@@ -120,6 +143,53 @@ host sends only eligible IDs).
   `DDR4_BASE_ADDR + bank_id * BANK_SIZE_BYTES`; the directory is bypassed.
 
 ## SPI Command Set — filter list / video mode (DRAFT)
+
+**Stream clock/rate ownership — LOCKED 2026-10-16; RTL draft written, compile/regression results pending.**
+The AP reports the PCM stream rate/format; the FPGA validates it and configures
+the carrier oscillator, interpolation and I2S BCLK/LRCLK together. The FPGA is
+I2S master and the AP is slave transmitter; there is no separate AP MCLK export.
+Supported-rate intent is 44.1/48, 88.2/96, 176.4/192 and 352.8/384 kHz, with
+total interpolation x128/x64/x32/x16 respectively. Converter cadence remains
+5.6448/6.144 MHz. See [the locked matrix](SYSTEM_ARCHITECTURE.md#42-rates-and-capacity).
+The AP selects a filter as user policy; FPGA must validate its rate compatibility.
+Unsupported rate/format requests must be rejected, and accepted changes must
+report applied-rate/readiness only after the safe transition. Stream readiness
+and underrun reporting cannot be inferred solely from FPGA-generated clocks.
+The RTL draft adds STREAM_RATE at write 0x1A; legacy write 0x03 is an alias
+with the same full three-bit rate code (old values 0/1 retain base-rate meaning).
+Rate code `[2:1]` is rate_shift and `[0]` is family48: codes 0..7 are
+44.1,48,88.2,96,176.4,192,352.8,384 kHz. Other data bits must be zero.
+This interface accepts 24-bit PCM in two 32-bit I2S slots; other formats are
+not implicitly selected by additional bits. Filter-container rate_family
+retains its opposite encoding, 0=48k-family / 1=44.1k-family.
+
+| Write | Meaning |
+|---|---|
+| 0x1A (alias 0x03) | Three-bit rate request; mutes, clears AP-ready and DPD-enable, waits for release, resets/switches/relocks, clears DSP history and invalidates the active FIR bank. Requests during local tests, another transition or an active filter load are rejected. |
+| 0x1B | `[0]` AP source ready. Write 0 on stop/underrun; that clears unmute. Write 1 only after clocks are ready and the matching stream is available. No heartbeat/crash detector is implied. |
+| 0x1C | `[4:0]` capture trim, 0..31 additional DSP cycles beyond a nominal half-BCLK delay; default 8. Write only while muted, AP-ready=0 and no transition/local test is active. Receiver alignment is reset when the setting changes. |
+
+Read 0x20 STREAM_STATUS: busy[0], clocks-ready[1], AP-ready[2],
+FIR-bank-valid[3], transport/FIFO fault[4], applied rate[7:5],
+requested rate[10:8], capture trim[15:11], reserved[31:16].
+Clocks-ready is NOT permission to unmute on its own.
+
+After a rate request: poll busy clear/clocks-ready with a timeout, load a
+compatible filter, wait for bank-valid, reload/verify calibration state if DPD
+is needed, explicitly enable DPD, declare AP-ready and request unmute. DDR is
+not reset by audio-rate changes. FPGA reset/MMCM-lock loss still invalidates
+DSP state; there is no automatic resume. A fault is recoverable via a fresh
+rate transaction or external reset followed by the readiness sequence.
+The I2S clocks run without AP-ready so the AP can synchronize; invalid-source
+samples are zeroed. This does not detect a stale AP-ready declaration if an AP
+dies silently while continuing to present plausible serial bits.
+
+The return DATA sampler uses tagged launch events and synchronizers, with a
+programmable delay that can extend beyond one bit period. The default delay
+is a starting value, not a measured timing guarantee. Qualify both clock
+families and the 384k case with worst-case isolator/AP/PCB delays. Synthesis
+binding, CDC reports and physical timing remain required before release.
+
 Extends the existing control-plane register file (`dac_ctrl_plane.sv`;
 40-bit CRC-8 frames, write = `{1'b0, addr[6:0], data[23:0]}`, read =
 `{1'b1, addr[6:0], -}` then readback on the following frame).

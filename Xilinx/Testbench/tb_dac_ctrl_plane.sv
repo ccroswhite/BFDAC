@@ -38,6 +38,10 @@ module tb_dac_ctrl_plane;
     logic bench_busy = 0;
     wire [1:0] cell_req;
     wire [1:0][7:0] cell_cfg;
+    logic stream_busy=0, stream_clocks_ready=1, stream_fault=0;
+    wire [2:0] stream_request;
+    wire stream_toggle, source_valid;
+    wire [4:0] rx_trim;
 
     dac_ctrl_plane dut (
         .clk(clk), .ext_rst_n(ext_rst_n),
@@ -60,7 +64,11 @@ module tb_dac_ctrl_plane;
         .filter_load_req(filter_load_req), .video_mode(video_mode),
         .spi_unmute(spi_unmute), .fpga_irq_n(fpga_irq_n),
         .bench_busy(bench_busy), .bench_status(32'h12345678), .bench_available(),
-        .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req)
+        .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req),
+        .stream_rate_request(stream_request), .stream_rate_toggle(stream_toggle),
+        .stream_source_valid(source_valid), .i2s_rx_trim(rx_trim),
+        .stream_busy(stream_busy), .stream_clocks_ready(stream_clocks_ready),
+        .stream_applied_rate(3'd5), .stream_fault(stream_fault)
     );
 
     // Track filter_load_req pulses
@@ -263,6 +271,35 @@ module tb_dac_ctrl_plane;
         check("no automatic unmute on local exit", spi_unmute, 0);
         spi_write(7'h04, 24'd1);
         check("explicit unmute after exit", spi_unmute, 1);
+
+        for (int r=0; r<8; r++) begin
+            spi_write(7'h1A, 24'(r));
+            check("requested stream rate", stream_request, r);
+            check("request clears unmute", spi_unmute, 0);
+            check("request clears source ready", source_valid, 0);
+        end
+        spi_write(7'h1A, 24'd8);
+        check("unsupported rate rejected", stream_request, 7);
+        stream_busy=1;
+        spi_write(7'h1A, 24'd0);
+        check("busy rate request rejected", stream_request, 7);
+        spi_write(7'h1B, 24'd1);
+        check("source ready rejected while configuring", source_valid, 0);
+        stream_busy=0;
+        spi_write(7'h1B, 24'd1);
+        check("source ready", source_valid, 1);
+        spi_write(7'h1C, 24'd31);
+        check("capture trim locked with active source", rx_trim, 8);
+        spi_write(7'h1B, 24'd0);
+        spi_write(7'h1C, 24'd31);
+        check("capture trim while stopped", rx_trim, 31);
+        spi_read(7'h20, rd);
+        check("applied stream rate status", rd[7:5], 5);
+        check("requested stream rate status", rd[10:8], 7);
+        check("capture trim status", rd[15:11], 31);
+        stream_fault=1;
+        spi_write(7'h1B, 24'd1);
+        check("fault blocks source-ready", source_valid, 0);
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");
         else             $display("TB_FAIL: %0d errors", errors);

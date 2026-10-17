@@ -94,7 +94,15 @@ module dac_ctrl_plane (
     input  logic [1:0]      cell_test_ack,
     input  tri0            bench_busy,
     input  logic [31:0]    bench_status,
-    output logic          bench_available
+    output logic          bench_available,
+    output logic [2:0]    stream_rate_request,
+    output logic          stream_rate_toggle,
+    output logic          stream_source_valid,
+    output logic [4:0]    i2s_rx_trim,
+    input  tri0           stream_busy,
+    input  tri1           stream_clocks_ready,
+    input  logic [2:0]    stream_applied_rate,
+    input  tri0           stream_fault
 );
 
     // Cal shadow-bank write pointer. cal_wr_addr (the exported CDC bus) holds
@@ -211,7 +219,8 @@ module dac_ctrl_plane (
             `SPI_W_FLASH_ADDR_HI, `SPI_W_FLASH_CMD,      `SPI_W_FLASH_DATA,
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
             `SPI_W_FILTER_SELECT_ID,
-            `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R:      wr_addr_invalid = 1'b0;
+            `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R,
+            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID, `SPI_W_I2S_RX_TRIM: wr_addr_invalid = 1'b0;
             default:                                    wr_addr_invalid = 1'b1;
         endcase
     end
@@ -239,7 +248,7 @@ module dac_ctrl_plane (
     wire [1:0] cell_test_busy = cell_test_req ^ cell_test_ack_sync;
     wire cell_test_enabled = cell_test_cfg[0][7] || cell_test_cfg[1][7];
     wire cell_test_channel = (wr_addr == `SPI_W_CELL_TEST_R);
-    assign bench_available = !cell_test_enabled && !(|cell_test_busy);
+    assign bench_available = !cell_test_enabled && !(|cell_test_busy) && !stream_busy;
 
     always_ff @(posedge clk) begin
         if (!ext_rst_n) begin
@@ -263,7 +272,7 @@ module dac_ctrl_plane (
         wr_rej_reason = ERR_NONE;
         case (wr_addr)
             `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: begin
-                if (bench_busy || cell_test_busy[cell_test_channel]) begin
+                if (bench_busy || stream_busy || !stream_clocks_ready || cell_test_busy[cell_test_channel]) begin
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_BUSY;
                 end else if (ctrl_bus_data[23:8] != 0) begin
@@ -275,11 +284,35 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
             end
-            `SPI_W_RATE: if (bench_busy) begin
-                wr_rejected = 1'b1;
-                wr_rej_reason = `SPI_ERR_TEST_BUSY;
+            `SPI_W_RATE, `SPI_W_STREAM_RATE: begin
+                if (bench_busy || stream_busy || cell_test_enabled || |cell_test_busy || (mgr_busy_r && boot_ok)) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
+                end else if (ctrl_bus_data[23:3] != 0) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
+                end
             end
-            `SPI_W_UNMUTE: if (ctrl_bus_data[0] && (bench_busy || cell_test_enabled || |cell_test_busy)) begin
+            `SPI_W_STREAM_VALID: begin
+                if (ctrl_bus_data[23:1] != 0) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
+                end else if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault)) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
+                end
+            end
+            `SPI_W_I2S_RX_TRIM: begin
+                if (ctrl_bus_data[23:5] != 0) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
+                end else if (cmd_unmute || stream_source_valid || bench_busy || stream_busy) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
+                end
+            end
+            `SPI_W_UNMUTE: if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || stream_fault ||
+                                          bench_busy || cell_test_enabled || |cell_test_busy)) begin
                 wr_rejected = 1'b1;
                 wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
             end
@@ -311,6 +344,14 @@ module dac_ctrl_plane (
             end
             default: ;
         endcase
+        if (stream_busy && (wr_addr == `SPI_W_BANK_LOAD ||
+                            wr_addr == `SPI_W_FILTER_SELECT || wr_addr == `SPI_W_FILTER_SELECT_ID ||
+                            wr_addr == `SPI_W_CAL_DATA || wr_addr == `SPI_W_CAL_COMMIT ||
+                            wr_addr == `SPI_W_DPD_EN ||
+                            (wr_addr == `SPI_W_FILTER_LIST_CTRL && ctrl_bus_data[1]))) begin
+            wr_rejected = 1;
+            wr_rej_reason = `SPI_ERR_TEST_BUSY;
+        end
     end
 
     // Boot fail flags are latched levels in qspi_boot_loader — edge-detect
@@ -366,8 +407,8 @@ module dac_ctrl_plane (
                 err_info_reason <= ERR_FLASH_WDT;
             end else if (load_err_evt) begin
                 err_info_addr   <= `SPI_W_FILTER_SELECT;
-                err_info_reason <= (coef_load_err_code == 2'd2) ? ERR_FILT_SIZE
-                                                                : ERR_FILT_NOTFOUND;
+                err_info_reason <= (coef_load_err_code == 2'd3) ? `SPI_ERR_FILT_RATE :
+                                   (coef_load_err_code == 2'd2) ? ERR_FILT_SIZE : ERR_FILT_NOTFOUND;
             end else if (wr_stb && (wr_addr_invalid || wr_rejected)) begin
                 err_info_addr   <= wr_addr;
                 err_info_reason <= wr_addr_invalid ? ERR_BAD_ADDR : wr_rej_reason;
@@ -433,6 +474,10 @@ module dac_ctrl_plane (
             cmd_level       <= 3'b000;
             cmd_outsel      <= 1'b0;
             base_rate_sel   <= 1'b0;
+            stream_rate_request <= 0;
+            stream_rate_toggle <= 0;
+            stream_source_valid <= 0;
+            i2s_rx_trim <= 5'd8;
             cmd_unmute      <= 1'b0;
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
@@ -465,7 +510,11 @@ module dac_ctrl_plane (
             filter_load_req <= 1'b0;
             flash_cmd_trigger <= 1'b0;
             flash_buf_we      <= 1'b0;
-            if (bench_busy) cmd_unmute <= 1'b0;
+            if (bench_busy || stream_busy || !stream_clocks_ready || stream_fault) begin
+                cmd_unmute <= 0;
+                stream_source_valid <= 0;
+            end
+            if (stream_busy || !stream_clocks_ready) dpd_enable <= 0;
             if (flash_buf_we) flash_buf_waddr <= flash_buf_waddr + 8'd1;
             if (ctrl_bus_valid) begin
                 if (ctrl_bus_data[31] == 1'b0) begin
@@ -477,14 +526,25 @@ module dac_ctrl_plane (
                         // (bug found 2026-10-09).
                         `SPI_W_VOLUME: sys_volume    <= {ctrl_bus_data[23:0], 8'h00};
                         `SPI_W_LEVEL:  cmd_level     <= ctrl_bus_data[2:0]; // digital level cap, applied by the sequencer while muted
-                        `SPI_W_RATE:   if (!wr_rejected) base_rate_sel <= ctrl_bus_data[0]; // rate family: switches DSP
-                                                                   // AND the OCXO mux (see alias)
+                        `SPI_W_RATE, `SPI_W_STREAM_RATE: if (!wr_rejected) begin
+                            base_rate_sel <= ctrl_bus_data[0];
+                            stream_rate_request <= ctrl_bus_data[2:0];
+                            stream_rate_toggle <= ~stream_rate_toggle;
+                            cmd_unmute <= 0;
+                            stream_source_valid <= 0;
+                            dpd_enable <= 0;
+                        end
+                        `SPI_W_STREAM_VALID: if (!wr_rejected) begin
+                            stream_source_valid <= ctrl_bus_data[0];
+                            if (!ctrl_bus_data[0]) cmd_unmute <= 0;
+                        end
+                        `SPI_W_I2S_RX_TRIM: if (!wr_rejected) i2s_rx_trim <= ctrl_bus_data[4:0];
                         `SPI_W_UNMUTE: if (!wr_rejected) cmd_unmute <= ctrl_bus_data[0];
                         `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: if (!wr_rejected) begin
                             cell_test_cfg[cell_test_channel] <= ctrl_bus_data[7:0];
                             cell_test_req[cell_test_channel] <= ~cell_test_req[cell_test_channel];
                         end
-                        `SPI_W_BANK_LOAD: begin
+                        `SPI_W_BANK_LOAD: if (!wr_rejected) begin
                             coef_bank_id    <= ctrl_bus_data[3:0];
                             coef_load_start <= 1'b1;
                         end
@@ -499,7 +559,7 @@ module dac_ctrl_plane (
                             if (ctrl_bus_data[0]) begin
                                 filter_list_len  <= '0;
                                 filter_cur_index <= '0;
-                            end else if (ctrl_bus_data[1] && filter_list_len != '0) begin
+                            end else if (!wr_rejected && ctrl_bus_data[1] && filter_list_len != '0) begin
                                 filter_cur_index <= '0;
                                 filter_id        <= filter_list[0];
                                 filter_load_req  <= 1'b1;
@@ -512,7 +572,7 @@ module dac_ctrl_plane (
                             end
                         end
                         `SPI_W_FILTER_SELECT: begin // [16]=advance, [FLIST_IW-1:0]=index
-                            if (filter_list_len != '0) begin
+                            if (filter_list_len != '0 && !stream_busy) begin
                                 logic [FLIST_IW-1:0] new_index;
                                 if (ctrl_bus_data[16])
                                     new_index = filter_adv_index;          // toggle with wrap
@@ -529,7 +589,7 @@ module dac_ctrl_plane (
                             cal_wr_ptr      <= ctrl_bus_data[8:0];
                             cal_ptr_wrapped <= 1'b0;
                         end
-                        `SPI_W_CAL_DATA: begin // write word to shadow bank, auto-increment
+                        `SPI_W_CAL_DATA: if (!stream_busy) begin // write word to shadow bank, auto-increment
                             cal_wr_data   <= ctrl_bus_data[23:0];
                             cal_wr_addr   <= cal_wr_ptr;   // stable for the CDC sample
                             cal_wr_toggle <= ~cal_wr_toggle;
@@ -537,7 +597,7 @@ module dac_ctrl_plane (
                             if (cal_wr_ptr == 9'd511)
                                 cal_ptr_wrapped <= 1'b1; // overflow flag (sticky[6])
                         end
-                        `SPI_W_CAL_COMMIT:    cal_commit_toggle <= cal_commit_toggle ^ ctrl_bus_data[0];
+                        `SPI_W_CAL_COMMIT: if (!stream_busy) cal_commit_toggle <= cal_commit_toggle ^ ctrl_bus_data[0];
                         `SPI_W_CAL_RDADDR:    cal_rd_addr <= ctrl_bus_data[8:0]; // active-bank readback
                         `SPI_W_FLASH_ADDR_LO: flash_cmd_addr[23:0] <= ctrl_bus_data[23:0];
                         `SPI_W_FLASH_ADDR_HI: begin // + target select [9:8]
@@ -560,8 +620,8 @@ module dac_ctrl_plane (
                             flash_buf_waddr <= ctrl_bus_data[7:0];
                             flash_buf_raddr <= ctrl_bus_data[15:8];
                         end
-                        `SPI_W_DPD_EN: dpd_enable <= ctrl_bus_data[0]; // Step 4D.1
-                        `SPI_W_FILTER_SELECT_ID: begin // [15:0]=directory filter_id, bypasses
+                        `SPI_W_DPD_EN: if (!wr_rejected) dpd_enable <= ctrl_bus_data[0]; // Step 4D.1
+                        `SPI_W_FILTER_SELECT_ID: if (!wr_rejected) begin // [15:0]=directory filter_id, bypasses
                                      // the toggle list ("any filter at any time", TODO-23).
                                      // filter_cur_index is left untouched; 0x17 readback
                                      // shows the loaded ID.
@@ -622,6 +682,9 @@ module dac_ctrl_plane (
             //       recent sticky[4..7] event; cleared by the W1C (0x16)
             `SPI_R_CMD_ERR_INFO: spi_tx_data_c = {21'd0, err_info_addr, err_info_reason};
             `SPI_R_BENCH_STATUS: spi_tx_data_c = bench_status;
+            `SPI_R_STREAM_STATUS: spi_tx_data_c = {16'd0, i2s_rx_trim, stream_rate_request,
+                stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
+                stream_clocks_ready, stream_busy};
             `SPI_R_CELL_TEST_L: spi_tx_data_c = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
             `SPI_R_CELL_TEST_R: spi_tx_data_c = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
             default: spi_tx_data_c = `SPI_READ_UNMAPPED;

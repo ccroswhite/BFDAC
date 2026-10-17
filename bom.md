@@ -563,6 +563,22 @@ sensor count > 4: AP-side mux or a second AP I²C controller (user 2026-10-05
 
 # 21. AP ↔ FPGA control SPI isolation (NEW 2026-10-05, user)
 
+**CLOCK/RATE OWNERSHIP — REAFFIRMED AND LOCKED 2026-10-16 (user).**
+AP reports the PCM stream rate/format; FPGA validates it and selects the
+appropriate carrier MCLK, total interpolation and I2S BCLK/LRCLK as one coherent
+configuration. FPGA remains I2S master; AP is slave transmitter. The carrier
+oscillators supply the low-jitter converter/reclock MCLK; the FPGA does not
+replace that analog clock source, and no separate MCLK is exported to the AP.
+Maximum native input is **384 kHz**: 44.1/48, 88.2/96, 176.4/192 and 352.8/384 kHz
+use x128/x64/x32/x16 total interpolation into fixed 5.6448/6.144 MHz conversion.
+Two 32-bit I2S slots require BCLK=64*Fs (maximum 24.576 MHz). AP filter choice
+remains policy; FPGA must validate filter/rate compatibility, reject unsupported
+requests and report the applied configuration/readiness after a muted transition.
+This supersedes higher native-input-rate claims; it is a design ruling, not
+completed RTL or isolation-timing sign-off. See
+[system specification Section 4.2](docs/SYSTEM_ARCHITECTURE.md#42-rates-and-capacity)
+and open findings R01–R04.
+
 The coefficient QSPI (item 18) is FPGA-only — no isolator. The **AP → FPGA
 register SPI** (SCLK, MOSI, CS → FPGA; MISO ← FPGA; optional IRQ ← FPGA)
 crosses the AP/digital-board boundary and **must be isolated**. Target **50 MHz

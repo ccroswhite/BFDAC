@@ -19,7 +19,7 @@
 `define SPI_W_LEVEL            7'h02  // [2:0]  output level cap (DIGITAL gain, no relays - bom 7 2026-10-07):
                                       //        000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied by the
                                       //        automute sequencer while muted (click-free); reset = 2 V
-`define SPI_W_RATE             7'h03  // [0]    base_rate_sel 0=44.1k 1=48k (+ OCXO mux)
+`define SPI_W_RATE             7'h03  // Alias of STREAM_RATE: 0/1 retain base 44.1/48k semantics
 `define SPI_W_UNMUTE           7'h04  // [0]    spi_unmute
 `define SPI_W_BANK_LOAD        7'h05  // [3:0]  legacy fixed DDR4 slot + load trigger
 //                             7'h06     RESERVED (was clk_source_sel; merged into 0x03)
@@ -45,6 +45,9 @@
 
 `define SPI_W_CELL_TEST_L      7'h18
 `define SPI_W_CELL_TEST_R      7'h19
+`define SPI_W_STREAM_RATE      7'h1A  // [2:0]={rate_shift[1:0],family48}; 24-bit PCM/32-bit slots
+`define SPI_W_STREAM_VALID     7'h1B  // [0]=AP source ready; zero on underrun/stop
+`define SPI_W_I2S_RX_TRIM      7'h1C  // [4:0]=extra DSP capture-delay cycles; muted/source stopped only
 
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026
@@ -67,6 +70,7 @@
 `define SPI_R_CELL_TEST_L      7'h1D
 `define SPI_R_CELL_TEST_R      7'h1E
 `define SPI_R_BENCH_STATUS     7'h1F
+`define SPI_R_STREAM_STATUS    7'h20
 
 // ---- Constants ----------------------------------------------------------------
 `define SPI_MAGIC_ID           32'hDAC02026
@@ -100,5 +104,6 @@
 `define SPI_ERR_TEST_BUSY      4'hC
 `define SPI_ERR_TEST_UNSAFE    4'hD
 `define SPI_ERR_TEST_FORMAT    4'hE
+`define SPI_ERR_FILT_RATE      4'hF
 
 `endif // SPI_REGS_SVH
