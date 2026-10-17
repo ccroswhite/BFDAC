@@ -322,7 +322,10 @@ be observable and inhibit unsafe playback.
 to the limited aggregate code range of the cell array while shaping
 quantization error outside the audio band. The selected noise-shaper
 architecture is a third-order error-feedback design with an IIR noise-transfer
-function. Low-level and idle behavior are explicit performance requirements.
+function. It receives full-range TPDF formed from independent 42-bit uniform
+streams, carried in a signed 43-bit container. L/R generators use different
+seeds. Low-level and idle behavior remain explicit measured-performance
+requirements.
 
 **Dynamic element matching (DEM)** translates the aggregate code into a
 choice of physical cells. A second-order vector mismatch shaper spreads

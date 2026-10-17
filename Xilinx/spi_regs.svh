@@ -65,7 +65,7 @@
                                       //  crc_fail[3], boot_ok[2], boot_done[1], flash_busy[0]}
                                       //  boot_src: 0 = chain from SoM Flash 1, 1 = carrier
 `define SPI_R_FLASH_RDDATA     7'h1B  // [7:0] page-buffer byte at FLASH_PTR[15:8]
-`define SPI_R_CMD_ERR_INFO     7'h1C  // {addr[10:4], reason[3:0]}
+`define SPI_R_CMD_ERR_INFO     7'h1C  // {detail[11], addr[10:4], reason[3:0]}
 
 `define SPI_R_CELL_TEST_L      7'h1D
 `define SPI_R_CELL_TEST_R      7'h1E

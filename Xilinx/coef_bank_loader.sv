@@ -127,7 +127,7 @@ module coef_bank_loader #(
     input  logic [15:0]                   load_filter_id,
     output logic                          load_done,       // pulse: attempt finished (see load_err)
     output logic                          load_err,        // level: last attempt failed
-    output logic [1:0]                    load_err_code,   // 1 = ID not found, 2 = size mismatch
+    output logic [2:0]                    load_err_code,   // 1=ID, 2=size, 3=rate, 4=AXI RRESP
 
     // -- AXI4 Read Master (to DDR4 hard controller) ----------------------
     output logic [AXI_ADDR_WIDTH-1:0]     m_axi_araddr,
@@ -199,6 +199,13 @@ module coef_bank_loader #(
             fifo_rptr  <= '0;
             fifo_count <= '0;
             fifo_rdata <= '0;
+        end else if (load_start) begin
+            // A failed AXI response may leave an undrained shadow burst in
+            // the FIFO. The next transaction starts from a clean FIFO epoch.
+            fifo_wptr  <= '0;
+            fifo_rptr  <= '0;
+            fifo_count <= '0;
+            fifo_rdata <= '0;
         end else begin
             if (fifo_we_d1) begin
                 fifo_mem[fifo_wptr] <= fifo_din;
@@ -236,7 +243,8 @@ module coef_bank_loader #(
         ST_DIR_AR    = 4'd6,   // directory: issue 2-beat read of entry dir_idx
         ST_DIR_R     = 4'd7,   // directory: capture beat 0
         ST_DIR_CHECK = 4'd8,   // directory: match / terminator / advance
-        ST_ERR       = 4'd9    // lookup failed: flag and finish
+        ST_ERR       = 4'd9,   // lookup/load failed: flag and finish
+        ST_RECV_WAIT = 4'd10   // retire the registered FIFO write before first pop
     } state_t;
 
     localparam int DIR_ENTRY_BYTES = 32;
@@ -258,6 +266,7 @@ module coef_bank_loader #(
     logic [$clog2(COEF_DEPTH)-1:0] pk_waddr;    // packed: running coef address within MAC
     logic [31:0]                 pk_left;       // packed: coefficients still to write
     logic [$clog2(NUM_MACS)-1:0] mac_idx;
+    logic                        axi_read_error;
     logic [BIDX_W-1:0]           burst_idx;     // burst within MAC (0..BURSTS_PER_MAC-1)
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
     logic [9:0]                  drain_count;   // 0..1023 within a burst (4 per beat)
@@ -338,11 +347,12 @@ module coef_bank_loader #(
             pk_waddr       <= '0;
             pk_left        <= '0;
             load_err       <= 1'b0;
-            load_err_code  <= 2'd0;
+            load_err_code  <= 3'd0;
             mac_idx        <= '0;
             burst_idx      <= '0;
             beat_count     <= '0;
             drain_count    <= '0;
+            axi_read_error <= 1'b0;
             beat_slice     <= '0;
             beat_loaded    <= 1'b0;
             beat_buf       <= '0;
@@ -374,6 +384,7 @@ module coef_bank_loader #(
                         filter_id_r   <= load_filter_id;
                         mac_idx       <= '0;
                         burst_idx     <= '0;
+                        axi_read_error <= 1'b0;
                         packed_r      <= 1'b0;          // legacy slot path is always v1
                         pk_burst      <= '0;
                         pk_waddr      <= '0;
@@ -407,6 +418,7 @@ module coef_bank_loader #(
                         m_axi_arvalid <= 1'b0;
                         m_axi_rready  <= 1'b1;
                         beat_count    <= '0;
+                        axi_read_error <= 1'b0;
                         state         <= ST_DIR_R;
                     end
                 end
@@ -414,14 +426,20 @@ module coef_bank_loader #(
                 // ----- DIRECTORY: capture beat 0, wait for rlast -----
                 ST_DIR_R: begin
                     if (m_axi_rvalid && m_axi_rready) begin
-                        if (beat_count == 0)
+                        if (m_axi_rresp != 2'b00)
+                            axi_read_error <= 1'b1;
+                        else if (beat_count == 0)
                             dir_beat0 <= m_axi_rdata;
                         else
                             dir_beat1 <= m_axi_rdata;
                         beat_count <= beat_count + 1'b1;
                         if (m_axi_rlast) begin
                             m_axi_rready <= 1'b0;
-                            state        <= ST_DIR_CHECK;
+                            if (m_axi_rresp != 2'b00 || axi_read_error) begin
+                                load_err_code <= 3'd4;
+                                state <= ST_ERR;
+                            end else
+                                state <= ST_DIR_CHECK;
                         end
                     end
                 end
@@ -473,6 +491,7 @@ module coef_bank_loader #(
                         m_axi_arvalid <= 1'b0;
                         m_axi_rready  <= 1'b1;
                         beat_count    <= '0;
+                        axi_read_error <= 1'b0;
                         state         <= ST_RECV_R;
                         $display("[AR_HS @%0t] mac=%0d burst=%0d beat_count_now=%0d (resetting to 0)",
                             $time, mac_idx, burst_idx, beat_count);
@@ -488,20 +507,35 @@ module coef_bank_loader #(
                         // This breaks any same-cycle dependency on m_axi_rdata.
                         fifo_din   <= m_axi_rdata;
                         fifo_we_d1 <= 1'b1;
+                        if (m_axi_rresp != 2'b00)
+                            axi_read_error <= 1'b1;
                         if (beat_count == 0)
                             $display("[DIN_HS0 @%0t] beat0 handshake m_axi_rdata=%0h", $time, m_axi_rdata);
                         beat_count <= beat_count + 1'b1;
                         if (m_axi_rlast) begin
                             m_axi_rready <= 1'b0;
-                            fifo_re      <= 1'b1;
-                            beat_loaded  <= 1'b0;
-                            beat_slice   <= '0;
-                            drain_count  <= '0;
-                            state        <= ST_DRAIN;
+                            if (m_axi_rresp != 2'b00 || axi_read_error) begin
+                                load_err_code <= 3'd4;
+                                state <= ST_ERR;
+                            end else begin
+                                beat_loaded <= 1'b0;
+                                beat_slice  <= '0;
+                                drain_count <= '0;
+                                state       <= ST_RECV_WAIT;
+                            end
                             $display("[RLAST @%0t] mac=%0d burst=%0d beat_cnt=%0d fifo_wptr=%0d fifo_rptr=%0d fifo_cnt=%0d",
                                 $time, mac_idx, burst_idx, beat_count+1, fifo_wptr, fifo_rptr, fifo_count+1);
                         end
                     end
+                end
+
+                // The final R beat is registered into fifo_mem by a delayed
+                // write-enable. Wait one full cycle before requesting the
+                // first read so a one-beat burst cannot read-before-write the
+                // same FIFO address.
+                ST_RECV_WAIT: begin
+                    fifo_re <= 1'b1;
+                    state   <= ST_DRAIN;
                 end
 
                 // ----- DRAIN FIFO into MAC BRAMs -----
@@ -534,7 +568,8 @@ module coef_bank_loader #(
                         pk_left    <= pk_left - 32'd1;
                         if (pk_waddr == $clog2(COEF_DEPTH)'(COEF_DEPTH - 1)) begin
                             pk_waddr <= '0;
-                            mac_idx  <= mac_idx + 1'b1;
+                            if (pk_left != 32'd1)
+                                mac_idx <= mac_idx + 1'b1;
                         end else begin
                             pk_waddr <= pk_waddr + 1'b1;
                         end

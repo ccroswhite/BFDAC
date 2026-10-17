@@ -28,14 +28,21 @@ for the last active phase of a native input frame before swapping banks.
 Halfband products are accumulated at full precision then shifted once at Q1.17;
 the bypass center sample uses a matched pipeline stage. Automute timers are
 scaled for the 302.474 MHz family clock and `switch_busy` marks relay
-transitions rather than every non-PLAYING state.
+transitions rather than every non-PLAYING state. Dither now uses separate L/R
+seeds and a full 42-bit uniform difference carried in a signed 43-bit value.
+The coefficient loader waits a cycle before its first FIFO pop, rejects AXI
+RRESP errors without activating the partial bank, and resets the FIFO epoch
+before retry.
 
-The expanded 22-job suite passed after these changes, including standalone DPD golden runs at periods 49
-and 50, deadline-boundary scenarios, RTZ inter-capture checks, calibration
-race/reset cases, and top-level elaboration/simulation. The DPD period tests
-exercise the pipeline, not a routed XCVU13P implementation; real MMCM jitter,
-feedback-path timing, FIR-bank behavior in the actual URAM/MAC implementation,
-STA/CDC, real-MIG behavior and hardware remain open.
+The expanded 23-job suite passed after these changes, including DPD golden runs
+at periods 49 and 50, the independent/full-range TPDF check, the AXI-response
+failure/retry test, deadline-boundary scenarios, RTZ inter-capture checks,
+calibration race/reset cases and top-level elaboration/simulation. The DPD
+period tests exercise the pipeline, not a routed XCVU13P implementation; real
+MMCM jitter, feedback-path timing, FIR-bank behavior in the actual URAM/MAC
+implementation, STA/CDC, real-MIG behavior and hardware remain open. Previous
+noise/performance studies used the half-range dither and must be rerun against
+the current full-range configuration before citing those results as current.
 
 **Revision:** 0.2 — review draft with clock/rate ownership locked 2026-10-16, not release approval
 
@@ -747,11 +754,21 @@ clock-pipeline margin still need qualification.
 
 **Action/closure:** review effective exceptions and constraint matches, CDC protocols and MTBF, reset recovery with unchanged source words, stopped clocks and lost/replayed events. Produce fresh timing/CDC reports on the exact build, including diagnostics and current I/O budgets, with no unexplained unconstrained paths.
 
-### R12 — P1: L/R dither is identically seeded
+### R12 - P1: L/R dither correlation and amplitude contract
 
-**Evidence:** both core instances of `tpdf_dither_gen` share clock/enable/reset and the same hard-coded s1/s2 reset seeds. The two internal random states are distinct, but the two channel generators are identical sequences.
+**Baseline evidence:** both core instances of `tpdf_dither_gen` shared clock,
+enable, reset and identical seeds. They produced identical channel sequences.
+The generator also used 41-bit uniforms for a 42-bit fractional quantizer,
+limiting the triangular dither to approximately +/-0.5 LSB.
 
-**Action/closure:** decide whether channel-correlated dither is acceptable. If independence is intended, implement/test separate seeds and quantify stereo correlation, idle behavior and reproducibility. Do not describe the present two instances as independently seeded channels.
+**Current RTL follow-up:** the R channel now has distinct nonzero seeds; the
+two 42-bit uniforms are subtracted in a 43-bit signed result and the noise
+shaper carries that width to its quantizer. The updated Python golden generator
+uses the same full-range distribution. A 4096-sample simulation checks that
+the L/R streams are distinct and exceed +/-0.5 LSB; the TPDF and DPD golden
+regressions pass. This does not qualify analog idle spectra, measured stereo
+correlation, or the project noise/distortion targets. Historical noise studies
+using the smaller dither range are not evidence for the current implementation.
 
 ### R13 — P1: Unclosed power/reference/telemetry electrical details
 

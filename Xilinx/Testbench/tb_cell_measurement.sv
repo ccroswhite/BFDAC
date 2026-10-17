@@ -32,7 +32,7 @@ module tb_cell_measurement;
         .spi_sclk(spi_sclk), .spi_cs_n(spi_cs_n), .spi_mosi(spi_mosi), .spi_miso(spi_miso),
         .line_mute_status(!safe), .hp_mute_status(1'b0), .switch_busy(1'b0),
         .clk_locked(1'b1), .ddr4_init_calib_complete(1'b1),
-        .coef_load_err(1'b0), .coef_load_err_code(2'b0), .i2s_err(1'b0),
+        .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
         .boot_crc_fail(1'b0), .boot_axi_fail(1'b0), .flash_cmd_err(1'b0),
         .spi_unmute(unmute), .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack),
         .bench_busy(manual_busy), .bench_available(manual_available), .bench_status(manual_status)

@@ -68,7 +68,7 @@ module tb_system_ddr4_to_fir;
     wire  bank_select, bank_load_target;
     logic [3:0] current_bank_id;
     logic mgr_busy, bank_valid, coef_load_done, coef_load_err;
-    logic [1:0] coef_load_err_code;
+    logic [2:0] coef_load_err_code;
     logic [15:0] boot_envelope_gain;
 
     // ---- "SPI side" controls (driven on dsp_clk in this TB) ----------------------

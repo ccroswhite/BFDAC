@@ -4148,3 +4148,23 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       Logs: `logs/halfband_automute_v2/summary.log` (local/ignored). No synthesis,
       place-and-route, routed timing/CDC, real-MIG, relay-hardware or analog
       qualification was performed.
+
+    - 2026-10-17 STEREO DITHER / AXI LOADER FOLLOW-UP:
+      Gave the L/R TPDF generators distinct reset seeds and widened the
+      uniform difference through the EF3 input so the full +/-1 LSB range is
+      retained. Updated the RTL golden-vector generator and regenerated the
+      DPD vectors. The coefficient loader now waits for the registered final
+      FIFO write before reading, rejects any non-OKAY RRESP after draining the
+      burst, reports loader code 4/CMD_ERR_INFO detail[11], and clears a
+      failed FIFO epoch at the next load. Packed mode suppresses the terminal
+      MAC-index increment; its `pk_left==1` boundary already prevents padded
+      coefficients from being emitted.
+      Vivado suite process 15684 completed 23 jobs PASS, including the
+      4096-sample stereo-TDPF range/independence check, DPD golden tests at
+      49/50/56 cycles, loader error/retry without reset, and all previous
+      stream, calibration, halfband, automute, control and top tests. Two
+      existing testbench-scope warnings remain (`n_before`, `lo`).
+      Logs: `logs/dither_loader_v1/summary.log` (local/ignored). No synthesis,
+      place-and-route, STA/CDC closure, real DDR4 MIG, or hardware/analog
+      qualification was run. Noise studies using the previous half-range
+      dither profile need requalification.

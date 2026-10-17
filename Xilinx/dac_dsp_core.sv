@@ -400,7 +400,7 @@ module dac_dsp_core #(
     // =========================================================================
     // 7. TPDF Dither — independent L and R
     // =========================================================================
-    logic signed [41:0] dither_l, dither_r;
+    logic signed [42:0] dither_l, dither_r;
 
     tpdf_dither_gen #(.DITHER_WIDTH(42)) u_dither_l (
         .clk        (dsp_clk),
@@ -409,7 +409,11 @@ module dac_dsp_core #(
         .dither_out (dither_l)
     );
 
-    tpdf_dither_gen #(.DITHER_WIDTH(42)) u_dither_r (
+    tpdf_dither_gen #(
+        .DITHER_WIDTH(42),
+        .SEED1(64'hD1B5_4A32_D192_ED03),
+        .SEED2(64'h94D0_49BB_1331_11EB)
+    ) u_dither_r (
         .clk        (dsp_clk),
         .rst_n      (sys_rst_n),
         .enable     (pace_valid),   // Round 30: one fresh value per NS sample

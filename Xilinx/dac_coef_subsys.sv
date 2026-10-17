@@ -75,7 +75,7 @@ module dac_coef_subsys #(
     // Load failure (ui_clk domain, level: set on a failed directory lookup,
     // cleared on the next load; code 1 = ID not found, 2 = size mismatch)
     output logic        coef_load_err,
-    output logic [1:0]  coef_load_err_code
+    output logic [2:0]  coef_load_err_code
 );
 
     localparam int REQ_BITS = 17;   // {by_id, id[15:0]}

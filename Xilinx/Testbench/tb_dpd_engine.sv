@@ -5,7 +5,7 @@
 //   cal_coef_store (image loaded via the ctrl write port) +
 //   noise_shaper_ef3 (Stage-E port) + dpd_engine, both channels.
 // Golden: Testbench/dpd_golden.mem from utils/dpd_rtl_gen.py (exact RTL
-// arithmetic, 2000 vectors x 2 channels, DPD on + off expectations).
+// arithmetic with full-scale TPDF dither, 2000 vectors x 2 channels, DPD on/off.
 //   T1: DPD ON  — L and R codes match golden y_on bit-for-bit
 //   T2: DPD OFF — codes match golden y_off (legacy NS behavior preserved)
 //   T3: correction must be available before the next Stage-A feedback read.
@@ -45,7 +45,7 @@ module tb_dpd_engine #(
     // --- NS + engine, both channels -------------------------------------------
     logic enable = 0, dpd_enable = 0;
     logic signed [47:0] u_l = '0, u_r = '0;
-    logic signed [41:0] d_l = '0, d_r = '0;
+    logic signed [42:0] d_l = '0, d_r = '0;
     logic [6:0] y_l, y_r;
     logic yv_l, yv_r, cv_l, cv_r;
     logic signed [55:0] corr_l, corr_r;
@@ -81,7 +81,7 @@ module tb_dpd_engine #(
 
     // --- images / vectors ------------------------------------------------------
     logic [23:0]  cal_img [0:511];
-    logic [107:0] golden  [0:2*N-1];   // u[48] d[44] y_on[8] y_off[8]
+    logic [107:0] golden  [0:2*N-1];   // u[48] d[43, padded to 44] y_on[8] y_off[8]
     initial begin
         $readmemh("dpd_cal_img.mem", cal_img);
         $readmemh("dpd_golden.mem", golden);
@@ -124,9 +124,9 @@ module tb_dpd_engine #(
         repeat (5) @(posedge dsp_clk);
         for (int k = 0; k < N; k++) begin
             u_l = golden[2*k  ][107:60];
-            d_l = golden[2*k  ][59:16];
+            d_l = $signed(golden[2*k  ][58:16]);
             u_r = golden[2*k+1][107:60];
-            d_r = golden[2*k+1][59:16];
+            d_r = $signed(golden[2*k+1][58:16]);
             @(posedge dsp_clk); enable = 1;
             @(posedge dsp_clk); enable = 0;
             repeat (EN_PERIOD - 2) @(posedge dsp_clk);

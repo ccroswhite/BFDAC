@@ -28,6 +28,12 @@ function Stage([string]$name, [string]$tool, [string[]]$arguments) {
 
 try {
     "Stream-rate RTL checks; NO synthesis, place or route. $(Get-Date -Format o)" | Out-File $summary
+    $generator = Join-Path $repoDir "utils\dpd_rtl_gen.py"
+    $pythonCmd = Get-Command python -ErrorAction Stop
+    $goldenOutput = & $pythonCmd.Source $generator 2>&1
+    $goldenExitCode = $LASTEXITCODE
+    $goldenOutput | Out-File (Join-Path $LogDir "generate_dpd_vectors.out")
+    if ($goldenExitCode -ne 0) { throw "DPD golden-vector generator failed; see generate_dpd_vectors.out" }
     $sources = Get-ChildItem "$rtlDir\*.sv" |
         Where-Object Name -ne "dac_ddr4_if_mig.sv" |
         ForEach-Object { '"' + $_.FullName + '"' }
@@ -35,7 +41,7 @@ try {
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
                "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
                "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
-               "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute")
+               "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute", "tb_tpdf_dither_gen")
     $testSources = $tests | ForEach-Object { '"' + (Join-Path $tbDir "$_.sv") + '"' }
     $glbl = Join-Path (Split-Path $VivadoBin -Parent) "data\verilog\src\glbl.v"
     Stage "compile" "xvlog.bat" (@("-sv", "-i", "`"$rtlDir`"", "-d", "SIM") +
@@ -52,6 +58,7 @@ try {
         @{Top="tb_coef_bank_manager"; Name="coef_bank_boundary"; Generic=@()},
         @{Top="tb_halfband_x2"; Name="halfband_precision_alignment"; Generic=@()},
         @{Top="tb_automute"; Name="automute_timers_mute_busy"; Generic=@()},
+        @{Top="tb_tpdf_dither_gen"; Name="stereo_tpdf_range"; Generic=@()},
         @{Top="tb_dpd_deadline_monitor"; Name="dpd_deadline"; Generic=@()},
         @{Top="tb_dpd_engine"; Name="dpd_49cy"; Generic=@("-generic_top",'"EN_PERIOD=49"')},
         @{Top="tb_dpd_engine"; Name="dpd_50cy"; Generic=@("-generic_top",'"EN_PERIOD=50"')},

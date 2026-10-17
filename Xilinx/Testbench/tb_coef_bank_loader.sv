@@ -82,7 +82,7 @@ module tb_coef_bank_loader;
     logic [15:0]                  load_filter_id;
     logic                         load_done;
     logic                         load_err;
-    logic [1:0]                   load_err_code;
+    logic [2:0]                   load_err_code;
     logic enforce_stream_rate = 0;
     logic [2:0] stream_rate = 0;
 
@@ -131,6 +131,8 @@ module tb_coef_bank_loader;
 
     logic [AXI_DATA_WIDTH-1:0]    m_axi_rdata;
     logic [1:0]                   m_axi_rresp;
+    logic                         inject_payload_rresp = 0;
+    logic [1:0]                   response_for_burst = 2'b00;
     logic                         m_axi_rlast;
     logic                         m_axi_rvalid;
     logic                         m_axi_rready;
@@ -290,6 +292,7 @@ module tb_coef_bank_loader;
             m_axi_rlast      <= 1'b0;
             m_axi_rdata      <= '0;
             m_axi_rresp      <= 2'b00;
+            response_for_burst <= 2'b00;
         end else begin
             m_axi_rvalid <= 1'b0;
             m_axi_rlast  <= 1'b0;
@@ -302,6 +305,8 @@ module tb_coef_bank_loader;
                         r_beats_remaining <= int'(slave_arlen) + 1;
                         r_beat_index      <= 0;
                         r_delay_cnt       <= 0;
+                        response_for_burst <=
+                            (inject_payload_rresp && slave_arlen != 8'd1) ? 2'b10 : 2'b00;
                         r_state           <= R_DELAY;
                     end
                 end
@@ -309,6 +314,7 @@ module tb_coef_bank_loader;
                 R_DELAY: begin
                     if (r_delay_cnt == READ_LATENCY - 1) begin
                         m_axi_rdata  <= gen_beat(r_araddr, 0);
+                        m_axi_rresp  <= response_for_burst;
                         r_state      <= R_PRESENT;
                     end
                     r_delay_cnt <= r_delay_cnt + 1;
@@ -327,6 +333,9 @@ module tb_coef_bank_loader;
                                 r_beats_remaining <= int'(slave_arlen) + 1;
                                 r_beat_index      <= 0;
                                 r_delay_cnt       <= 0;
+                                response_for_burst <=
+                                    (inject_payload_rresp && slave_arlen != 8'd1)
+                                    ? 2'b10 : 2'b00;
                                 r_state           <= R_DELAY;
                             end else begin
                                 r_state <= R_IDLE;
@@ -344,6 +353,7 @@ module tb_coef_bank_loader;
                 R_BUBBLE: begin
                     // Load next beat, then go back to PRESENT
                     m_axi_rdata <= gen_beat(r_araddr, r_beat_index);
+                    m_axi_rresp <= response_for_burst;
                     r_state     <= R_PRESENT;
                 end
 
@@ -892,6 +902,45 @@ module tb_coef_bank_loader;
         enforce_stream_rate = 0;
     endtask
 
+    task test_axi_rresp_error_and_recovery;
+        integer first_error_count;
+        $display("TEST 11: AXI read response error aborts shadow load and can recover");
+        error_count = 0;
+        ar_burst_num = 0;
+        total_writes = 0;
+        exp_packed = 0;
+        enforce_stream_rate = 0;
+        apply_reset();
+        setup_directory();
+        inject_payload_rresp = 1;
+        pulse_load_by_id(16'h0101, DIR_IMG_A);
+        wait_for_load_done(LOAD_TIMEOUT);
+        repeat(4) @(posedge clk);
+        if (!load_err || load_err_code !== 3'd4 || total_writes !== 0) begin
+            $display("ERROR: AXI RRESP failure not rejected code=%0d writes=%0d",
+                     load_err_code,total_writes);
+            error_count++;
+        end
+        first_error_count = error_count;
+
+        // Retry without resetting the loader to prove a failed burst's FIFO
+        // epoch was discarded rather than replayed into the next filter load.
+        error_count = 0;
+        inject_payload_rresp = 0;
+        ar_burst_num = 0;
+        total_writes = 0;
+        pulse_load_by_id(16'h0101, DIR_IMG_A);
+        wait_for_load_done(LOAD_TIMEOUT);
+        repeat(4) @(posedge clk);
+        if (load_err || load_err_code !== 3'd0 ||
+            total_writes !== NUM_MACS * COEF_DEPTH) begin
+            $display("ERROR: clean retry after AXI failure failed err=%0b code=%0d writes=%0d",
+                     load_err,load_err_code,total_writes);
+            error_count++;
+        end
+        error_count += first_error_count;
+    endtask
+
     // -------------------------------------------------------------------------
     //  Main stimulus
     // -------------------------------------------------------------------------
@@ -928,6 +977,12 @@ module tb_coef_bank_loader;
         final_errors += error_count;
 
         test_rate_rejection();
+        final_errors += error_count;
+
+        test_axi_rresp_error_and_recovery();
+        final_errors += error_count;
+
+        test_axi_rresp_error_and_recovery();
         final_errors += error_count;
 
         repeat(20) @(posedge clk);

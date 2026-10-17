@@ -134,7 +134,7 @@ with open(os.path.join(TBD, "dpd_cal_img.mem"), "w") as fh:
 
 M = 2000
 n = np.arange(M)
-HD = LSB >> 1
+HD = LSB
 amp = 28.0 * 10 ** (-1 / 20)
 vec = {}
 for ch in range(2):
@@ -147,13 +147,13 @@ for ch in range(2):
     y_off = run(u, dith, cal[ch], False)
     vec[ch] = (u, dith, y_on, y_off)
 
-# format per line: u[48] d[42->44 hex pad] y_on[8] y_off[8], L then R interleaved
+# format per line: u[48] d[43->44 hex pad] y_on[8] y_off[8], L then R interleaved
 with open(os.path.join(TBD, "dpd_golden.mem"), "w") as fh:
     for k in range(M):
         for ch in range(2):
             u, d, yon, yoff = vec[ch]
             fh.write(f"{int(u[k]) & ((1<<48)-1):012x}"
-                     f"{int(d[k]) & ((1<<42)-1):011x}"
+                     f"{int(d[k]) & ((1<<43)-1):011x}"
                      f"{int(yon[k]):02x}{int(yoff[k]):02x}\n")
 
 print(f"wrote dpd_lag_rom.svh (39 tuples), dpd_cal_img.mem (512 words), "

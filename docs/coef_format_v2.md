@@ -136,9 +136,9 @@ host sends only eligible IDs).
   address, NOT relative to `DDR4_BASE_ADDR`), `BANK_SIZE_BYTES` long.
 - `load_done` pulses at the end of every attempt. `load_err` is a level
   (set before `load_done`, cleared on the next `load_start`) with
-  `load_err_code`: 1 = ID not found, 2 = size mismatch. The bank manager
-  does NOT swap the active bank on a failed load; the previous filter
-  keeps playing.
+  `load_err_code`: 1 = ID not found, 2 = size mismatch, 3 = rate mismatch,
+  4 = AXI RRESP error. The bank manager does NOT swap the active bank on a
+  failed load; the previous filter keeps playing.
 - Legacy `load_by_id=0` path (`0x05` bank slot) still addresses
   `DDR4_BASE_ADDR + bank_id * BANK_SIZE_BYTES`; the directory is bypassed.
 
@@ -224,7 +224,7 @@ Extends the existing control-plane register file (`dac_ctrl_plane.sv`;
 | 0x11 | STICKY_ERR | [7:0] sticky error bits (see below); W1C via write 0x16 |
 | 0x16 | FILTER_LIST_STATUS | {video_mode[11], list_len[10:5], cur_index[4:0]} (repacked 2026-09-03 for 32 entries) |
 | 0x17 | FILTER_IDS | {next_filter_id[15:0], cur_filter_id[15:0]} — `cur` = ID of the last load request (list or 0x17 direct); `next` = the list entry an advance would select. Informational only: there is NO shadow-bank preload (loads are on demand, gapless, ~4.4 ms @ 1M taps). |
-| 0x1C | CMD_ERR_INFO | {addr[6:0], reason[3:0]} of the most recent bit[7:4] event; cleared with the sticky W1C |
+| 0x1C | CMD_ERR_INFO | detail[11], addr[10:4], reason[3:0] of the most recent bit[7:4] event; detail marks an AXI RRESP filter-load failure; cleared with sticky W1C |
 
 ### Per-cell converter measurements (2026-10-14)
 
@@ -365,7 +365,7 @@ edge-synchronised into the SPI clock domain and raises `fpga_irq_n`:
 | CMD_ERR_INFO reason | addr | Cause |
 |---|---|---|
 | 0xA FILT_NOTFOUND | 0x0A | `filter_id` not in DDR4 directory (terminator / scan cap reached); no bank swap |
-| 0xB FILT_SIZE | 0x0A | directory `payload_bytes` != bank size; no bank swap |
+| 0xB FILT_SIZE | 0x0A | directory `payload_bytes` != bank size; no bank swap. `detail[11]=1` identifies an AXI RRESP failure instead |
 
 Other reasons: 1 BAD_ADDR, 2 FLASH_BUSY, 3 FLASH_OP, 4 FILT_FULL,
 5 FILT_EMPTY, 6 FILT_RANGE, 7 CAL_WRAP, 8 FLASH_WDT, 9 FRAME_LEN.

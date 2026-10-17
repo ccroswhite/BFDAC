@@ -46,7 +46,7 @@ module noise_shaper_ef3 #(
     input  logic                          rst_n,
     input  logic                          enable,
     input  logic signed [INPUT_WIDTH-1:0] data_in,
-    input  logic signed [FRAC_WIDTH-1:0]  dither_in,
+    input  logic signed [FRAC_WIDTH:0]    dither_in,
     output logic [OUT_WIDTH-1:0]          dem_drive_out,
 
     // Stage-E DPD correction port (dpd_engine)
@@ -73,16 +73,16 @@ module noise_shaper_ef3 #(
     // Stage A registers: six dyadic partial products + input snapshot
     logic signed [IW-1:0] pe1_r, pe2_r, pe3_r, pf1_r, pf2_r, pf3_r;
     logic signed [IW-1:0] u_off_r;
-    logic signed [FRAC_WIDTH-1:0] dith_a;
+    logic signed [FRAC_WIDTH:0] dith_a;
 
     // Stage B1 registers: pairwise partial sums
     logic signed [IW-1:0] sAB_r, sC_r;
     logic signed [IW-1:0] u_off_b1;
-    logic signed [FRAC_WIDTH-1:0] dith_b1;
+    logic signed [FRAC_WIDTH:0] dith_b1;
 
     // Stage B2 registers
     logic signed [IW-1:0] f_r, w_r;
-    logic signed [FRAC_WIDTH-1:0] dith_b;
+    logic signed [FRAC_WIDTH:0] dith_b;
 
     // Stage C registers
     logic signed [IW-1:0] w_c;

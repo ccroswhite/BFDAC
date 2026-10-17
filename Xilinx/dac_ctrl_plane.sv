@@ -29,7 +29,7 @@ module dac_ctrl_plane (
     input  logic        coef_load_done,
     input  logic [3:0]  current_bank_id,
     input  logic        coef_load_err,      // ui_clk level: last filter load failed
-    input  logic [1:0]  coef_load_err_code, // 1 = ID not in directory, 2 = size mismatch
+    input  logic [2:0]  coef_load_err_code, // 1=ID, 2=size, 3=rate, 4=AXI read error
     input  logic        i2s_err,             // dsp_clk domain, will be synchronised
     input  logic        switch_busy,         // dsp_clk domain, will be synchronised
     input  logic        clk_locked,
@@ -406,6 +406,7 @@ module dac_ctrl_plane (
     // bit[4]/[5]/[6]/[7] event; cleared together with the sticky W1C (0x16).
     logic [6:0] err_info_addr;
     logic [3:0] err_info_reason;
+    logic       err_info_filter_axi;
 
     always_ff @(posedge clk) begin
         if (!ext_rst_n) begin
@@ -414,6 +415,7 @@ module dac_ctrl_plane (
             boot_err_d      <= 1'b0;
             err_info_addr   <= 7'd0;
             err_info_reason <= ERR_NONE;
+            err_info_filter_axi <= 1'b0;
             cal_write_reject_seen <= 1'b0;
         end else begin
             spi_crc_err_d <= spi_crc_error;
@@ -435,19 +437,26 @@ module dac_ctrl_plane (
             if (flash_cmd_err) begin
                 err_info_addr   <= `SPI_W_FLASH_CMD;
                 err_info_reason <= ERR_FLASH_WDT;
+                err_info_filter_axi <= 1'b0;
             end else if (load_err_evt) begin
                 err_info_addr   <= `SPI_W_FILTER_SELECT;
-                err_info_reason <= (coef_load_err_code == 2'd3) ? `SPI_ERR_FILT_RATE :
-                                   (coef_load_err_code == 2'd2) ? ERR_FILT_SIZE : ERR_FILT_NOTFOUND;
+                err_info_reason <= (coef_load_err_code == 3'd3) ? `SPI_ERR_FILT_RATE :
+                                   ((coef_load_err_code == 3'd2) ||
+                                    (coef_load_err_code == 3'd4)) ? ERR_FILT_SIZE :
+                                                                    ERR_FILT_NOTFOUND;
+                err_info_filter_axi <= (coef_load_err_code == 3'd4);
             end else if (cal_write_reject_evt) begin
                 err_info_addr   <= `SPI_W_CAL_DATA;
                 err_info_reason <= `SPI_ERR_TEST_BUSY;
+                err_info_filter_axi <= 1'b0;
             end else if (wr_stb && (wr_addr_invalid || wr_rejected)) begin
                 err_info_addr   <= wr_addr;
                 err_info_reason <= wr_addr_invalid ? ERR_BAD_ADDR : wr_rej_reason;
+                err_info_filter_axi <= 1'b0;
             end else if (spi_frame_error) begin
                 err_info_addr   <= 7'd0;
                 err_info_reason <= ERR_FRAME_LEN;
+                err_info_filter_axi <= 1'b0;
             end
             // Clear on write to register 0x16 (write-1-to-clear;
             // moved from 0x11, which is FLASH_ADDR_HI)
@@ -455,6 +464,7 @@ module dac_ctrl_plane (
                 sticky_err      <= sticky_err & ~ctrl_bus_data[7:0];
                 err_info_addr   <= 7'd0;
                 err_info_reason <= ERR_NONE;
+                err_info_filter_axi <= 1'b0;
             end
             if (cal_write_reject_evt)
                 cal_write_reject_seen <= cal_write_reject_sync[2];
@@ -717,7 +727,8 @@ module dac_ctrl_plane (
             `SPI_R_FLASH_RDDATA: spi_tx_data_c = {24'd0, flash_buf_rdata};
             // 0x1C: CMD_ERR_INFO — {addr[6:0], reason[3:0]} of the most
             //       recent sticky[4..7] event; cleared by the W1C (0x16)
-            `SPI_R_CMD_ERR_INFO: spi_tx_data_c = {21'd0, err_info_addr, err_info_reason};
+            `SPI_R_CMD_ERR_INFO: spi_tx_data_c = {20'd0, err_info_filter_axi,
+                                                   err_info_addr, err_info_reason};
             `SPI_R_BENCH_STATUS: spi_tx_data_c = bench_status;
             `SPI_R_STREAM_STATUS: spi_tx_data_c = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,

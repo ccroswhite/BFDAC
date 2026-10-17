@@ -288,7 +288,7 @@ module vu13p_dac_top #(
     logic        bank_valid;        // dsp_clk level: FIR active bank holds a good load
     logic        coef_load_done;
     logic        coef_load_err;
-    logic [1:0]  coef_load_err_code;
+    logic [2:0]  coef_load_err_code;
 
     // SPI control outputs (clk_200m domain)
     logic [31:0] sys_volume;

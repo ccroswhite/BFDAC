@@ -23,7 +23,7 @@ module tb_dac_ctrl_plane;
     logic [3:0] current_bank_id = 4'h0;
     logic flash_cmd_busy = 0, flash_cmd_err = 0, boot_crc_fail = 0, boot_axi_fail = 0;
     logic coef_load_err = 0;
-    logic [1:0] coef_load_err_code = 2'd0;
+    logic [2:0] coef_load_err_code = 3'd0;
 
     // DUT outputs
     logic [31:0] sys_volume;
@@ -345,6 +345,17 @@ module tb_dac_ctrl_plane;
             check("second calibration commit blocked", cal_commit_toggle, old_commit_toggle);
             spi_read(7'h1C, rd);
             check("pending calibration command reports busy", rd[3:0], 4'hC);
+        end
+        begin
+            coef_load_err_code = 3'd4;
+            #10;
+            coef_load_err = 1;
+            #20;
+            spi_read(7'h1C, rd);
+            check("AXI filter-read failure reported as detail", rd[11], 1);
+            check("AXI filter-read failure reports data error", rd[3:0], 4'hB);
+            coef_load_err = 0;
+            #20;
         end
         cal_commit_pending=0;
         stream_fault=0;

@@ -47,7 +47,7 @@ module tb_spi_ctrl_plane;
     logic boot_crc_fail;
     logic boot_axi_fail;
     logic       coef_load_err;
-    logic [1:0] coef_load_err_code;
+    logic [2:0] coef_load_err_code;
 
     // Single-cycle pulse catchers (200 MHz pulses vs #-delay stimulus)
     logic seen_level_req, seen_outsel_req;

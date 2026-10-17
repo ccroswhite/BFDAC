@@ -18,7 +18,7 @@ module tb_ns_ef3;
 
     logic clk = 0, rst_n = 0, enable = 0;
     logic signed [47:0] data_in = '0;
-    logic signed [41:0] dither_in = '0;
+    logic signed [42:0] dither_in = '0;
     logic [6:0] dem_drive_out;
 
     always #(CLK_PERIOD/2) clk = ~clk;
@@ -40,7 +40,7 @@ module tb_ns_ef3;
 
     // one sample: drive inputs, pulse enable, wait for the 4-stage pipeline
     task automatic do_sample(input logic signed [47:0] u,
-                             input logic signed [41:0] d);
+                             input logic signed [42:0] d);
         @(negedge clk);
         data_in = u; dither_in = d; enable = 1'b1;
         @(negedge clk);
@@ -79,11 +79,11 @@ module tb_ns_ef3;
         end
 
         // ---------------- Test 3: overload recovery ----------------
-        repeat (200) do_sample(48'sd40 <<< 42, 42'sd0);
-        repeat (200) do_sample(48'sd0, 42'sd0);
+        repeat (200) do_sample(48'sd40 <<< 42, 43'sd0);
+        repeat (200) do_sample(48'sd0, 43'sd0);
         mean_acc = 0;
         repeat (64) begin
-            do_sample(48'sd0, 42'sd0);
+            do_sample(48'sd0, 43'sd0);
             mean_acc += int'(dem_drive_out);
         end
         if (mean_acc / 64 < 30 || mean_acc / 64 > 34) begin
