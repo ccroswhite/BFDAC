@@ -39,6 +39,7 @@ module cal_coef_store #(
     input  logic        dsp_clk,
     input  logic        dsp_rst_n,
     input  logic        sample_tick,     // commit alignment (768k sample tick)
+    input  tri0         dpd_busy,        // hold bank constant through each DPD calculation
 
     // DPD datapath ports — active bank, 1-cycle registered reads
     input  logic [NUM_DPD_PORTS-1:0][8:0]  dpd_rd_addr,
@@ -54,7 +55,9 @@ module cal_coef_store #(
     input  logic [8:0]  rd_addr,         // verification readback (active bank)
     output logic [23:0] rd_data,         // quasi-static after commit
     output logic        active_bank,     // status, resynced to ctrl_clk
-    output logic        commit_pending   // status, resynced to ctrl_clk
+    output logic        commit_pending,  // status, resynced to ctrl_clk
+    output logic        write_reject_toggle,
+    output logic        calibration_valid
 );
 
     // =========================================================================
@@ -76,6 +79,7 @@ module cal_coef_store #(
     // =========================================================================
     (* ASYNC_REG = "TRUE" *) logic [2:0] wr_tg_sync_dsp;
     (* ASYNC_REG = "TRUE" *) logic [2:0] commit_tg_sync_dsp;
+    logic [2:0] toggle_sync_warm;
 
     logic wr_pulse_dsp, commit_pulse_dsp;
 
@@ -83,14 +87,21 @@ module cal_coef_store #(
         if (!dsp_rst_n) begin
             wr_tg_sync_dsp     <= '0;
             commit_tg_sync_dsp <= '0;
+            toggle_sync_warm   <= '0;
         end else begin
             wr_tg_sync_dsp     <= {wr_tg_sync_dsp[1:0],     wr_toggle};
             commit_tg_sync_dsp <= {commit_tg_sync_dsp[1:0], commit_toggle};
+            toggle_sync_warm   <= {toggle_sync_warm[1:0], 1'b1};
         end
     end
 
-    assign wr_pulse_dsp     = wr_tg_sync_dsp[2]     ^ wr_tg_sync_dsp[1];
-    assign commit_pulse_dsp = commit_tg_sync_dsp[2] ^ commit_tg_sync_dsp[1];
+    // Ignore synchronizer fill transitions after an audio-path reset. The
+    // control-domain request toggles survive rate changes; treating the
+    // settled current phase as a new request would fabricate a write/commit.
+    assign wr_pulse_dsp = (wr_tg_sync_dsp[2] ^ wr_tg_sync_dsp[1]) &&
+                          (&toggle_sync_warm);
+    assign commit_pulse_dsp = (commit_tg_sync_dsp[2] ^ commit_tg_sync_dsp[1]) &&
+                              (&toggle_sync_warm);
 
     // =========================================================================
     // Write into the INACTIVE bank. wr_addr/wr_data are set by the SPI frame
@@ -100,12 +111,25 @@ module cal_coef_store #(
     // =========================================================================
     logic        active_sel;      // which bank the datapath reads
     logic        pending;         // commit requested, waiting for sample_tick
+    logic        calibration_valid_dsp;
+    wire         write_rejected_dsp = wr_pulse_dsp && (pending || commit_pulse_dsp);
 
     always_ff @(posedge dsp_clk) begin
-        if (wr_pulse_dsp) begin
-            if (active_sel) mem0[wr_addr] <= wr_data;  // bank1 active -> write bank0
-            else            mem1[wr_addr] <= wr_data;  // bank0 active -> write bank1
+        if (dsp_rst_n && wr_pulse_dsp && !write_rejected_dsp) begin
+            if (active_sel)
+                mem0[wr_addr] <= wr_data;  // bank1 active -> write bank0
+            else
+                mem1[wr_addr] <= wr_data;  // bank0 active -> write bank1
         end
+    end
+
+    // Reject-event phase is reset only by the external control reset, not by
+    // an audio-rate DSP reset; a rate switch must not fabricate a host error.
+    always_ff @(posedge dsp_clk or negedge ctrl_rst_n) begin
+        if (!ctrl_rst_n)
+            write_reject_toggle <= 1'b0;
+        else if (dsp_rst_n && write_rejected_dsp)
+            write_reject_toggle <= ~write_reject_toggle;
     end
 
     // =========================================================================
@@ -115,12 +139,14 @@ module cal_coef_store #(
         if (!dsp_rst_n) begin
             active_sel <= 1'b0;
             pending    <= 1'b0;
+            calibration_valid_dsp <= 1'b0;
         end else begin
             if (commit_pulse_dsp)
                 pending <= 1'b1;
-            if (pending && sample_tick) begin
+            if (pending && sample_tick && !dpd_busy) begin
                 active_sel <= ~active_sel;
                 pending    <= 1'b0;
+                calibration_valid_dsp <= 1'b1;
             end
         end
     end
@@ -150,18 +176,21 @@ module cal_coef_store #(
         rd_data <= rd_data_dsp;    // quasi-static resample (XDC max_delay)
 
     // Status back to ctrl domain (single-bit levels, 2-FF sync each)
-    (* ASYNC_REG = "TRUE" *) logic [1:0] active_sync_ctrl, pending_sync_ctrl;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] active_sync_ctrl, pending_sync_ctrl, cal_valid_sync_ctrl;
     always_ff @(posedge ctrl_clk) begin
         if (!ctrl_rst_n) begin
             active_sync_ctrl  <= '0;
             pending_sync_ctrl <= '0;
+            cal_valid_sync_ctrl <= '0;
         end else begin
             active_sync_ctrl  <= {active_sync_ctrl[0],  active_sel};
             pending_sync_ctrl <= {pending_sync_ctrl[0], pending};
+            cal_valid_sync_ctrl <= {cal_valid_sync_ctrl[0], calibration_valid_dsp};
         end
     end
 
     assign active_bank    = active_sync_ctrl[1];
     assign commit_pending = pending_sync_ctrl[1];
+    assign calibration_valid = cal_valid_sync_ctrl[1];
 
 endmodule

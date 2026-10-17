@@ -28,10 +28,10 @@ module tb_stream_pipeline;
     initial begin
         for(int f=0;f<2;f++) begin
             for(int r=0;r<4;r++) begin
-                int frames, captures, run_length;
+                int frames, captures, run_length, cell_cycle, last_capture;
                 rst_n=0; enable=0;
                 cp=f ? 20.345052083 : 22.144274376;
-                dp=cp*3.5/20.0;
+                dp=cp*3.25/20.0;
                 shift=2'(r);
                 repeat(20) @(negedge dsp_clk);
                 rst_n=1;
@@ -45,10 +45,17 @@ module tb_stream_pipeline;
                 if(!core.pace_started || stream_fault || serial_fault)
                     $fatal(1,"stream failed to prime/conserve samples family=%0d shift=%0d",f,r);
                 while(cascode_l!=0) @(negedge cell_clk);
-                captures=0; run_length=0;
+                captures=0; run_length=0; cell_cycle=0; last_capture=-1;
                 repeat(4096) begin
                     @(posedge cell_clk); #0.01;
-                    if(core.cell_capture_en) captures++;
+                    cell_cycle++;
+                    if(core.cell_capture_en) begin
+                        if(last_capture>=0 && cell_cycle-last_capture!=8)
+                            $fatal(1,"converter capture interval %0d cell clocks; expected 8",
+                                   cell_cycle-last_capture);
+                        last_capture=cell_cycle;
+                        captures++;
+                    end
                     if(cascode_l!=0) run_length++;
                     else if(run_length!=0) begin
                         if(run_length!=6) $fatal(1,"RTZ pulse %0d, expected 6",run_length);

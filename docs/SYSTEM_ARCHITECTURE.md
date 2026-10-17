@@ -335,6 +335,10 @@ errors of the analog conversion path. It corrects the noise-shaper feedback
 using identified LUT/kernel data. Its purpose differs from DEM: DEM addresses
 physical-element mismatch, while DPD addresses the modeled aggregate
 conversion error. Neither removes the need for linear analog circuitry.
+The RTL draft uses a faster DSP MMCM ratio to budget 49.23 DSP clocks per
+converter update and flags a missing correction at the next Stage-A read.
+That deadline margin is subject to the 49/50-cycle DPD regression and routed
+timing; it is not yet sign-off evidence.
 
 **RTZ and external reclocking** define the temporal shape of a selected
 cell's contribution and place the final capture edge at the analog converter.
@@ -363,10 +367,12 @@ followed by the ×8 halfband chain. The FIR output then remains at
 extend the native input limit beyond 384 kHz.
 
 The FPGA compute-clock configuration can remain constant within a family.
-The current reference MMCM setting is MCLK ×20/3.5, approximately
-258.048 MHz or 280.869 MHz. Its clock budget is about 45.714 DSP cycles
-per converter update. Each scheduled operation, including the feedback
-correction, must meet its actual consumption deadline at that cadence.
+The current RTL draft uses MMCM `CLKOUT0_DIVIDE_F=3.25` with a VCO multiplier
+of 20: approximately 277.898 MHz for the 44.1 kHz family and 302.474 MHz
+for the 48 kHz family. That gives about 49.23 DSP clocks per converter update,
+chosen to provide margin for the error-feedback predistortion deadline.
+Achievable clock rate, setup/hold and routed timing at production resources
+remain unqualified; the selected MMCM ratio is not proof of timing closure.
 
 Filter capacity and tap count must be specified per native rate.
 The reference storage organization reserves sixteen phase slots per MAC;
@@ -896,8 +902,10 @@ and the required audio transition behavior.
 
 Calibration follows the same principle. The AP prepares a complete
 temperature-corrected dataset, writes the inactive calibration bank,
-verifies it and requests activation. A DPD operation must use one coherent
-dataset from start to finish.
+verifies it and requests activation. The store holds bank activation until
+the DPD read engines are idle at an eligible sample boundary. Further writes
+and commits are rejected while a commit is pending. A DPD operation must use
+one coherent dataset from start to finish.
 
 ### 9.4 Source stop, faults and recovery
 

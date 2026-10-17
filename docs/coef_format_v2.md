@@ -144,9 +144,10 @@ host sends only eligible IDs).
 
 ## SPI Command Set — filter list / video mode (DRAFT)
 
-**Stream clock/rate ownership — LOCKED 2026-10-16.** The RTL draft compiles
-and the 14 configured Vivado simulations pass. This is not synthesis,
-place-and-route, CDC/I/O timing sign-off, or hardware qualification.
+**Stream clock/rate ownership - LOCKED 2026-10-16.** The current 3.25-divider
+RTL and DPD/calibration-safety follow-up passed the 19-job Vivado regression
+(process 35772). This is not synthesis, place-and-route, CDC/I/O timing
+sign-off, or hardware qualification.
 The AP reports the PCM stream rate/format; the FPGA validates it and configures
 the carrier oscillator, interpolation and I2S BCLK/LRCLK together. The FPGA is
 I2S master and the AP is slave transmitter; there is no separate AP MCLK export.
@@ -177,6 +178,16 @@ requested rate[10:8], capture trim[15:11], first complete valid PCM
 frame received[16], reserved[31:17]. Clocks-ready is NOT permission to
 unmute on its own: after every rate/trim reset, at least one complete,
 framed AP sample must arrive before UNMUTE is accepted.
+
+Read CAL_STATUS (0x18) bit 11 for `calibration_valid`. It becomes true after
+the first calibration-bank activation following DSP reset; it reports an
+activation, not a hardware checksum/word-coverage proof. AP policy must load
+and verify a complete dataset before commit. A rate change resets this flag;
+the AP must reload/recommit before enabling DPD. The DPD-enable write is
+accepted only while output-muted and the source is stopped, with
+clocks/FIR/calibration ready and no pending commit.
+`CAL_DATA`/`CAL_COMMIT` while commit-pending are rejected with command-busy;
+the store also interlocks writes in the DSP domain and reports a reject toggle.
 
 After a rate request: poll busy clear/clocks-ready with a timeout, load a
 compatible filter, wait for bank-valid, reload/verify calibration state if DPD

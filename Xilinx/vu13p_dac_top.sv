@@ -19,7 +19,7 @@
 //                        (1 pin per cell, 128 total; complement generated at
 //                        the external reclock stage, Fig. 1b)
 //
-// Target: XCVU13P-2FHGB2104I, 350-400 MHz DSP clock, 1024 MACs, 1M taps
+// Target: XCVU13P-2FHGB2104I, 278/302 MHz DSP clock, 1024 MACs, 1M taps
 //
 // Clock architecture (external mux, Round 24):
 //   Two OCXOs feed an on-board LMK00304 2:1 mux/fanout. One LMK output drives
@@ -164,6 +164,7 @@ module vu13p_dac_top #(
     logic stream_rate_toggle, stream_rate_ack, stream_source_valid;
     logic [4:0] i2s_rx_trim;
     logic core_stream_fault, serial_fault;
+    logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
     (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
     always_ff @(posedge clk_200m) begin
         if (!ext_rst_n) stream_fault_sync <= 0;
@@ -656,7 +657,7 @@ module vu13p_dac_top #(
     logic        cal_wr_toggle, cal_commit_toggle;
     logic [8:0]  cal_wr_addr, cal_rd_addr;
     logic [23:0] cal_wr_data, cal_rd_data;
-    logic        cal_active_bank, cal_commit_pending;
+    logic        cal_active_bank, cal_commit_pending, calibration_valid;
     // DPD engines (dsp_clk): cal-store read buses + enable
     logic [3:0][8:0]  dpd_cal_addr;
     logic [3:0][23:0] dpd_cal_data;
@@ -713,6 +714,7 @@ module vu13p_dac_top #(
         .current_bank_id        (current_bank_id),
         .coef_load_err          (coef_load_err),
         .coef_load_err_code     (coef_load_err_code),
+        .cal_write_reject_toggle(cal_write_reject_toggle),
         .i2s_err                (i2s_err || core_stream_fault),
         .switch_busy            (switch_busy),
         .clk_locked             (clk_locked),
@@ -737,6 +739,7 @@ module vu13p_dac_top #(
         .cal_rd_data            (cal_rd_data),
         .cal_active_bank        (cal_active_bank),
         .cal_commit_pending     (cal_commit_pending),
+        .calibration_valid      (calibration_valid),
         .flash_cmd_opcode       (flash_cmd_opcode),
         .flash_cmd_target       (flash_cmd_target),
         .flash_cmd_addr         (flash_cmd_addr),
@@ -781,6 +784,7 @@ module vu13p_dac_top #(
         .dsp_clk        (dsp_clk),
         .dsp_rst_n      (sys_rst_n),
         .sample_tick    (sample_768k_tick),
+        .dpd_busy       (core_dpd_busy),
         .dpd_rd_addr    (dpd_cal_addr),
         .dpd_rd_data    (dpd_cal_data),
         .ctrl_clk       (clk_200m),
@@ -792,7 +796,9 @@ module vu13p_dac_top #(
         .rd_addr        (cal_rd_addr),
         .rd_data        (cal_rd_data),
         .active_bank    (cal_active_bank),
-        .commit_pending (cal_commit_pending)
+        .commit_pending (cal_commit_pending),
+        .write_reject_toggle(cal_write_reject_toggle),
+        .calibration_valid(calibration_valid)
     );
 
     // ==============================================================
@@ -891,6 +897,8 @@ module vu13p_dac_top #(
         .dpd_enable             (dpd_enable_sync),
         .dpd_cal_addr           (dpd_cal_addr),
         .dpd_cal_data           (dpd_cal_data),
+        .dpd_busy               (core_dpd_busy),
+        .dpd_deadline_miss      (dpd_deadline_miss),
         .sample_768k_tick       (sample_768k_tick),
         .cascode_l              (cascode_l),
         .cascode_r              (cascode_r)

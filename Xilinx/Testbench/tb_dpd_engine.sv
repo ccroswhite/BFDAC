@@ -8,16 +8,17 @@
 // arithmetic, 2000 vectors x 2 channels, DPD on + off expectations).
 //   T1: DPD ON  — L and R codes match golden y_on bit-for-bit
 //   T2: DPD OFF — codes match golden y_off (legacy NS behavior preserved)
-//   T3: latency — corr_valid arrives before the next enable (budget check)
-// Enable cadence: every 56 dsp_clk (worst-case tightest budget).
+//   T3: correction must be available before the next Stage-A feedback read.
+// EN_PERIOD is tested at the revised 49/50-cycle production cadence and at
+// the older 56-cycle unit-test cadence.
 // =============================================================================
-module tb_dpd_engine;
+module tb_dpd_engine #(
+    parameter int EN_PERIOD = 56
+);
 
     localparam int N = 2000;
-    localparam int EN_PERIOD = 56;
-
     logic dsp_clk = 0, ctrl_clk = 0;
-    always #1.786 dsp_clk = ~dsp_clk;    // 280 MHz
+    always #1.656 dsp_clk = ~dsp_clk;    // approximately 302 MHz
     always #2.5   ctrl_clk = ~ctrl_clk;  // 200 MHz
     logic rst_n = 0;
 
@@ -150,12 +151,12 @@ module tb_dpd_engine;
                  N, errors ? "FAIL" : "PASS");
 
         // --- T3 (measured during T1): correction latency -------------------
-        if (lat_l == 0 || lat_l > EN_PERIOD - 5) begin
+        if (lat_l == 0 || lat_l >= EN_PERIOD - 5) begin
             $display("FAIL T3: corr latency %0d cycles (budget %0d)",
                      lat_l, EN_PERIOD - 5);
             errors++;
         end else begin
-            $display("T3 corr latency %0d cycles (budget %0d): PASS",
+            $display("T3 corr latency %0d cycles (strict Stage-A budget %0d): PASS",
                      lat_l, EN_PERIOD - 5);
         end
 

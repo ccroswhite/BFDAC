@@ -32,7 +32,7 @@ module dac_dsp_core #(
     parameter int TAPS_PER_PHASE = 64,  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int CELL_TEST_MUTE_CYCLES = 4000000
 )(
-    // Single clock domain — all logic runs on dsp_clk (350-400 MHz, BUFG)
+    // Single clock domain — all logic runs on the 278/302 MHz audio-family dsp_clk
     input  logic        dsp_clk,
     input  logic        sys_rst_n,
 
@@ -68,6 +68,8 @@ module dac_dsp_core #(
 
     // Sample tick output (768 kHz post-FIR, to dac_coef_subsys)
     output logic        sample_768k_tick,
+    output logic        dpd_busy,
+    output logic        dpd_deadline_miss,
 
     // Cascode IOB launch clock — mclk-rate MMCM output, phase-aligned to the
     // external SN74LVC1G74 reclock-FF clock (same LMK00304 tree, Round 30)
@@ -105,7 +107,7 @@ module dac_dsp_core #(
     logic signed [47:0] interp_l,     interp_r;
     logic               interp_l_valid, interp_r_valid;
     logic fir_overrun, pace_fault;
-    assign stream_fault = fir_overrun || pace_fault;
+    assign stream_fault = fir_overrun || pace_fault || dpd_deadline_miss;
 
     assign sample_768k_tick = interp_l_valid;
 
@@ -465,6 +467,18 @@ module dac_dsp_core #(
     //     dpd_enable low -> corr_valid never fires -> legacy NS behavior.
     // =========================================================================
     logic [7:0] dpd_addr_l_a, dpd_addr_l_b, dpd_addr_r_a, dpd_addr_r_b;
+    logic dpd_busy_l, dpd_busy_r;
+    assign dpd_busy = dpd_busy_l || dpd_busy_r;
+
+    dpd_deadline_monitor u_dpd_deadline_monitor (
+        .clk(dsp_clk),
+        .rst_n(sys_rst_n),
+        .dpd_enabled(dpd_enable && !bench_active),
+        .sample_advance(pace_valid),
+        .result_started(ns_y_valid_l && ns_y_valid_r),
+        .correction_applied(dpd_corr_valid_l && dpd_corr_valid_r),
+        .deadline_miss(dpd_deadline_miss)
+    );
 
     assign dpd_cal_addr = {{1'b1, dpd_addr_r_b}, {1'b1, dpd_addr_r_a},
                            {1'b0, dpd_addr_l_b}, {1'b0, dpd_addr_l_a}};
@@ -480,7 +494,8 @@ module dac_dsp_core #(
         .cal_addr_b (dpd_addr_l_b),
         .cal_data_b (dpd_cal_data[1]),
         .corr       (dpd_corr_l),
-        .corr_valid (dpd_corr_valid_l)
+        .corr_valid (dpd_corr_valid_l),
+        .busy       (dpd_busy_l)
     );
 
     dpd_engine u_dpd_r (
@@ -494,7 +509,8 @@ module dac_dsp_core #(
         .cal_addr_b (dpd_addr_r_b),
         .cal_data_b (dpd_cal_data[3]),
         .corr       (dpd_corr_r),
-        .corr_valid (dpd_corr_valid_r)
+        .corr_valid (dpd_corr_valid_r),
+        .busy       (dpd_busy_r)
     );
 
     // =========================================================================
@@ -504,7 +520,7 @@ module dac_dsp_core #(
     //    Mismatch + per-cell duty spread shaped to <= -153 dBFS, idle tones
     //    <= -168 dBFS (dem_sort_check.py). Replaces dem_dwa (DWA had audible
     //    -130 dBFS-class idle tones above the thermal floor).
-    //    Multi-cycle (35 dsp_clk of 56-65 available) — uses valid_out instead
+//    Multi-cycle (35 dsp_clk of 49-50 available at the revised MMCM setting) — uses valid_out instead
     //    of a fixed pipeline delay.
     //    enable is delayed to match NS pipeline (6 stages above + volumed_valid)
     // =========================================================================

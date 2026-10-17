@@ -30,17 +30,20 @@ module tb_cal_coef_store;
     logic [8:0]  wr_addr = '0, rd_addr = '0;
     logic [23:0] wr_data = '0, rd_data;
     logic        active_bank, commit_pending;
+    logic        dpd_busy = 0, write_reject_toggle;
     logic [3:0][8:0]  dpd_rd_addr = '0;
     logic [3:0][23:0] dpd_rd_data;
 
     cal_coef_store dut (
         .dsp_clk(dsp_clk), .dsp_rst_n(dsp_rst_n), .sample_tick(sample_tick),
+        .dpd_busy(dpd_busy),
         .dpd_rd_addr(dpd_rd_addr), .dpd_rd_data(dpd_rd_data),
         .ctrl_clk(ctrl_clk), .ctrl_rst_n(ctrl_rst_n),
         .wr_toggle(wr_toggle), .wr_addr(wr_addr), .wr_data(wr_data),
         .commit_toggle(commit_toggle),
         .rd_addr(rd_addr), .rd_data(rd_data),
-        .active_bank(active_bank), .commit_pending(commit_pending)
+        .active_bank(active_bank), .commit_pending(commit_pending),
+        .write_reject_toggle(write_reject_toggle)
     );
 
     int errors = 0;
@@ -164,6 +167,57 @@ module tb_cal_coef_store;
             errors++;
         end
         $display("T6 dpd read port: %s", errors ? "FAIL" : "PASS");
+
+        // A pending bank cannot be activated while DPD holds a multi-cycle
+        // read transaction. Writes to the commit-bound bank are rejected.
+        dpd_busy = 1;
+        @(posedge ctrl_clk);
+        commit_toggle <= ~commit_toggle;
+        repeat (20) @(posedge ctrl_clk);
+        if (!commit_pending || active_bank !== 1'b0) begin
+            $display("FAIL T7: active bank changed while DPD was busy");
+            errors++;
+        end
+        repeat (800) @(posedge dsp_clk);
+        if (!commit_pending || active_bank !== 1'b0) begin
+            $display("FAIL T7: pending commit swapped while DPD was busy");
+            errors++;
+        end
+
+        begin
+            logic reject_before;
+            reject_before = write_reject_toggle;
+            spi_write(9'd42, 24'hdabc42);
+            if (write_reject_toggle === reject_before) begin
+                $display("FAIL T7: write during pending commit was not rejected");
+                errors++;
+            end
+        end
+
+        dpd_busy = 0;
+        repeat (800) @(posedge dsp_clk);
+        if (commit_pending || active_bank !== 1'b1) begin
+            $display("FAIL T7: pending bank did not commit at an idle sample boundary");
+            errors++;
+        end
+        spi_read(9'd42, got);
+        if (got !== pat_a(9'd42)) begin
+            $display("FAIL T7: rejected write changed the committed coefficient (%h)", got);
+            errors++;
+        end
+        $display("T7 DPD-idle commit and pending-write rejection: %s", errors ? "FAIL" : "PASS");
+
+        // ctrl-domain toggle phases survive a DSP rate reset; the store must
+        // adopt their current phase without fabricating a write or commit.
+        dsp_rst_n = 0;
+        repeat (5) @(posedge dsp_clk);
+        dsp_rst_n = 1;
+        repeat (800) @(posedge dsp_clk);
+        if (commit_pending || active_bank !== 1'b0) begin
+            $display("FAIL T8: stale commit toggle replayed after DSP reset");
+            errors++;
+        end
+        $display("T8 DSP reset with retained control toggles: %s", errors ? "FAIL" : "PASS");
 
         if (errors == 0) $display("ALL TESTS PASS (tb_cal_coef_store)");
         else             $display("TESTS FAILED: %0d errors (tb_cal_coef_store)", errors);

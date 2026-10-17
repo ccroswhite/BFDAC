@@ -59,7 +59,7 @@
 `define SPI_R_CLK_STATUS       7'h15  // {dpd_enable, ddr4_calib, clk_locked}
 `define SPI_R_FILTER_LIST_STAT 7'h16  // {video_mode[11], list_len[10:5], cur_index[4:0]}
 `define SPI_R_FILTER_IDS       7'h17  // {next_in_list_id[31:16], cur_filter_id[15:0]}
-`define SPI_R_CAL_STATUS       7'h18  // {cal_wr_ptr[10:2], cal_commit_pending[1], cal_active_bank[0]}
+`define SPI_R_CAL_STATUS       7'h18  // {calibration_valid[11], cal_wr_ptr[10:2], pending[1], active_bank[0]}
 `define SPI_R_CAL_RDDATA       7'h19  // [23:0] active-bank word at CAL_RDADDR
 `define SPI_R_BOOT_STATUS      7'h1A  // {boot_src[13], record_count[12:5], axi_fail[4],
                                       //  crc_fail[3], boot_ok[2], boot_done[1], flash_busy[0]}

@@ -385,7 +385,7 @@ write addr latches sticky[5].
 | 0x15 | Read  | CLK_STATUS | {dpd_enable, ddr4_calib, clk_locked} |
 | 0x16 | Read  | FILTER_LIST_STATUS | {video_mode[11], list_len[10:5], cur_index[4:0]} |
 | 0x17 | Read  | FILTER_IDS | {next_in_list_id[15:0], cur_filter_id[15:0]} (informational; no preload) |
-| 0x18 | Read  | CAL_STATUS | {cal_wr_ptr, cal_commit_pending, cal_active_bank} |
+| 0x18 | Read  | CAL_STATUS | calibration_valid[11], cal_wr_ptr[10:2], cal_commit_pending[1], cal_active_bank[0] |
 | 0x19 | Read  | CAL_RDDATA | active-bank word at CAL_RDADDR |
 | 0x1A | Read  | BOOT_STATUS | {boot_record_count, boot_axi_fail, boot_crc_fail, boot_ok, boot_done, flash_cmd_busy} |
 | 0x1B | Read  | FLASH_RDDATA | page-buffer byte at FLASH_PTR[15:8] |
@@ -4081,3 +4081,40 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       isolation/capture-phase qualification. R03 clock-enable electrical
       levels and R05 DPD deadline remain open; no manufacturing/bitstream
       release approval is implied.
+
+    - 2026-10-16 AUDITOR-FINDING FOLLOW-UP (RTL draft; verification pending):
+      Retained the 3.25 MMCM divider setting (nominal 49.23 DSP clocks per
+      converter update; fixed converter MCLK). Added a sticky DPD
+      feedback-deadline monitor at the next Stage-A read; a miss faults/mutes
+      the stream. DPD busy now qualifies calibration-bank activation.
+      CAL_DATA/CAL_COMMIT writes while a commit is pending are rejected by
+      control-plane status and a store-side interlock/event. Calibration-valid
+      status gates DPD enable. The calibration store ignores stale write/commit
+      toggle edges while its DSP domain warms after a rate reset.
+      Added DPD period-49/50 golden tests, period-45..50 deadline-boundary
+      tests, RTZ inter-capture assertions, calibration commit/pending/reset
+      tests and DPD/calibration control interlocks.
+      The previously completed 14-test suite predates these changes.
+      The expanded run logged in logs/auditor_fixes_v1/summary.log completes
+      these cases; detailed test status follows. 3.25-divider Fmax, routed
+      timing/CDC and analog qualification remain open; synthesis/place/route
+      remains on hold.
+
+    - 2026-10-17 AUDITOR DPD/CALIBRATION FOLLOW-UP REGRESSION:
+      Set the DSP MMCM divide to 3.25 for 49.23 DSP clocks per conversion.
+      Added a deadline guard keyed to the next Stage-A consumption, DPD busy
+      signalling, calibration commit-idle qualification, pending-write
+      rejection/error reporting, calibration-valid status, and toggle
+      synchronizer warm-up suppression across rate resets. DPD enable now
+      requires muted playback, a ready FIR bank and activated calibration.
+      Regression process 32508 completed before these changes and is historical.
+      Process 35772 completed the revised 19-job run: xvlog, all elaborations
+      and all simulations PASS, including DPD golden runs at EN_PERIOD=49/50,
+      deadline-boundary cases 45..50, exact-eight-cell RTZ interval checks,
+      calibration idle-swap/pending-write/stale-toggle reset tests and SPI
+      DPD/calibration interlocks. Two testbench-scope warnings remain
+      (`n_before`, `lo`); no compile errors. Evidence log:
+      `logs/auditor_fixes_v1/summary.log` (ignored/local, not in Git).
+      No synthesis, place-and-route, timing/CDC report, real-MIG simulation,
+      analog capture or board test was run. The 3.25 divider's FPGA Fmax,
+      DPD physical deadline and all remaining manufacturing gates remain open.

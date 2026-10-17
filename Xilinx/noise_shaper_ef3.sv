@@ -20,7 +20,7 @@
 // ns_ef3_gen.py: 136.0 dB in-band SNDR at -1 dBFS / OSR 154 (code budget
 // line: 133.5 dB). e is clamped to +-63 levels for overload recovery.
 //
-// Pipeline (5 stages, one result per enable; enable period is 56-65 dsp_clk):
+// Pipeline (5 stages, one result per enable; production cadence is 49-50 dsp_clk):
 //   Stage A : capture u/dither, form the six shift-add partial products
 //   Stage B1: pairwise partial sums (2026-08-18: split from B — the single
 //             3-deep 56-bit add chain was the last WNS path in the routed
@@ -31,8 +31,9 @@
 //   Stage D : commit y, e (clamped), shift e/f delay lines
 //   Stage E (2026-08-22, Step 4D.1): DPD correction patch. Stage D also
 //             saves the UNCLAMPED e_raw and pulses y_valid; the external
-//             dpd_engine returns corr ~30-40 cycles later (before the next
-//             enable) and e1 is re-written as clamp(e_raw - corr) — the
+//             dpd_engine returns corr ~42 cycles later. The core monitors
+//             that the patch completes before the next Stage-A consumption.
+//             e1 is re-written as clamp(e_raw - corr) —
 //             dpd_fx_golden.py semantics. With corr_valid never pulsed
 //             (DPD disabled) behavior is bit-identical to the legacy module.
 // =============================================================================
@@ -58,6 +59,7 @@ module noise_shaper_ef3 #(
 
     localparam logic signed [IW-1:0] CENTER_OFFSET_SCALED = 56'sd32 <<< FRAC_WIDTH;
     localparam logic signed [IW-1:0] E_CLAMP              = 56'sd63 <<< FRAC_WIDTH;
+    localparam logic signed [IW-1:0] E_CLAMP_NEG          = -E_CLAMP;
 
     // delay lines
     logic signed [IW-1:0] e1, e2, e3;
@@ -161,8 +163,8 @@ module noise_shaper_ef3 #(
                 e_raw_d <= e_raw;
                 if (e_raw > E_CLAMP)
                     e1 <= E_CLAMP;
-                else if (e_raw < -E_CLAMP)
-                    e1 <= -E_CLAMP;
+                else if (e_raw < E_CLAMP_NEG)
+                    e1 <= E_CLAMP_NEG;
                 else
                     e1 <= e_raw;
                 e2 <= e1;
@@ -178,8 +180,8 @@ module noise_shaper_ef3 #(
                 e_patch = e_raw_d - corr;
                 if (e_patch > E_CLAMP)
                     e1 <= E_CLAMP;
-                else if (e_patch < -E_CLAMP)
-                    e1 <= -E_CLAMP;
+                else if (e_patch < E_CLAMP_NEG)
+                    e1 <= E_CLAMP_NEG;
                 else
                     e1 <= e_patch;
             end

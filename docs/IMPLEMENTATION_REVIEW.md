@@ -18,6 +18,22 @@ Conversely, new RTL alone does not establish closure.
 routing or floorplanning describe intended constraints or future work. The SoM
 connector seed is a mechanical reference, not a started carrier layout.
 
+**Later RTL follow-up (working tree; simulation evidence recorded below):** the DSP MMCM divider is
+now 3.25 (about 277.9/302.5 MHz; 49.23 DSP clocks per conversion). A Stage-A
+DPD-correction deadline fault is sticky and inhibits playback; the coefficient
+store now waits for DPD idle before swapping and rejects/reports writes during a
+pending commit. Rate changes reset calibration-valid; DPD enable is gated on
+valid calibration and muted/stopped playback. These changes respond to R05/R10
+but do not close them until 49/50-cycle DPD, calibration-bank race/reset, and
+routed timing tests pass.
+
+The previous 14-test simulation pass preceded these changes. The expanded
+19-test suite now passes, including standalone DPD golden runs at periods 49
+and 50, deadline-boundary scenarios, RTZ inter-capture checks, calibration
+race/reset cases, and top-level elaboration/simulation. The DPD period tests
+exercise the pipeline, not a routed XCVU13P implementation; real MMCM jitter,
+feedback-path timing, STA/CDC, real-MIG behavior and hardware remain open.
+
 **Revision:** 0.2 — review draft with clock/rate ownership locked 2026-10-16, not release approval
 
 **Audited implementation baseline:** `a7483c1bce6efacb386d27e6f2965bb8e24da593`
@@ -666,7 +682,7 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Action/closure:** implement that matrix and define per-rate processing, FIR acceptance cadence, buffer depths, compatible filter sets and watchdog/stream-readiness behavior. Run sustained full-path PCM tests at every supported rate and with clock drift, missing frames, underrun and overflow. Require status-visible errors rather than simulation-only warnings. Register encoding and implementation verification remain open.
 
-### R05 — P0: DPD real-time deadline is not covered by the passing TB
+### R05 - P0: DPD real-time deadline is not covered by the passing TB
 
 **Evidence:** implemented clock ratio gives 45/46 DSP cycles per conversion. `tb_dpd_engine` uses EN_PERIOD=56; its reported correction latency is 42 clocks after y_valid. NS Stage A reads e1 at enable, whereas y_valid is generated several clocks after the preceding enable.
 

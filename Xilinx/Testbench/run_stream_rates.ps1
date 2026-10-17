@@ -33,7 +33,8 @@ try {
         ForEach-Object { '"' + $_.FullName + '"' }
     $tests = @("tb_stream_rate_controller", "tb_i2s_master_rates", "tb_stream_pipeline",
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
-               "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_vu13p_top")
+               "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
+               "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor")
     $testSources = $tests | ForEach-Object { '"' + (Join-Path $tbDir "$_.sv") + '"' }
     $glbl = Join-Path (Split-Path $VivadoBin -Parent) "data\verilog\src\glbl.v"
     Stage "compile" "xvlog.bat" (@("-sv", "-i", "`"$rtlDir`"", "-d", "SIM") +
@@ -47,12 +48,17 @@ try {
         @{Top="tb_fir_window"; Name="fir_x4"; Generic=@("-generic_top",'"RATE_SHIFT=2"')},
         @{Top="tb_fir_window"; Name="fir_x2"; Generic=@("-generic_top",'"RATE_SHIFT=3"')},
         @{Top="tb_stream_pipeline"; Name="stream_pipeline"; Generic=@()},
+        @{Top="tb_dpd_deadline_monitor"; Name="dpd_deadline"; Generic=@()},
+        @{Top="tb_dpd_engine"; Name="dpd_49cy"; Generic=@("-generic_top",'"EN_PERIOD=49"')},
+        @{Top="tb_dpd_engine"; Name="dpd_50cy"; Generic=@("-generic_top",'"EN_PERIOD=50"')},
+        @{Top="tb_dpd_engine"; Name="dpd_56cy"; Generic=@("-generic_top",'"EN_PERIOD=56"')},
         @{Top="tb_coef_bank_loader"; Name="filter_rate"; Generic=@()},
         @{Top="tb_dac_ctrl_plane"; Name="control"; Generic=@()},
         @{Top="tb_spi_ctrl_plane"; Name="spi"; Generic=@()},
         @{Top="tb_bench_controller"; Name="bench_control"; Generic=@()},
         @{Top="tb_bench_stimulus"; Name="bench_stimulus"; Generic=@()},
         @{Top="tb_cell_measurement"; Name="cell_measurement"; Generic=@()},
+        @{Top="tb_cal_coef_store"; Name="cal_store"; Generic=@()},
         @{Top="tb_vu13p_top"; Name="top"; Generic=@()}
     )
     foreach ($job in $jobs) {

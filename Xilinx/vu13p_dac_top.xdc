@@ -53,9 +53,9 @@ set_property IOSTANDARD LVCMOS18 [get_ports i2s_bclk]
 # -----------------------------------------------------------------------------
 
 # dsp_clk derived from the single mclk input via the MMCM (no internal BUFGMUX;
-# clock selection is external on the LMK00304). At CLKOUT0_DIVIDE_F=3.500:
-#   44.1k family: 903.168/3.5 = 258.05 MHz  (3.875 ns)
-#   48k   family: 983.04 /3.5 = 280.87 MHz  (3.560 ns)
+# clock selection is external on the LMK00304). At CLKOUT0_DIVIDE_F=3.250:
+#   44.1k family: 903.168/3.25 = 277.898 MHz  (3.599 ns)
+#   48k   family: 983.04 /3.25 = 302.474 MHz  (3.306 ns)
 # clk_mclk is constrained at the faster (48k) rate, so dsp_clk timing covers both.
 # NOTE (Step 5.1 synth fix): the previous form used -master_clock/-divide_by
 # without -add, which Vivado rejects (CRITICAL WARNING 12-672) -- the clock
@@ -606,6 +606,7 @@ set_max_delay -datapath_only 5.0 \
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/cal_wr_addr_reg[*] u_ctrl_plane/cal_wr_data_reg[*]}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_cal_store/mem*_reg*}]
+set_false_path -to [get_pins {u_ctrl_plane/cal_write_reject_sync_reg[0]/D}]
 
 # 9) cal readback address clk_200m -> dsp_clk: quasi-static SPI register
 #    (written frames before the readback frame), resampled through 2 FFs.

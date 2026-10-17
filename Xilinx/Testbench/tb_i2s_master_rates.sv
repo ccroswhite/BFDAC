@@ -26,7 +26,7 @@ module tb_i2s_master_rates;
     initial begin
         for(int family=0;family<2;family++) begin
             cell_period=family ? 20.345052083 : 22.144274376;
-            dsp_period=cell_period*3.5/20.0;
+            dsp_period=cell_period*3.25/20.0;
             for(int shift=0;shift<4;shift++) begin
                 for(int d=0;d<3;d++) begin
                     real first_frame, last_frame, measured_period, expected_period;

@@ -4,7 +4,7 @@ module sys_clock_gen (
     input  logic mclk,            // Externally-muxed OCXO master clock (45.1584 or 49.152 MHz)
     input  logic rst_n,
     input  logic mmcm_rst,        // Held high across external clock-mux switches (top level)
-    output logic dsp_clk,         // 258 MHz (44.1k) / 281 MHz (48k) at DIVIDE_F=3.5; up to ~357 MHz
+    output logic dsp_clk,         // 278 MHz (44.1k) / 302 MHz (48k) at DIVIDE_F=3.25
     output logic cell_clk,        // mclk-rate (45.1584/49.152 MHz), MMCM phase-aligned to mclk;
                                   // launches the cascode IOB registers so the external MC100EP52
                                   // reclock FFs (clocked by the same LMK tree) get a full mclk
@@ -32,9 +32,10 @@ module sys_clock_gen (
     //    - 44.1k family: VCO = 45.1584 × 20 = 903.168 MHz
     //    - 48k   family: VCO = 49.152  × 20 = 983.04  MHz
     //
-    //  DSP clock (CLKOUT0_DIVIDE_F = 3.500):
-    //    - 44.1k family: 903.168 / 3.5 = 258.05 MHz
-    //    - 48k   family: 983.04  / 3.5 = 280.87 MHz
+    //  DSP clock (CLKOUT0_DIVIDE_F = 3.250), selected to provide sufficient
+    //  cycles for the DPD feedback path at the converter cadence:
+    //    - 44.1k family: 903.168 / 3.25 = 277.898 MHz
+    //    - 48k   family: 983.04  / 3.25 = 302.474 MHz
     //  Both are within the XCVU13P DSP48E2 Fmax (~450 MHz at -2 speed grade).
     //  Increase CLKOUT0_DIVIDE_F to 2.750 for ~328/357 MHz after P&R validation.
     //
@@ -70,9 +71,7 @@ module sys_clock_gen (
         .CLKIN1_PERIOD(22.151),      // Worst-case (slower): 45.1584 MHz = 22.151 ns
                                      // XDC create_clock uses the faster 20.345 ns
 
-        // DSP Clock: 258.05 MHz (44.1k) / 280.87 MHz (48k) at DIVIDE_F=3.500
-        // Increase CLKOUT0_DIVIDE_F to 2.750 for ~328/357 MHz after P&R validation
-        .CLKOUT0_DIVIDE_F(3.500),
+        .CLKOUT0_DIVIDE_F(3.250),
 
         // CLKOUT1 = VCO/20 = mclk frequency (45.1584/49.152 MHz) — cascode IOB
         // launch clock (cell_clk).

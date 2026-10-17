@@ -27,6 +27,7 @@ module tb_dac_ctrl_plane;
 
     // DUT outputs
     logic [31:0] sys_volume;
+    logic        dpd_enable;
     logic        base_rate_sel, clk_source_sel;
     logic [3:0]  coef_bank_id;
     logic        coef_load_start;
@@ -43,6 +44,9 @@ module tb_dac_ctrl_plane;
     wire [2:0] stream_request;
     wire stream_toggle, source_valid;
     wire [4:0] rx_trim;
+    logic cal_commit_pending=0;
+    logic calibration_valid=1;
+    wire cal_wr_toggle, cal_commit_toggle;
 
     dac_ctrl_plane dut (
         .clk(clk), .ext_rst_n(ext_rst_n),
@@ -60,6 +64,7 @@ module tb_dac_ctrl_plane;
         .coef_load_err(coef_load_err), .coef_load_err_code(coef_load_err_code),
         .sys_volume(sys_volume), .base_rate_sel(base_rate_sel),
         .clk_source_sel(clk_source_sel),
+        .dpd_enable(dpd_enable),
         .coef_bank_id(coef_bank_id), .coef_load_start(coef_load_start),
         .filter_id(filter_id), .filter_next_id(filter_next_id),
         .filter_load_req(filter_load_req), .video_mode(video_mode),
@@ -70,7 +75,12 @@ module tb_dac_ctrl_plane;
         .stream_source_valid(source_valid), .i2s_rx_trim(rx_trim),
         .stream_busy(stream_busy), .stream_clocks_ready(stream_clocks_ready),
         .stream_applied_rate(3'd5), .stream_fault(stream_fault),
-        .stream_audio_ready(stream_audio_ready)
+        .stream_audio_ready(stream_audio_ready),
+        .cal_commit_pending(cal_commit_pending),
+        .cal_write_reject_toggle(1'b0),
+        .calibration_valid(calibration_valid),
+        .cal_wr_toggle(cal_wr_toggle),
+        .cal_commit_toggle(cal_commit_toggle)
     );
 
     // Track filter_load_req pulses
@@ -310,6 +320,38 @@ module tb_dac_ctrl_plane;
         stream_fault=1;
         spi_write(7'h1B, 24'd1);
         check("fault blocks source-ready", source_valid, 0);
+        begin
+            logic old_wr_toggle, old_commit_toggle;
+            old_wr_toggle = cal_wr_toggle;
+            old_commit_toggle = cal_commit_toggle;
+            cal_commit_pending = 1;
+            spi_write(7'h0D, 24'h001234);
+            check("calibration write blocked while pending", cal_wr_toggle, old_wr_toggle);
+            spi_write(7'h0F, 24'd1);
+            check("second calibration commit blocked", cal_commit_toggle, old_commit_toggle);
+            spi_read(7'h1C, rd);
+            check("pending calibration command reports busy", rd[3:0], 4'hC);
+        end
+        cal_commit_pending=0;
+        stream_fault=0;
+        bank_valid=0;
+        spi_write(7'h15, 24'd1);
+        check("DPD enable rejected without a valid FIR bank", dpd_enable, 0);
+        bank_valid=1;
+        calibration_valid=0;
+        spi_write(7'h15, 24'd1);
+        check("DPD enable rejected before calibration commit", dpd_enable, 0);
+        calibration_valid=1;
+        spi_write(7'h15, 24'd1);
+        check("DPD enable accepted only after calibration/filter setup", dpd_enable, 1);
+        spi_read(7'h18, rd);
+        check("calibration status valid bit", rd[11], 1);
+        spi_write(7'h1B, 24'd1);
+        spi_write(7'h15, 24'd0);
+        check("DPD mode cannot change with an active AP stream", dpd_enable, 1);
+        spi_write(7'h1B, 24'd0);
+        spi_write(7'h15, 24'd0);
+        check("DPD disables while muted and source stopped", dpd_enable, 0);
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");
         else             $display("TB_FAIL: %0d errors", errors);

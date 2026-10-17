@@ -54,7 +54,8 @@ module dpd_engine #(
 
     // correction to noise_shaper_ef3 Stage E
     output logic signed [ACCW-1:0] corr,
-    output logic               corr_valid
+    output logic               corr_valid,
+    output logic               busy
 );
 
     `include "dpd_lag_rom.svh"
@@ -108,6 +109,7 @@ module dpd_engine #(
     // finish sequence
     logic signed [ACCW-1:0] sum_r, sumh_r, act_r;
     logic [2:0]  fin;           // one-hot-ish finish pipeline
+    assign busy = running || (|fin);
 
     function automatic logic signed [5:0] hsel(input logic [2:0] lag);
         return hist[lag];

@@ -65,6 +65,8 @@ module dac_ctrl_plane (
     input  logic [23:0] cal_rd_data,      // Quasi-static readback data
     input  logic        cal_active_bank,  // Synced status from cal_coef_store
     input  logic        cal_commit_pending,
+    input  tri0         cal_write_reject_toggle,
+    input  tri1         calibration_valid,
 
     // QSPI flash controller (regs 0x10-0x14, status 0x1A/0x1B — 2026-08-22:
     // ARM-driven coefficient (Flash 1) and bitstream (Flash 0) updates over
@@ -332,9 +334,28 @@ module dac_ctrl_plane (
                 wr_rejected   = 1'b1;
                 wr_rej_reason = ERR_FILT_RANGE;
             end
-            `SPI_W_CAL_DATA: if (cal_ptr_wrapped) begin
+            `SPI_W_CAL_DATA: if (cal_commit_pending) begin
+                wr_rejected   = 1'b1;
+                wr_rej_reason = `SPI_ERR_TEST_BUSY;
+            end else if (cal_ptr_wrapped) begin
                 wr_rejected   = 1'b1;
                 wr_rej_reason = ERR_CAL_WRAP;
+            end
+            `SPI_W_CAL_COMMIT: if (cal_commit_pending) begin
+                wr_rejected   = 1'b1;
+                wr_rej_reason = `SPI_ERR_TEST_BUSY;
+            end
+            `SPI_W_DPD_EN: if (ctrl_bus_data[0] != dpd_enable) begin
+                if (bench_busy || stream_busy || cal_commit_pending ||
+                    cmd_unmute || stream_source_valid) begin
+                    wr_rejected = 1'b1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
+                end else if (ctrl_bus_data[0] &&
+                             (!stream_clocks_ready || !bank_valid_r ||
+                              !calibration_valid || stream_fault)) begin
+                    wr_rejected = 1'b1;
+                    wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
+                end
             end
             `SPI_W_FLASH_CMD: if (flash_cmd_busy) begin
                 wr_rejected   = 1'b1;
@@ -364,15 +385,20 @@ module dac_ctrl_plane (
     // cleared on the next load). 2-FF sync + rising edge -> one event per
     // failure; the code is stable one ui_clk before the level rises.
     (* ASYNC_REG = "TRUE" *) logic [1:0] load_err_sync;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] cal_write_reject_sync;
     logic load_err_d;
+    logic cal_write_reject_seen;
     wire  load_err_evt = load_err_sync[1] && !load_err_d;
+    wire  cal_write_reject_evt = cal_write_reject_sync[2] != cal_write_reject_seen;
     always_ff @(posedge clk) begin
         if (!ext_rst_n) begin
             load_err_sync <= 2'b00;
             load_err_d    <= 1'b0;
+            cal_write_reject_sync <= '0;
         end else begin
             load_err_sync <= {load_err_sync[0], coef_load_err};
             load_err_d    <= load_err_sync[1];
+            cal_write_reject_sync <= {cal_write_reject_sync[1:0], cal_write_reject_toggle};
         end
     end
 
@@ -388,6 +414,7 @@ module dac_ctrl_plane (
             boot_err_d      <= 1'b0;
             err_info_addr   <= 7'd0;
             err_info_reason <= ERR_NONE;
+            cal_write_reject_seen <= 1'b0;
         end else begin
             spi_crc_err_d <= spi_crc_error;
             boot_err_d    <= boot_err_lvl;
@@ -400,6 +427,8 @@ module dac_ctrl_plane (
             if (wr_stb && wr_addr_invalid)       sticky_err[5] <= 1'b1;
             if ((wr_stb && wr_rejected) || load_err_evt)
                                                  sticky_err[6] <= 1'b1;
+            if (cal_write_reject_evt)
+                                                 sticky_err[6] <= 1'b1;
             if ((boot_err_lvl && !boot_err_d) || flash_cmd_err)
                                                  sticky_err[7] <= 1'b1;
             // Error info latch: most recent event wins
@@ -410,6 +439,9 @@ module dac_ctrl_plane (
                 err_info_addr   <= `SPI_W_FILTER_SELECT;
                 err_info_reason <= (coef_load_err_code == 2'd3) ? `SPI_ERR_FILT_RATE :
                                    (coef_load_err_code == 2'd2) ? ERR_FILT_SIZE : ERR_FILT_NOTFOUND;
+            end else if (cal_write_reject_evt) begin
+                err_info_addr   <= `SPI_W_CAL_DATA;
+                err_info_reason <= `SPI_ERR_TEST_BUSY;
             end else if (wr_stb && (wr_addr_invalid || wr_rejected)) begin
                 err_info_addr   <= wr_addr;
                 err_info_reason <= wr_addr_invalid ? ERR_BAD_ADDR : wr_rej_reason;
@@ -424,6 +456,8 @@ module dac_ctrl_plane (
                 err_info_addr   <= 7'd0;
                 err_info_reason <= ERR_NONE;
             end
+            if (cal_write_reject_evt)
+                cal_write_reject_seen <= cal_write_reject_sync[2];
         end
     end
 
@@ -590,7 +624,7 @@ module dac_ctrl_plane (
                             cal_wr_ptr      <= ctrl_bus_data[8:0];
                             cal_ptr_wrapped <= 1'b0;
                         end
-                        `SPI_W_CAL_DATA: if (!stream_busy) begin // write word to shadow bank, auto-increment
+                        `SPI_W_CAL_DATA: if (!stream_busy && !cal_commit_pending) begin // write word to shadow bank, auto-increment
                             cal_wr_data   <= ctrl_bus_data[23:0];
                             cal_wr_addr   <= cal_wr_ptr;   // stable for the CDC sample
                             cal_wr_toggle <= ~cal_wr_toggle;
@@ -598,7 +632,8 @@ module dac_ctrl_plane (
                             if (cal_wr_ptr == 9'd511)
                                 cal_ptr_wrapped <= 1'b1; // overflow flag (sticky[6])
                         end
-                        `SPI_W_CAL_COMMIT: if (!stream_busy) cal_commit_toggle <= cal_commit_toggle ^ ctrl_bus_data[0];
+                        `SPI_W_CAL_COMMIT: if (!stream_busy && !cal_commit_pending)
+                                               cal_commit_toggle <= cal_commit_toggle ^ ctrl_bus_data[0];
                         `SPI_W_CAL_RDADDR:    cal_rd_addr <= ctrl_bus_data[8:0]; // active-bank readback
                         `SPI_W_FLASH_ADDR_LO: flash_cmd_addr[23:0] <= ctrl_bus_data[23:0];
                         `SPI_W_FLASH_ADDR_HI: begin // + target select [9:8]
@@ -670,7 +705,8 @@ module dac_ctrl_plane (
             // 0x17: Current + next-in-list filter IDs (next is informational only)
             `SPI_R_FILTER_IDS: spi_tx_data_c = {filter_next_id, filter_id};
             // 0x18: Cal store status
-            `SPI_R_CAL_STATUS: spi_tx_data_c = {21'd0, cal_wr_ptr, cal_commit_pending, cal_active_bank};
+            `SPI_R_CAL_STATUS: spi_tx_data_c = {20'd0, calibration_valid, cal_wr_ptr,
+                                                cal_commit_pending, cal_active_bank};
             // 0x19: Cal active-bank readback (address set via 0x0F)
             `SPI_R_CAL_RDDATA: spi_tx_data_c = {8'd0, cal_rd_data};
             // 0x1A: Flash / boot-loader status
