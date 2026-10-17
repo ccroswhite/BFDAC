@@ -30,6 +30,7 @@ module tb_halfband_x2;
     localparam int  ACC_WIDTH  = 48;
     localparam int  DSP_STAGES = 3;
     localparam int  CENTER_TAP = (NUM_TAPS - 1) / 2;  // 31
+    localparam int  FAST_CENTER_TAP = (15 - 1) / 2;
     localparam int  NUM_NONZERO = (NUM_TAPS + 1) / 4; // 16
     localparam real CLK_PERIOD = 2.8;                  // ~357 MHz
     // Pipeline latency: in_valid → out_valid = DSP_STAGES+1 clock cycles
@@ -61,6 +62,18 @@ module tb_halfband_x2;
         .data_out (data_out)
     );
 
+    logic                         fast_rst_n=0, fast_in_valid=0;
+    logic signed [DATA_WIDTH-1:0] fast_data_in=0;
+    wire                          fast_out_valid;
+    wire signed [ACC_WIDTH-1:0]   fast_data_out;
+    halfband_x2 #(
+        .NUM_TAPS(15), .DATA_WIDTH(DATA_WIDTH), .COEF_WIDTH(COEF_WIDTH),
+        .ACC_WIDTH(ACC_WIDTH), .OUT_SPACING(1)
+    ) u_fast_spacing (
+        .clk(clk), .rst_n(fast_rst_n), .in_valid(fast_in_valid),
+        .data_in(fast_data_in), .out_valid(fast_out_valid), .data_out(fast_data_out)
+    );
+
     // -------------------------------------------------------------------------
     //  Module-scope variables (XSim: no declarations inside initial)
     // -------------------------------------------------------------------------
@@ -85,6 +98,40 @@ module tb_halfband_x2;
 
     // Per-sample shreg model for pass-through verification
     logic signed [DATA_WIDTH-1:0] tb_shreg [0:NUM_TAPS-1];
+    logic signed [DATA_WIDTH-1:0] fast_shreg [0:14];
+    logic signed [DATA_WIDTH-1:0] fast_expected_center [0:63];
+    int fast_in_count=0, fast_pass_count=0, fast_out_count=0, fast_errors=0;
+    logic signed [ACC_WIDTH-1:0] fast_expected_value;
+
+    always @(posedge clk) begin
+        if (!fast_rst_n) begin
+            fast_in_count = 0;
+            fast_pass_count = 0;
+            fast_out_count = 0;
+            fast_errors = 0;
+            for (int j=0; j<15; j++) fast_shreg[j] = '0;
+        end else begin
+            if (fast_out_valid) begin
+                if ((fast_out_count % 2) == 0) begin
+                    fast_expected_value = ACC_WIDTH'($signed(fast_expected_center[fast_pass_count]));
+                    fast_expected_value = fast_expected_value <<< (ACC_WIDTH-DATA_WIDTH);
+                    if (fast_data_out !== fast_expected_value) begin
+                        $display("FAIL: fast-spacing pass sample %0d got=%h expect=%h",
+                                 fast_pass_count,fast_data_out,fast_expected_value);
+                        fast_errors++;
+                    end
+                    fast_pass_count++;
+                end
+                fast_out_count++;
+            end
+            if (fast_in_valid) begin
+                fast_expected_center[fast_in_count] = fast_shreg[FAST_CENTER_TAP];
+                fast_in_count++;
+                for (int j=14; j>0; j--) fast_shreg[j] = fast_shreg[j-1];
+                fast_shreg[0] = fast_data_in;
+            end
+        end
+    end
 
     // General purpose expected/actual holders
     logic signed [ACC_WIDTH-1:0] expected;
@@ -314,8 +361,8 @@ module tb_halfband_x2;
         //   inputs, the trigger's first output = marker << 24.
         do_reset(NUM_TAPS + DSP_STAGES);
         drive_sample(24'sh5A5A5A, 2);          // marker enters shreg[0]; phase→1
-        repeat(CENTER_TAP - 1) drive_sample(0, 2); // 30 zeros; phase stays 1 (30 toggles)
-        // marker is now at shreg[CENTER_TAP-1]. One more push puts it at shreg[CENTER_TAP].
+        repeat(CENTER_TAP) drive_sample(0, 2);     // 31 zeros; marker advances to tap 31
+        // marker is now at shreg[CENTER_TAP]. The following trigger observes it.
         // Fire trigger with phase=1:
         @(negedge clk); data_in = 0; in_valid = 1;
         @(posedge clk);
@@ -343,10 +390,10 @@ module tb_halfband_x2;
         //  Send a constant DC value for NUM_TAPS samples after reset.
         //  Once the shift register is full (sample NUM_TAPS onwards), the
         //  filtered output should equal:
-        //    y_filtered = dc_val * (coef_center + 2*sum(coef_rom)) / 2^COEF_WIDTH
+        //    y_filtered = dc_val * (coef_center + 2*sum(coef_rom)) / 2^(Q1.17)
         //  In Q1.17: sum all taps of the full impulse response.
-        //  For the half-band, DC gain = coef_center/2^COEF_WIDTH
-        //                              + 2 * sum(coef_rom[k])/2^COEF_WIDTH
+        //  For the half-band, DC gain = coef_center/2^17
+        //                              + 2 * sum(coef_rom[k])/2^17
         //  (symmetric pairs each contribute 2x).
         //  The pass-through output when shreg is full of dc_val equals:
         //    y_passthru = dc_val << (ACC_WIDTH - DATA_WIDTH)
@@ -363,10 +410,11 @@ module tb_halfband_x2;
         for (k = 0; k < NUM_NONZERO; k++)
             dc_acc = dc_acc + 2 * $signed(tb_coef[k]);
         // dc_acc is the sum of the filter taps in Q1.17 integer units.
-        // RTL computes: (product >>> COEF_WIDTH) = product / 2^18
-        // For DC input dc_val: filtered = dc_val * dc_acc / 2^18 (integer division = >>>)
+        // RTL rounds the full-precision sum, then shifts by COEF_WIDTH-1 = 17.
+        // Both output phases use the same ACC_WIDTH representation.
         // Use dc_val = 24'sh400000 (= 2^22, near full-scale but avoids overflow)
-        dc_expected = ($signed(24'sh400000) * dc_acc) >>> COEF_WIDTH;
+        dc_expected = ($signed(24'sh400000) * dc_acc) >>> (COEF_WIDTH - 1);
+        dc_expected = dc_expected <<< (ACC_WIDTH - DATA_WIDTH);
         $display("  DC coef sum (Q1.17 integer) = %0d", dc_acc);
         $display("  Expected filtered output for dc_val=0x400000: 0x%0h (%0d)",
                  48'(dc_expected), dc_expected);
@@ -485,8 +533,10 @@ module tb_halfband_x2;
         end
 
         // Check (d): center-tap filtered output must appear somewhere in buffer
-        // Expected = impulse * coef_center >>> COEF_WIDTH (at phase=0 output)
-        expected = 48'(($signed(24'sh400000) * $signed(tb_coef_center)) >>> COEF_WIDTH);
+        // Expected = (impulse * coef_center >>> (Q1.17)) in ACC_WIDTH scale.
+        expected = ACC_WIDTH'(($signed(24'sh400000) * $signed(tb_coef_center))
+                              >>> (COEF_WIDTH - 1));
+        expected = expected <<< (ACC_WIDTH - DATA_WIDTH);
         nonzero_count = 0;  // reuse as found-flag
         for (i = 0; i < ir_count; i++)
             if (ir_cap[i] === expected) nonzero_count = 1;
@@ -572,6 +622,31 @@ module tb_halfband_x2;
         else begin
             if (!hb31_fired) $display("  FAIL: 31-tap never fired");
             if (!hb15_fired) $display("  FAIL: 15-tap never fired");
+            error_count++;
+        end
+
+        // Input pulses are exactly two DSP clocks apart, the tight valid
+        // cadence for OUT_SPACING=1. Verify the bypass sample stays aligned
+        // while a later input advances the sample history during the FIR pipe.
+        $display("\n--- TEST 10: center alignment at fast legal input spacing ---");
+        fast_rst_n = 0;
+        repeat(5) @(posedge clk);
+        fast_rst_n = 1;
+        repeat(2) @(posedge clk);
+        for (i=0; i<48; i++) begin
+            @(negedge clk);
+            fast_data_in = i*7919 - 150000;
+            fast_in_valid = 1;
+            @(negedge clk);
+            fast_in_valid = 0;
+            fast_data_in = 0;
+        end
+        repeat(32) @(posedge clk);
+        if (fast_errors==0 && fast_pass_count==48 && fast_out_count==96)
+            $display("  PASS: %0d pass-through samples remain aligned",fast_pass_count);
+        else begin
+            $display("  FAIL: inputs=%0d bypasses=%0d outputs=%0d errors=%0d",
+                     fast_in_count,fast_pass_count,fast_out_count,fast_errors);
             error_count++;
         end
 

@@ -23,16 +23,19 @@ now 3.25 (about 277.9/302.5 MHz; 49.23 DSP clocks per conversion). A Stage-A
 DPD-correction deadline fault is sticky and inhibits playback; the coefficient
 store now waits for DPD idle before swapping and rejects/reports writes during a
 pending commit. Rate changes reset calibration-valid; DPD enable is gated on
-valid calibration and muted/stopped playback. These changes respond to R05/R10
-but do not close them until 49/50-cycle DPD, calibration-bank race/reset, and
-routed timing tests pass.
+valid calibration and muted/stopped playback. The FIR bank manager now waits
+for the last active phase of a native input frame before swapping banks.
+Halfband products are accumulated at full precision then shifted once at Q1.17;
+the bypass center sample uses a matched pipeline stage. Automute timers are
+scaled for the 302.474 MHz family clock and `switch_busy` marks relay
+transitions rather than every non-PLAYING state.
 
-The previous 14-test simulation pass preceded these changes. The expanded
-19-test suite now passes, including standalone DPD golden runs at periods 49
+The expanded 22-job suite passed after these changes, including standalone DPD golden runs at periods 49
 and 50, deadline-boundary scenarios, RTZ inter-capture checks, calibration
 race/reset cases, and top-level elaboration/simulation. The DPD period tests
 exercise the pipeline, not a routed XCVU13P implementation; real MMCM jitter,
-feedback-path timing, STA/CDC, real-MIG behavior and hardware remain open.
+feedback-path timing, FIR-bank behavior in the actual URAM/MAC implementation,
+STA/CDC, real-MIG behavior and hardware remain open.
 
 **Revision:** 0.2 — review draft with clock/rate ownership locked 2026-10-16, not release approval
 
@@ -704,9 +707,14 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Action/closure:** define an explicit safe-to-test/transition-busy contract and test it with the real automute instance, synchronized statuses and actual SPI transactions. Keep output safety while removing the contradictory gating.
 
+**RTL follow-up:** `switch_busy` now asserts only in FLUSHING, SWITCHING,
+RAIL_SETTLING or SETTLING. It is low while stably muted and safe for a
+diagnostic. The automute timing/state and muted cell-test unit regressions pass;
+an assembled hardware/relay qualification is still required.
+
 ### R08 — P1: Mute, soak and rail-fault recovery are not a complete safety case
 
-**Evidence:** hardware PG/DONE gates exist, but normal automute has no PG input/thermal-soak timer. Its timer comments assume 90 MHz while actual clocks are 258/281 MHz: 4.5M flush clocks are about 16–17 ms, and 900k settle clocks about 3.2–3.5 ms, not the annotated 50/10 ms. The recorded approximately 120 s heat-soak policy is not present as an explicit RTL timer. Host policy is not supplied in this repository.
+**Evidence:** hardware PG/DONE gates exist, but normal automute has no PG input/thermal-soak timer. The audited baseline's timer assumptions did not match its DSP clock. Current defaults are 15.125M flush clocks (~50.0ms), 3.025M relay-settle clocks (~10.0ms) and 151.25M rail-settle clocks (~500ms) at 302.474MHz. The recorded approximately 120s heat-soak policy is not present as an explicit RTL timer. Host policy is not supplied in this repository.
 
 **Action/closure:** allocate soak/readiness/re-arm responsibility, model mechanical relay release versus supply collapse, verify power restoration cannot reconnect unexpectedly, and test AP failure, stuck request, missing clock, regulator faults, configuration and partial-power states. Reconcile legacy headphone controls with their removed hardware. Quantify analog safe states even while XLR is disconnected.
 
@@ -727,9 +735,11 @@ swaps directly on loader `load_done`. A new `fir_frame_done` pulse follows the
 last active interpolation phase for a native input sample; the manager waits
 for that pulse before changing `bank_select`, leaving the distributed select
 tree time to settle before the next input-frame sweep. The controller unit test
-and eight-rate pipeline test now cover boundary waiting and per-frame pulse
-counts. Process 33632 is running the expanded suite; no test result is claimed
-until its logs are reviewed.
+and eight-rate pipeline test cover boundary waiting and per-frame pulse counts.
+Process 33632 completed all 20 configured simulations, including the new
+boundary and frame-count checks; see `logs/fir_bank_boundary_v1/summary.log`.
+This is simulation evidence only; high-resource URAM/MAC route and physical
+clock-pipeline margin still need qualification.
 
 ### R11 — P1: CDC/reset sign-off and historical timing assumptions
 

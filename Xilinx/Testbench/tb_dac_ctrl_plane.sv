@@ -321,6 +321,20 @@ module tb_dac_ctrl_plane;
         spi_write(7'h1B, 24'd1);
         check("fault blocks source-ready", source_valid, 0);
         begin
+            logic [7:0] old_cell_cfg;
+            old_cell_cfg = cell_cfg[0];
+            switch_busy = 1;
+            spi_write(7'h18, 24'h000080);
+            check("cell test blocked while relay state is transitioning", cell_cfg[0], old_cell_cfg);
+            switch_busy = 0;
+            line_mute_status = 0;
+            hp_mute_status = 0;
+            spi_write(7'h18, 24'h000080);
+            check("cell test accepted while safely muted and settled", cell_cfg[0], 8'h80);
+            spi_write(7'h18, 24'h000000);
+            check("cell test disabled after diagnostic", cell_cfg[0], 8'h00);
+        end
+        begin
             logic old_wr_toggle, old_commit_toggle;
             old_wr_toggle = cal_wr_toggle;
             old_commit_toggle = cal_commit_toggle;

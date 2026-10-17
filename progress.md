@@ -4119,7 +4119,7 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       analog capture or board test was run. The 3.25 divider's FPGA Fmax,
       DPD physical deadline and all remaining manufacturing gates remain open.
 
-    - 2026-10-17 FIR FILTER-BANK BOUNDARY FOLLOW-UP (verification pending):
+    - 2026-10-17 FIR FILTER-BANK BOUNDARY FOLLOW-UP:
       Confirmed the filter-bank manager switched immediately on loader
       load_done; its former sample_tick input was tied low. Added an FIR
       input_frame_done marker after all rate-selected polyphase outputs for a
@@ -4127,6 +4127,24 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       swapping, allowing the bank-select read-mux pipeline to settle before
       the next sweep. Added manager boundary-wait checks and native-frame
       completion counts to the 8-rate pipeline regression. Detached Vivado
-      suite process 33632 is running; logs will be at
-      `logs/fir_bank_boundary_v1/summary.log`. This follow-up is local and
-      uncommitted. No synthesis/place/route or hardware evidence is implied.
+      suite process 33632 completed 20 configured simulations PASS, including
+      the bank-manager boundary guard, native-frame completion count at all
+      eight rates, and preceding DPD/calibration regressions. Summary:
+      `logs/fir_bank_boundary_v1/summary.log` (local/ignored). This follow-up
+      is committed in `bf48d90`; synthesis/place/route and hardware evidence
+      remain outstanding.
+
+    - 2026-10-17 HALF-BAND/AUTOMUTE FOLLOW-UP:
+      Corrected halfband coefficient scaling to Q1.17, retained products at
+      full precision through accumulation, and pipelined the center sample
+      alongside the product path. Updated DC/impulse expected values and added
+      a fast-legal-spacing center-alignment test. Automute delays now use the
+      302.474 MHz maximum-family DSP clock; switch_busy clears in stable mute/
+      play and stays asserted during relay sequencing. Added automute and
+      safe-muted cell-test regression cases. The 22-job expanded Vivado suite
+      passed at process 10364: xvlog, all elaborations and all 22 simulations
+      PASS, including halfband DC gain/center alignment and automute/cell-test
+      behavior. Two existing testbench-scope warnings remain (`n_before`, `lo`).
+      Logs: `logs/halfband_automute_v2/summary.log` (local/ignored). No synthesis,
+      place-and-route, routed timing/CDC, real-MIG, relay-hardware or analog
+      qualification was performed.

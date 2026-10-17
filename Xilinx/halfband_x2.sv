@@ -18,8 +18,9 @@
 // Latency: GROUP_DELAY = (NUM_TAPS-1)/2 + DSP_PIPE_STAGES input sample clocks
 //          (propagated as output port for downstream alignment).
 //
-// Coefficient format: signed 18-bit fixed-point, Q1.17
-//   (range -1.0 to +0.99999, scaled so sum of non-zero coefs ≈ 0.5 for unity gain)
+// Coefficient format: signed 18-bit fixed-point, Q1.17 (scale = 2^17).
+//   The center tap is 0.5; each stored coefficient represents a symmetric pair
+//   and the complete impulse response has unity DC gain.
 //
 // Instantiation example (three stages in dac_dsp_core):
 //   halfband_x2 #(.NUM_TAPS(63), .DATA_WIDTH(24), .COEF_WIDTH(18), .ACC_WIDTH(48))
@@ -212,30 +213,40 @@ module halfband_x2 #(
     end
 
     // Center tap contribution (no pre-add, direct multiply)
-    logic signed [DATA_WIDTH:0]            center_sample_s1;
+    logic signed [DATA_WIDTH:0]            center_sample_s1, center_sample_s2;
     logic signed [DATA_WIDTH+COEF_WIDTH:0] center_product;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             center_sample_s1 <= '0;
+            center_sample_s2 <= '0;
             center_product   <= '0;
         end else begin
             if (in_valid)
                 center_sample_s1 <= $signed({shreg[CENTER_TAP][DATA_WIDTH-1], shreg[CENTER_TAP]});
             if (valid_pipe[0])
+                center_sample_s2 <= center_sample_s1;
+            if (valid_pipe[0])
                 center_product   <= center_sample_s1 * $signed(coef_center);
         end
     end
 
-    // Stage 2: accumulate all products (adder tree inferred)
+    // Keep product precision through the sum; shift once to Q1.17 output scale.
+    localparam int PRODUCT_WIDTH = DATA_WIDTH + COEF_WIDTH + 1;
+    localparam int SUM_WIDTH = PRODUCT_WIDTH + $clog2(NUM_NONZERO + 1);
+    logic signed [SUM_WIDTH-1:0] full_sum_comb, rounded_sum, scaled_sum;
     logic signed [ACC_WIDTH-1:0] acc_filtered;
     logic signed [ACC_WIDTH-1:0] acc_passthru;
-    logic signed [ACC_WIDTH-1:0] acc_sum_comb;  // combinatorial sum wire
+    logic signed [ACC_WIDTH-1:0] acc_sum_comb;
 
     always_comb begin
-        acc_sum_comb = ACC_WIDTH'(center_product >>> COEF_WIDTH);
+        full_sum_comb = SUM_WIDTH'($signed(center_product));
         for (int j = 0; j < NUM_NONZERO; j++)
-            acc_sum_comb = acc_sum_comb + ACC_WIDTH'(products[j] >>> COEF_WIDTH);
+            full_sum_comb = full_sum_comb + SUM_WIDTH'($signed(products[j]));
+
+        rounded_sum = full_sum_comb + (SUM_WIDTH'(1) <<< (COEF_WIDTH - 2));
+        scaled_sum = rounded_sum >>> (COEF_WIDTH - 1);
+        acc_sum_comb = ACC_WIDTH'($signed(scaled_sum)) <<< (ACC_WIDTH - DATA_WIDTH);
     end
 
     always_ff @(posedge clk) begin
@@ -244,7 +255,8 @@ module halfband_x2 #(
             acc_passthru <= '0;
         end else if (valid_pipe[2]) begin
             acc_filtered <= acc_sum_comb;
-            acc_passthru <= ACC_WIDTH'(signed'(shreg[CENTER_TAP]) <<< (ACC_WIDTH - DATA_WIDTH));
+            acc_passthru <= ACC_WIDTH'($signed(center_sample_s2[DATA_WIDTH-1:0]))
+                            <<< (ACC_WIDTH - DATA_WIDTH);
         end
     end
 

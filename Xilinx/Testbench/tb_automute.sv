@@ -21,10 +21,10 @@ module tb_automute;
     localparam int CLK_PERIOD_NS = 11; // ~90 MHz
 
     // Short timings for simulation
-    localparam logic [25:0] TB_FLUSH  = 26'd200;
-    localparam logic [25:0] TB_SETTLE = 26'd50;
-    localparam logic [25:0] TB_SWITCH = 26'd50;
-    localparam logic [25:0] TB_RAIL   = 26'd400;
+    localparam logic [27:0] TB_FLUSH  = 28'd200;
+    localparam logic [27:0] TB_SETTLE = 28'd50;
+    localparam logic [27:0] TB_SWITCH = 28'd50;
+    localparam logic [27:0] TB_RAIL   = 28'd400;
 
     logic clk;
     logic rst_n;
@@ -113,14 +113,17 @@ module tb_automute;
         // 1. Reset state: everything muted / de-energized
         check(line_mute_drive === 0 && hp_mute_drive === 0 &&
               hp_rails_drive === 0 && force_zero === 1 &&
-              level_relay_drive === 3'b000,
+              level_relay_drive === 3'b000 && switch_busy === 0,
               "reset state correct (all de-energized, clamped, 2V level)");
 
         // 2. Unmute -> Playing on line output
         spi_unmute = 1;
+        wait (switch_busy === 1);
+        check(force_zero === 1, "switch_busy asserted while relays are settling");
         wait (line_mute_drive === 1 && force_zero === 0);
         check(hp_mute_drive === 0 && hp_rails_drive === 0,
               "playing on line output; HP branch dead");
+        check(switch_busy === 0, "switch_busy is clear during stable playback");
         repeat(10) @(posedge clk);
 
         // 3. i2s_err -> immediate mute
@@ -148,6 +151,7 @@ module tb_automute;
         level_switch_req = 0;
         // must re-mute before the level changes
         wait (line_mute_drive === 0 && force_zero === 1);
+        check(switch_busy === 1, "switch_busy asserts during a relay transition");
         check(level_relay_drive !== 3'b010,
               "level did not change before mute");
         wait (level_relay_drive === 3'b010);
@@ -199,9 +203,9 @@ module tb_automute;
         check(hp_mute_drive === 0 && hp_rails_drive === 0,
               "back on line; HP branch dead again");
 
-        if (fail_count == 0) $display("Testbench complete: ALL PASS");
-        else                 $display("Testbench complete: %0d FAILURES", fail_count);
-        $stop;
+        if (fail_count == 0) $display("TB_PASS: tb_automute all tests passed");
+        else                 $display("TB_FAIL: %0d errors (tb_automute)", fail_count);
+        $finish;
     end
 
 endmodule

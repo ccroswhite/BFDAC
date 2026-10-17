@@ -20,13 +20,14 @@
 // not lost. The level registers reset only on rst_n (NOT on mute / i2s_err /
 // rate change) so the applied level is never silently reverted to 2 V.
 module automute_controller #(
-    // Timings at 90MHz (overridable for simulation)
-    parameter logic [25:0] FLUSH_CYCLES       = 26'd4_500_000,  // 50ms pipeline drain
-    parameter logic [25:0] SETTLE_CYCLES      = 26'd900_000,    // 10ms contact settle
-    parameter logic [25:0] SWITCH_CYCLES      = 26'd900_000,    // 10ms select/level relays
-    parameter logic [25:0] RAIL_SETTLE_CYCLES = 26'd45_000_000  // 500ms HP rails + bias settle
+    // Defaults provide at least the requested wall time at 302.474 MHz, the
+    // faster family DSP clock. Simulation may override these parameters.
+    parameter logic [27:0] FLUSH_CYCLES       = 28'd15_125_000,  // ~50ms pipeline drain
+    parameter logic [27:0] SETTLE_CYCLES      = 28'd3_025_000,   // ~10ms contact settle
+    parameter logic [27:0] SWITCH_CYCLES      = 28'd3_025_000,   // ~10ms relay transition
+    parameter logic [27:0] RAIL_SETTLE_CYCLES = 28'd151_250_000  // ~500ms HP rails + bias settle
 )(
-    input  logic clk,           // 90MHz DSP Clock
+    input  logic clk,           // audio-family DSP clock (277.898/302.474 MHz)
     input  logic rst_n,
     
     // Control Plane
@@ -57,7 +58,7 @@ module automute_controller #(
     } state_t;
     state_t state;
 
-    logic [25:0] timer;
+    logic [27:0] timer;
     logic        rate_sel_q;
     logic        rate_changed;
     logic        level_switch_pending;
@@ -187,6 +188,9 @@ module automute_controller #(
     end
 
     assign level_relay_drive = level_relay_int;
-    assign switch_busy       = (state != ST_PLAYING);
+    assign switch_busy       = (state == ST_FLUSHING) ||
+                               (state == ST_SWITCHING) ||
+                               (state == ST_RAIL_SETTLING) ||
+                               (state == ST_SETTLING);
 
 endmodule
