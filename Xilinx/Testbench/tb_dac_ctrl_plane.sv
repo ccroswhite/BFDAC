@@ -39,6 +39,7 @@ module tb_dac_ctrl_plane;
     wire [1:0] cell_req;
     wire [1:0][7:0] cell_cfg;
     logic stream_busy=0, stream_clocks_ready=1, stream_fault=0;
+    logic stream_audio_ready=1;
     wire [2:0] stream_request;
     wire stream_toggle, source_valid;
     wire [4:0] rx_trim;
@@ -68,7 +69,8 @@ module tb_dac_ctrl_plane;
         .stream_rate_request(stream_request), .stream_rate_toggle(stream_toggle),
         .stream_source_valid(source_valid), .i2s_rx_trim(rx_trim),
         .stream_busy(stream_busy), .stream_clocks_ready(stream_clocks_ready),
-        .stream_applied_rate(3'd5), .stream_fault(stream_fault)
+        .stream_applied_rate(3'd5), .stream_fault(stream_fault),
+        .stream_audio_ready(stream_audio_ready)
     );
 
     // Track filter_load_req pulses
@@ -293,10 +295,18 @@ module tb_dac_ctrl_plane;
         spi_write(7'h1B, 24'd0);
         spi_write(7'h1C, 24'd31);
         check("capture trim while stopped", rx_trim, 31);
+        stream_audio_ready=0;
+        spi_write(7'h04, 24'd1);
+        check("unmute blocked before first valid PCM frame", spi_unmute, 0);
+        stream_audio_ready=1;
+        spi_write(7'h04, 24'd1);
+        check("unmute after clocks, bank and first valid frame", spi_unmute, 1);
+        spi_write(7'h04, 24'd0);
         spi_read(7'h20, rd);
         check("applied stream rate status", rd[7:5], 5);
         check("requested stream rate status", rd[10:8], 7);
         check("capture trim status", rd[15:11], 31);
+        check("valid PCM frame status", rd[16], 1);
         stream_fault=1;
         spi_write(7'h1B, 24'd1);
         check("fault blocks source-ready", source_valid, 0);

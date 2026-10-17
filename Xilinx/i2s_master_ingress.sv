@@ -11,7 +11,7 @@ module i2s_master_ingress (
     input logic i2s_data,
     output logic i2s_bclk, i2s_lrclk,
     output logic [23:0] audio_l, audio_r,
-    output logic new_sample, i2s_err, transport_fault
+    output logic new_sample, i2s_err, transport_fault, audio_frame_ready
 );
     (* ASYNC_REG = "TRUE" *) logic [1:0] cell_reset, enable_cell;
     logic [3:0] half_count;
@@ -81,6 +81,7 @@ module i2s_master_ingress (
             sample_pipe <= 0; serial_word <= 0; left_word <= 0;
             expected_bit <= 0; frame_armed <= 0; cadence_fault <= 0;
             watchdog <= 0; audio_l <= 0; audio_r <= 0; new_sample <= 0;
+            audio_frame_ready <= 0;
             for (int i = 0; i < 96; i++) tag_pipe[i] <= 0;
         end else begin
             launch_sync <= {launch_sync[1:0], launch_toggle};
@@ -96,6 +97,7 @@ module i2s_master_ingress (
             if (!enable_sync[1]) begin
                 sample_pipe <= 0; frame_armed <= 0; expected_bit <= 0;
                 watchdog <= 0; cadence_fault <= 0;
+                audio_frame_ready <= 0;
                 audio_l <= 0; audio_r <= 0;
             end else begin
                 if (watchdog < watchdog_limit) watchdog <= watchdog + 1'b1;
@@ -114,6 +116,7 @@ module i2s_master_ingress (
                         audio_l <= valid_sync[1] ? left_word : 24'd0;
                         audio_r <= valid_sync[1] ? shifted_word[31:8] : 24'd0;
                         new_sample <= 1;
+                        if (valid_sync[1]) audio_frame_ready <= 1;
                         watchdog <= 0;
                     end
                 end
@@ -126,6 +129,7 @@ module i2s_master_ingress (
                 watchdog <= 0;
                 cadence_fault <= 0;
                 new_sample <= 0;
+                audio_frame_ready <= 0;
             end
         end
     end

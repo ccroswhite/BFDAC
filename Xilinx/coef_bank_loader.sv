@@ -283,8 +283,19 @@ module coef_bank_loader #(
     wire [7:0]  dir_packing       = dir_beat1[39:32];
     wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1);
     wire [31:0] dir_expect_bytes  = (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
-    wire dir_rate_ok = dir_beat0[31:24] == {7'd0, ~rate_r[0]} &&
-                       dir_beat1[47:40] == {6'd0, rate_r[2:1]} &&
+    wire [7:0] dir_rate_code = dir_beat0[31:24];
+    wire [1:0] dir_rate_shift = dir_rate_code[2:1];
+    wire [7:0] dir_rate_schema = dir_beat1[55:48];
+    wire [7:0] dir_rate_shift_mirror = dir_beat1[47:40];
+    wire dir_rate_version_ok =
+        ((dir_rate_schema == 8'd0) && (rate_r[2:1] == 0) &&
+         (dir_rate_shift == 0) && (dir_rate_shift_mirror == 0)) ||
+        ((dir_rate_schema == 8'd3) &&
+         (dir_rate_shift == rate_r[2:1]) &&
+         (dir_rate_shift_mirror == {6'd0, rate_r[2:1]}));
+    wire dir_rate_ok = dir_rate_version_ok &&
+                       (dir_rate_code[0] == ~rate_r[0]) &&
+                       (dir_rate_code[7:3] == 0) &&
                        dir_beat0[63:32] == (32'(NUM_MACS * COEF_DEPTH) >> rate_r[2:1]);
 
     // Packed burst address: beats issued so far x 16 B

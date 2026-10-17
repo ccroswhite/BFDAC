@@ -102,7 +102,8 @@ module dac_ctrl_plane (
     input  tri0           stream_busy,
     input  tri1           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
-    input  tri0           stream_fault
+    input  tri0           stream_fault,
+    input  tri1           stream_audio_ready
 );
 
     // Cal shadow-bank write pointer. cal_wr_addr (the exported CDC bus) holds
@@ -311,7 +312,7 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
             end
-            `SPI_W_UNMUTE: if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || stream_fault ||
+            `SPI_W_UNMUTE: if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || !stream_audio_ready || stream_fault ||
                                           bench_busy || cell_test_enabled || |cell_test_busy)) begin
                 wr_rejected = 1'b1;
                 wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
@@ -682,7 +683,7 @@ module dac_ctrl_plane (
             //       recent sticky[4..7] event; cleared by the W1C (0x16)
             `SPI_R_CMD_ERR_INFO: spi_tx_data_c = {21'd0, err_info_addr, err_info_reason};
             `SPI_R_BENCH_STATUS: spi_tx_data_c = bench_status;
-            `SPI_R_STREAM_STATUS: spi_tx_data_c = {16'd0, i2s_rx_trim, stream_rate_request,
+            `SPI_R_STREAM_STATUS: spi_tx_data_c = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
                 stream_clocks_ready, stream_busy};
             `SPI_R_CELL_TEST_L: spi_tx_data_c = {23'd0, cell_test_busy[0], cell_test_cfg[0]};

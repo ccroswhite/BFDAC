@@ -393,7 +393,7 @@ write addr latches sticky[5].
 | 0x1D | Read | CELL_TEST_L | [8]=CDC command pending, [7:0]=last accepted L command; not an analog-settled indicator |
 | 0x1E | Read | CELL_TEST_R | Same status for R |
 | 0x1F | Read | BENCH_STATUS | Local button controller: busy[0], LED[1], mode[3:2], R-channel[4], step[11:5], rate[12], FSM[15:13], press count[18:16], cancel[19], fault[20]; full protocol in docs/coef_format_v2.md |
-| 0x20 | Read | STREAM_STATUS | busy[0], clocks-ready[1], AP-ready[2], bank-valid[3], fault[4], applied rate[7:5], requested rate[10:8], capture trim[15:11] |
+| 0x20 | Read | STREAM_STATUS | busy[0], clocks-ready[1], AP-ready[2], bank-valid[3], fault[4], applied rate[7:5], requested rate[10:8], capture trim[15:11], first complete valid PCM frame seen[16] |
 
 Names/addresses/reason codes are defined once in `Xilinx/spi_regs.svh` (`SPI_W_*`, `SPI_R_*`, `SPI_ERR_*`, `SPI_STICKY_*`); `dac_ctrl_plane.sv` decodes exclusively through those macros. TBs keep numeric literals (they document the wire protocol).
 
@@ -4039,6 +4039,12 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       not yet established. FPGA place-and-route remains ON HOLD per user.
       R03 enable-voltage hardware check, physical capture-phase qualification,
       R05 DPD deadline and remaining audit findings are not closed.
+      Detached verification launch (2026-10-16): process 33672 exited during
+      xvlog compile before any elaboration/simulation. Cause: the new
+      rate-metadata loader tests called wait_for_load_done without its
+      mandatory timeout argument. Corrected both call sites to use the
+      bench's one-million-cycle timeout. No Vivado synthesis/place/route ran.
+      Compile/regression results remain pending a fresh detached launch.
 
     - SYSTEM DESIGN DOCUMENT REBUILT (user-directed):
       docs/SYSTEM_ARCHITECTURE.md revision 1.0 now describes the intended
@@ -4060,3 +4066,18 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       Validation: 103 local document links/anchors checked, rate-matrix
       arithmetic checked for all eight rates, code fences/whitespace checked.
       Findings R01-R20 and review gates match the pre-rebuild record unchanged.
+
+    - 2026-10-16 MULTIRATE RTL VIVADO REGRESSION (source tree at run):
+      Detached `run_stream_rates.ps1` completed; xvlog compile and all 14
+      xelab/xsim jobs passed: stream-rate controller, 24 I2S family/rate/
+      return-delay cases, FIR x16/x8/x4/x2, eight-rate I2S/FIR/HB/pacer/RTZ
+      pipeline, rate-aware coefficient loader (including legacy V2 and V3),
+      SPI/control, bench controller/stimulus, cell measurement and stubbed
+      top-level integration. Vivado emitted two existing testbench-scope
+      warnings (`n_before`, `lo`), no compiler errors. Logs are ignored local
+      files at `logs/stream_rates_native_v5/`; no logs were added to Git.
+      This evidence does NOT include synthesis, place-and-route, timing/CDC or
+      I/O sign-off, real-MIG simulation, board measurements or physical
+      isolation/capture-phase qualification. R03 clock-enable electrical
+      levels and R05 DPD deadline remain open; no manufacturing/bitstream
+      release approval is implied.

@@ -3,7 +3,7 @@ module tb_i2s_master_rates;
     logic dsp_clk=0, cell_clk=0, rst_n=0, enable=0, source_valid=0, i2s_data=0;
     logic [1:0] rate_shift=0;
     logic [4:0] rx_trim=0;
-    wire i2s_bclk, i2s_lrclk, new_sample, i2s_err, transport_fault;
+    wire i2s_bclk, i2s_lrclk, new_sample, i2s_err, transport_fault, audio_frame_ready;
     wire [23:0] audio_l, audio_r;
     real cell_period=20.345052083, dsp_period=3.560384115;
     real return_delay=0;
@@ -52,6 +52,7 @@ module tb_i2s_master_rates;
                     if(measured_period<expected_period-dsp_period || measured_period>expected_period+dsp_period)
                         $fatal(1,"wrong frame rate %f expected %f",measured_period,expected_period);
                     source_valid=0; cycles(5);
+                    if(!audio_frame_ready) $fatal(1,"complete AP audio frame not qualified");
                     if(!i2s_err || transport_fault) $fatal(1,"source-valid contract");
                     cases++;
                 end

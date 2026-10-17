@@ -853,26 +853,35 @@ module tb_coef_bank_loader;
         integer rate_errors;
         rate_errors = 0;
         $display("TEST 10: production rejects untagged/incompatible filters");
+        error_count = 0;
+        ar_burst_num = 0;
+        total_writes = 0;
+        exp_packed = 0;
         apply_reset();
         setup_directory();
         enforce_stream_rate = 1;
         stream_rate = 3'd7;
         pulse_load_by_id(16'h0101, DIR_IMG_A);
-        wait_for_load_done();
+        wait_for_load_done(1000000);
         if (!load_err || load_err_code != 3 || total_writes != 0) begin
             $display("ERROR: incompatible rate metadata accepted");
             error_count++;
         end
         rate_errors = error_count;
         for (int family=0; family<2; family++) begin
+            error_count = 0;
+            ar_burst_num = 0;
+            total_writes = 0;
+            exp_packed = 0;
             apply_reset();
             setup_directory();
             stream_rate = {2'd3, 1'(family)};
-            dir_beat0[0][31:24] = family ? 8'd0 : 8'd1;
+            dir_beat0[0][31:24] = {5'd0, 2'd3, ~family[0]};
             dir_beat0[0][63:32] = (NUM_MACS * COEF_DEPTH) >> 3;
             dir_beat1[0][47:40] = 8'd3;
+            dir_beat1[0][55:48] = 8'd3;
             pulse_load_by_id(16'h0101, DIR_IMG_A);
-            wait_for_load_done();
+            wait_for_load_done(1000000);
             if (load_err || total_writes != NUM_MACS * COEF_DEPTH) begin
                 $display("ERROR: matching native-rate filter rejected");
                 error_count++;

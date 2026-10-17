@@ -30,15 +30,14 @@ archive.
 | 0x4C | 4 | tap_count | total taps N |
 | 0x50 | 4 | taps_per_phase | Filter-phase length N / active_phases; NUM_MACS * per-MAC TAPS_PER_PHASE in the multirate layout |
 | 0x54 | 1 | coef_width_bits | 18 |
-| 0x55 | 1 | rate_family | 0=48k-family, 1=44.1k-family |
+| 0x55 | 1 | rate_code | V2: 0=48k, 1=44.1k. V3: bit 0 uses the V2 family encoding; bits[2:1]=rate_shift, bits[7:3]=0. V3 byte is covered by the header CRC. |
 | 0x56 | 2 | base_sample_rate_hz_div100 | e.g. 441, 480, 960 … |
 | 0x58 | 4 | latency_us | group-delay figure for the FILTER BUILDER to check the video filter against the 20 ms budget. Tooling-internal: never displayed to customers, never read by RTL (TODO-20 closed 2026-09-04). |
 | 0x5C | 4 | payload_bytes | size of coefficient payload |
 | 0x60 | 4 | payload_crc32 | CRC-32 (IEEE) over payload |
 | 0x64 | 4 | header_crc32 | CRC-32 over bytes 0x00–0x63 |
 | 0x68 | 1 | packing | 0 = 32-bit words (v1), 1 = 18-bit packed, 7 per 16-byte beat (2026-10-05). Copied to directory byte 0x14. |
-| 0x69 | 1 | rate_shift | Native/base ratio is 2^rate_shift, 0..3; copied to directory byte 0x15 (multirate RTL draft) |
-| 0x6A | 150 | reserved | zero-filled |
+| 0x69 | 151 | reserved | Zero-filled in V2 and V3; do not repurpose without a version change. |
 
 ### Payload
 Two layouts, selected by the `packing` byte (header 0x68 / directory 0x14):
@@ -105,14 +104,15 @@ hang a load:
 |---|---|---|
 | 0x00 | 2 | filter_id |
 | 0x02 | 1 | phase_type |
-| 0x03 | 1 | rate_family |
+| 0x03 | 1 | rate_code (bit 0 = 0/1 for 48k/44.1k; V3 bits[2:1]=rate_shift; bits[7:3]=0) |
 | 0x04 | 4 | tap_count |
 | 0x08 | 4 | ddr4_offset (16-byte units) |
 | 0x0C | 4 | payload_bytes |
 | 0x10 | 4 | latency_us |
 | 0x14 | 1 | packing (0 = v1 32-bit, 1 = 18-bit packed; any other value → FILT_SIZE) |
-| 0x15 | 1 | rate_shift (0..3); native/base ratio 1, 2, 4 or 8 |
-| 0x16 | 10 | reserved |
+| 0x15 | 1 | V3 rate_shift mirror (0..3); V2 must be zero |
+| 0x16 | 1 | directory schema: 0=legacy V2; 3=multirate V3 |
+| 0x17 | 9 | reserved |
 
 Names are NOT in the directory — the host keeps the id↔name map from the
 `.bfc` headers and exposes names over the UI/app. SPI commands carry
@@ -144,7 +144,9 @@ host sends only eligible IDs).
 
 ## SPI Command Set — filter list / video mode (DRAFT)
 
-**Stream clock/rate ownership — LOCKED 2026-10-16; RTL draft written, compile/regression results pending.**
+**Stream clock/rate ownership — LOCKED 2026-10-16.** The RTL draft compiles
+and the 14 configured Vivado simulations pass. This is not synthesis,
+place-and-route, CDC/I/O timing sign-off, or hardware qualification.
 The AP reports the PCM stream rate/format; the FPGA validates it and configures
 the carrier oscillator, interpolation and I2S BCLK/LRCLK together. The FPGA is
 I2S master and the AP is slave transmitter; there is no separate AP MCLK export.
@@ -165,14 +167,16 @@ retains its opposite encoding, 0=48k-family / 1=44.1k-family.
 
 | Write | Meaning |
 |---|---|
-| 0x1A (alias 0x03) | Three-bit rate request; mutes, clears AP-ready and DPD-enable, waits for release, resets/switches/relocks, clears DSP history and invalidates the active FIR bank. Requests during local tests, another transition or an active filter load are rejected. |
+| 0x1A (alias 0x03) | Three-bit rate request; mutes, clears AP-ready/first-frame-ready and DPD-enable, waits for release, resets/switches/relocks, clears DSP history and invalidates the active FIR bank. Requests during local tests, another transition or an active filter load are rejected. |
 | 0x1B | `[0]` AP source ready. Write 0 on stop/underrun; that clears unmute. Write 1 only after clocks are ready and the matching stream is available. No heartbeat/crash detector is implied. |
 | 0x1C | `[4:0]` capture trim, 0..31 additional DSP cycles beyond a nominal half-BCLK delay; default 8. Write only while muted, AP-ready=0 and no transition/local test is active. Receiver alignment is reset when the setting changes. |
 
 Read 0x20 STREAM_STATUS: busy[0], clocks-ready[1], AP-ready[2],
 FIR-bank-valid[3], transport/FIFO fault[4], applied rate[7:5],
-requested rate[10:8], capture trim[15:11], reserved[31:16].
-Clocks-ready is NOT permission to unmute on its own.
+requested rate[10:8], capture trim[15:11], first complete valid PCM
+frame received[16], reserved[31:17]. Clocks-ready is NOT permission to
+unmute on its own: after every rate/trim reset, at least one complete,
+framed AP sample must arrive before UNMUTE is accepted.
 
 After a rate request: poll busy clear/clocks-ready with a timeout, load a
 compatible filter, wait for bank-valid, reload/verify calibration state if DPD
