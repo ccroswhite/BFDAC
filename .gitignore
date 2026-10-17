@@ -35,7 +35,52 @@ Xilinx/ip/**
 
 # Simulation scratch
 Xilinx/Testbench/sim_work/
+# DDR4 MIG example project + harvested memory model (scripts/gen_ddr4_example.tcl)
+Xilinx/sim_mig/
 
 # Python
 __pycache__/
 *.pyc
+
+# Tool-run logs (logs/<job>.log + logs/<job>.done sentinel): readable by the IDE tools; json reports not kept
+/logs/
+
+*.out
+*.err
+*.stdout
+*.stderr
+*_stdout.txt
+*_stderr.txt
+*.dmp
+dfx_runtime.txt
+/Xilinx/e2e_*.txt
+/Xilinx/Testbench/e2e_*.txt
+/sim_run/e2e_*.txt
+
+*.kicad_prl
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*.kicad_pro-bak
+~*.lck
+/hw/kicad/*-backups/
+/hw/kicad/svg/
+/hw/kicad/*.pdf
+/hw/kicad/*.xml
+/hw/kicad/erc.*
+/hw/kicad/_erc.txt
+/hw/kicad/bom_cell.csv
+
+/datasheets/*.zip
+/datasheets/_*
+/bom17_dump.txt
+/lmk00304.txt
+/lmk1c1108.txt
+/utils/thermal_board2d_*.npy
+
+/.devin/config.local.json
+/.env
+/.env.*
+!/.env.example
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -15,30 +15,48 @@
 //      4. Toggle bank_select to swap active/shadow banks (atomic, gapless).
 //      5. Back to IDLE, audio continues uninterrupted with new coefficients.
 //
-//  Boot behavior:
+//  Boot behavior (revised 2026-09-03, TODO-16):
 //
-//      At power-on, the default bank should be loaded into Bank A before
-//      audio begins. Boot loader asserts boot_load_done when complete.
+//      The QSPI boot loader stages coefficient records into DDR4, NOT into a
+//      FIR bank. The manager therefore holds in ST_BOOT_WAIT until ddr4_ready
+//      (boot_ok, synced) and then goes IDLE with NO bank swap: both FIR banks
+//      are unwritten, bank_valid=0, and the boot mute envelope keeps the
+//      output at zero. The first request (ARM policy: FILTER_SELECT index 0
+//      after reading BOOT_STATUS.boot_ok) loads the shadow bank and swaps;
+//      bank_valid then goes high and the subsystem starts the boot fade-in.
+//      Requests that arrive before ddr4_ready are queued (most-recent-wins).
 //
 //  Request handling:
 //
 //      A bank_select_pulse received while loading is captured in a single-entry
 //      queue (req_pending). Most-recent-wins semantics for queued requests.
+//
+//  Request encoding (REQ_BITS = 17, 2026-09-02):
+//
+//      bank_select_req = {by_id, id[15:0]}
+//        by_id = 0 : legacy fixed slot, id[3:0] = bank_id (SPI reg 0x05)
+//        by_id = 1 : filter_id resolved through the DDR4 directory by the
+//                    loader (SPI regs 0x08-0x0A, docs/coef_format_v2.md)
+//      The two spaces never compare equal, so a legacy slot and a filter ID
+//      that happen to share low bits are distinct requests.
+//
+//  Failed loads (load_failed=1 when load_done pulses: ID not found or size
+//  mismatch) return to IDLE WITHOUT swapping banks; audio continues on the
+//  current bank and the ctrl plane reports the error.
 // =============================================================================
 module coef_bank_manager #(
-    parameter int NUM_BANKS  = 12,
-    parameter int BANK_BITS  = 4   // ceil(log2(NUM_BANKS)) -- 4 bits = up to 16
+    parameter int REQ_BITS   = 17
 )(
     input  logic                       clk,
     input  logic                       rst_n,
     input  logic                       sample_tick,       // 768 kHz tick (unused in gapless)
 
     // -- Host request interface (from SPI control plane) -------------------
-    input  logic [BANK_BITS-1:0]       bank_select_req,
+    input  logic [REQ_BITS-1:0]        bank_select_req,
     input  logic                       bank_select_pulse,
 
-    // -- Boot loader handshake ---------------------------------------------
-    input  logic                       boot_load_done,
+    // -- Boot handshake -----------------------------------------------------
+    input  logic                       ddr4_ready,        // boot_ok level, dsp_clk-synced
 
     // -- Dual-bank control -------------------------------------------------
     output logic                       bank_select,       // 0=Bank A active, 1=Bank B active
@@ -46,11 +64,13 @@ module coef_bank_manager #(
 
     // -- coef_bank_loader handshake ----------------------------------------
     output logic                       load_start,
-    output logic [BANK_BITS-1:0]       load_bank_id,
+    output logic [REQ_BITS-1:0]        load_bank_id,      // latched request, stable LOADING..done
     input  logic                       load_done,
+    input  logic                       load_failed,       // sampled with load_done
 
     // -- Status outputs ----------------------------------------------------
-    output logic [BANK_BITS-1:0]       current_bank_id,
+    output logic [REQ_BITS-1:0]        current_bank_id,
+    output logic                       bank_valid,        // active bank holds a successful load
     output logic                       busy
 );
 
@@ -65,20 +85,14 @@ module coef_bank_manager #(
     } state_t;
 
     state_t                  state;
-    logic [BANK_BITS-1:0]    target_bank;       // bank to load into shadow
-    logic [BANK_BITS-1:0]    queued_bank;       // most recent request, if any
+    logic [REQ_BITS-1:0]     target_bank;       // bank to load into shadow
+    logic [REQ_BITS-1:0]     queued_bank;       // most recent request, if any
     logic                    queued_valid;      // queued_bank holds a pending request
-    logic [BANK_BITS-1:0]    current_bank_r;
+    logic [REQ_BITS-1:0]     current_bank_r;
     logic                    bank_select_r;      // Current active bank (0=A, 1=B)
     logic                    bank_load_target_r; // Which bank loader should write to
     logic                    load_start_r;
-
-    // Reject out-of-range bank requests by clamping to NUM_BANKS-1.
-    // (Cheaper than reporting an error and equally safe.)
-    wire [BANK_BITS-1:0] req_clamped =
-        (bank_select_req >= NUM_BANKS[BANK_BITS-1:0])
-            ? BANK_BITS'(NUM_BANKS - 1)
-            : bank_select_req;
+    logic                    bank_valid_r;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -87,41 +101,38 @@ module coef_bank_manager #(
             queued_bank        <= '0;
             queued_valid       <= 1'b0;
             current_bank_r     <= '0;
-            bank_select_r      <= 1'b0;      // Start with Bank A active
-            bank_load_target_r <= 1'b1;      // Load first bank into Bank B
+            bank_select_r      <= 1'b0;      // Start with Bank A active (unwritten)
+            bank_load_target_r <= 1'b1;      // First load goes into Bank B
             load_start_r       <= 1'b0;
+            bank_valid_r       <= 1'b0;
         end else begin
             // Default: pulses deassert each cycle
             load_start_r <= 1'b0;
 
             // Always-on request queue. Most-recent-wins.
             if (bank_select_pulse) begin
-                queued_bank  <= req_clamped;
+                queued_bank  <= bank_select_req;
                 queued_valid <= 1'b1;
             end
 
             unique case (state)
 
                 // -------------------------------------------------------------
-                //  ST_BOOT_WAIT: Waiting for boot loader to populate initial bank.
-                //  Boot loader loads into Bank B (bank_load_target=1).
-                //  When done, we atomically switch to Bank B and move to IDLE.
+                //  ST_BOOT_WAIT: DDR4 not yet staged by the QSPI boot loader.
+                //  Hold (queue) requests; no bank swap here.
                 // -------------------------------------------------------------
                 ST_BOOT_WAIT: begin
-                    if (boot_load_done) begin
-                        bank_select_r      <= 1'b1;      // Switch to Bank B
-                        bank_load_target_r <= 1'b0;      // Next load goes to Bank A
-                        current_bank_r     <= '0;         // Bank 0 now active
-                        state              <= ST_IDLE;
-                    end
+                    if (ddr4_ready)
+                        state <= ST_IDLE;
                 end
 
                 // -------------------------------------------------------------
                 //  ST_IDLE: Ready to accept a bank-switch request.
                 //  Load into the inactive bank (opposite of bank_select).
+                //  The same-bank shortcut only applies once a bank is valid.
                 // -------------------------------------------------------------
                 ST_IDLE: begin
-                    if (queued_valid && (queued_bank != current_bank_r)) begin
+                    if (queued_valid && (!bank_valid_r || queued_bank != current_bank_r)) begin
                         target_bank        <= queued_bank;
                         queued_valid       <= 1'b0;
                         bank_load_target_r <= ~bank_select_r;  // Load into inactive bank
@@ -138,7 +149,8 @@ module coef_bank_manager #(
                 // -------------------------------------------------------------
                 ST_LOADING: begin
                     if (load_done) begin
-                        state <= ST_SWITCHING;
+                        // Failed lookup: keep the active bank, report via ctrl plane
+                        state <= load_failed ? ST_IDLE : ST_SWITCHING;
                     end
                 end
 
@@ -150,6 +162,7 @@ module coef_bank_manager #(
                     bank_select_r      <= ~bank_select_r;    // Swap active bank
                     bank_load_target_r <= bank_select_r;     // Next load to old active
                     current_bank_r     <= target_bank;
+                    bank_valid_r       <= 1'b1;
                     state              <= ST_IDLE;
                 end
 
@@ -162,6 +175,7 @@ module coef_bank_manager #(
     assign bank_load_target= bank_load_target_r;
     assign load_start      = load_start_r;
     assign current_bank_id = current_bank_r;
+    assign bank_valid      = bank_valid_r;
     assign busy            = (state != ST_IDLE);
 
 endmodule

@@ -17,10 +17,13 @@ module tb_dac_ctrl_plane;
     logic spi_miso;
 
     // DUT status inputs (benign defaults)
-    logic mgr_busy = 0, coef_load_done = 1, i2s_err = 0, switch_busy = 0;
+    logic mgr_busy = 0, bank_valid = 0, coef_load_done = 1, i2s_err = 0, switch_busy = 0;
     logic clk_locked = 1, ddr4_init_calib_complete = 1;
     logic line_mute_status = 0, hp_mute_status = 0;
     logic [3:0] current_bank_id = 4'h0;
+    logic flash_cmd_busy = 0, flash_cmd_err = 0, boot_crc_fail = 0, boot_axi_fail = 0;
+    logic coef_load_err = 0;
+    logic [1:0] coef_load_err_code = 2'd0;
 
     // DUT outputs
     logic [31:0] sys_volume;
@@ -31,7 +34,10 @@ module tb_dac_ctrl_plane;
     logic        filter_load_req, video_mode;
     logic        spi_unmute, fpga_irq_n;
     logic        level_switch_req, outsel_switch_req, outsel_target;
-    logic [1:0]  level_target;
+    logic [2:0]  level_target;
+    logic bench_busy = 0;
+    wire [1:0] cell_req;
+    wire [1:0][7:0] cell_cfg;
 
     dac_ctrl_plane dut (
         .clk(clk), .ext_rst_n(ext_rst_n),
@@ -39,17 +45,22 @@ module tb_dac_ctrl_plane;
         .spi_mosi(spi_mosi), .spi_miso(spi_miso),
         .level_switch_req(level_switch_req), .level_target(level_target),
         .outsel_switch_req(outsel_switch_req), .outsel_target(outsel_target),
-        .mgr_busy(mgr_busy), .coef_load_done(coef_load_done),
+        .mgr_busy(mgr_busy), .bank_valid(bank_valid), .coef_load_done(coef_load_done),
         .current_bank_id(current_bank_id), .i2s_err(i2s_err),
         .switch_busy(switch_busy), .clk_locked(clk_locked),
         .ddr4_init_calib_complete(ddr4_init_calib_complete),
         .line_mute_status(line_mute_status), .hp_mute_status(hp_mute_status),
+        .flash_cmd_busy(flash_cmd_busy), .flash_cmd_err(flash_cmd_err),
+        .boot_crc_fail(boot_crc_fail), .boot_axi_fail(boot_axi_fail),
+        .coef_load_err(coef_load_err), .coef_load_err_code(coef_load_err_code),
         .sys_volume(sys_volume), .base_rate_sel(base_rate_sel),
         .clk_source_sel(clk_source_sel),
         .coef_bank_id(coef_bank_id), .coef_load_start(coef_load_start),
         .filter_id(filter_id), .filter_next_id(filter_next_id),
         .filter_load_req(filter_load_req), .video_mode(video_mode),
-        .spi_unmute(spi_unmute), .fpga_irq_n(fpga_irq_n)
+        .spi_unmute(spi_unmute), .fpga_irq_n(fpga_irq_n),
+        .bench_busy(bench_busy), .bench_status(32'h12345678), .bench_available(),
+        .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req)
     );
 
     // Track filter_load_req pulses
@@ -124,7 +135,7 @@ module tb_dac_ctrl_plane;
         spi_write(7'h09, 24'h000202);
         spi_write(7'h09, 24'h000303);
         spi_read (7'h16, rd);
-        check("T2 list status", rd, {22'd0, 1'b0, 5'd3, 4'd0});
+        check("T2 list status", rd, {20'd0, 1'b0, 6'd3, 5'd0});
 
         // T3: explicit select index 1
         spi_write(7'h0A, 24'h000001);
@@ -146,23 +157,112 @@ module tb_dac_ctrl_plane;
         spi_write(7'h0B, 24'h000001);
         check("T5 video_mode", video_mode, 1);
         spi_read (7'h16, rd);
-        check("T5 status w/ video", rd, {22'd0, 1'b1, 5'd3, 4'd0});
+        check("T5 status w/ video", rd, {20'd0, 1'b1, 6'd3, 5'd0});
 
         // T6: out-of-range explicit index clamps to 0
-        spi_write(7'h0A, 24'h00000F);
+        spi_write(7'h0A, 24'h00001F);
         check("T6 clamped filter_id", filter_id, 32'h0101);
 
-        // T7: fill to 16 entries, 17th append ignored
+        // T7: fill to 32 entries, 33rd append ignored
         spi_write(7'h08, 24'h000001);
-        for (int k = 0; k < 17; k++)
+        for (int k = 0; k < 33; k++)
             spi_write(7'h09, 24'h001000 + k[15:0]);
         spi_read (7'h16, rd);
-        check("T7 list capped at 16", rd[8:4], 5'd16);
-        // advance from 15 wraps to 0 at full length
-        spi_write(7'h0A, 24'h00000F);      // select 15
-        check("T7 idx15 id", filter_id, 32'h100F);
+        check("T7 list capped at 32", rd[10:5], 6'd32);
+        check("T7 index reset by clear", rd[4:0], 5'd0);
+        // random access across the full list (any filter, any time)
+        spi_write(7'h0A, 24'h000010);      // select 16
+        check("T7 idx16 id", filter_id, 32'h1010);
+        spi_write(7'h0A, 24'h000002);      // select 2
+        check("T7 idx2 id", filter_id, 32'h1002);
+        spi_write(7'h0A, 24'h00001D);      // select 29
+        check("T7 idx29 id", filter_id, 32'h101D);
+        // advance from 31 wraps to 0 at full length
+        spi_write(7'h0A, 24'h00001F);      // select 31
+        check("T7 idx31 id", filter_id, 32'h101F);
         spi_write(7'h0A, 24'h010000);      // advance -> wrap
         check("T7 full-list wrap id", filter_id, 32'h1000);
+        spi_read (7'h17, rd);
+        check("T7 ids (next=1001 cur=1000)", rd, {16'h1001, 16'h1000});
+
+        // T8: FILTER_SELECT_ID (0x17) loads an arbitrary directory ID,
+        //     leaves the list index untouched, fires exactly one load
+        begin
+            int n_before = load_req_count;
+            spi_write(7'h17, 24'h00BEEF);
+            check("T8 select-by-ID filter_id", filter_id, 32'hBEEF);
+            check("T8 one load pulse", load_req_count, n_before + 1);
+            spi_read (7'h16, rd);
+            check("T8 cur_index unchanged", rd[4:0], 5'd0);
+            spi_read (7'h17, rd);
+            check("T8 ids (next=1001 cur=BEEF)", rd, {16'h1001, 16'hBEEF});
+            // list advance still works afterwards from the retained index
+            spi_write(7'h0A, 24'h010000);
+            check("T8 advance after by-ID", filter_id, 32'h1001);
+        end
+
+        // T9: 33rd append was rejected -> sticky[6] + CMD_ERR_INFO {0x09, FILT_FULL}
+        spi_read (7'h11, rd);
+        check("T9 sticky[6] set by FILT_FULL", rd[6], 1'b1);
+        spi_read (7'h1C, rd);
+        check("T9 CMD_ERR_INFO", rd[10:0], {7'h09, 4'h4});
+        spi_write(7'h16, 24'h0000FF);
+        spi_read (7'h11, rd);
+        check("T9 sticky cleared", rd[7:0], 8'h00);
+
+        // T10: FILTER_LIST_CTRL [1] = commit -> selects entry 0 (boot default,
+        //      ARM policy per TODO-16); rejected FILT_EMPTY on an empty list;
+        //      [0]+[1] together = clear only. 0x13[12] mirrors bank_valid.
+        begin
+            int n_before;
+            spi_write(7'h08, 24'h000001);              // clear
+            n_before = load_req_count;
+            spi_write(7'h08, 24'h000002);              // commit on empty list
+            check("T10 no load on empty commit", load_req_count, n_before);
+            spi_read (7'h1C, rd);
+            check("T10 CMD_ERR_INFO FILT_EMPTY", rd[10:0], {7'h08, 4'h5});
+            spi_write(7'h16, 24'h0000FF);
+            spi_write(7'h09, 24'h00A0A0);
+            spi_write(7'h09, 24'h00B0B0);
+            spi_write(7'h0A, 24'h000001);              // move index to 1
+            check("T10 pre-commit id", filter_id, 32'hB0B0);
+            n_before = load_req_count;
+            spi_write(7'h08, 24'h000002);              // commit -> entry 0
+            check("T10 commit id", filter_id, 32'hA0A0);
+            check("T10 commit one load", load_req_count, n_before + 1);
+            spi_read (7'h16, rd);
+            check("T10 commit index 0", rd[4:0], 5'd0);
+            n_before = load_req_count;
+            spi_write(7'h08, 24'h000003);              // clear + commit = clear only
+            check("T10 clear wins, no load", load_req_count, n_before);
+            spi_read (7'h16, rd);
+            check("T10 list cleared", rd[10:5], 6'd0);
+            spi_read (7'h13, rd);
+            check("T10 bank_valid=0 readback", rd[12], 1'b0);
+            bank_valid = 1;
+            repeat (4) @(posedge clk);
+            spi_read (7'h13, rd);
+            check("T10 bank_valid=1 readback", rd[12], 1'b1);
+        end
+
+        spi_write(7'h04, 24'd1);
+        check("unmute before local takeover", spi_unmute, 1);
+        bench_busy = 1;
+        repeat(10) @(negedge clk);
+        check("local takeover latches mute", spi_unmute, 0);
+        spi_write(7'h04, 24'd1);
+        check("unmute blocked during local test", spi_unmute, 0);
+        spi_write(7'h18, 24'h80);
+        check("SPI cell config blocked during local test", cell_cfg[0], 0);
+        spi_write(7'h03, 24'd1);
+        check("rate change blocked during local test", base_rate_sel, 0);
+        spi_read(7'h1f, rd);
+        check("local status readback", rd, 32'h12345678);
+        bench_busy = 0;
+        repeat(10) @(negedge clk);
+        check("no automatic unmute on local exit", spi_unmute, 0);
+        spi_write(7'h04, 24'd1);
+        check("explicit unmute after exit", spi_unmute, 1);
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");
         else             $display("TB_FAIL: %0d errors", errors);

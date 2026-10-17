@@ -1,0 +1,13 @@
+{
+ "meta": {
+  "filename": "bfdac_analog.kicad_pro",
+  "version": 1
+ },
+ "schematic": {
+  "drawing": {
+   "default_font": "KiCad Font"
+  }
+ },
+ "sheets": [],
+ "text_variables": {}
+}

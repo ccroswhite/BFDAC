@@ -1,0 +1,902 @@
+{
+ "source_deck": "C:\\Users\\ccros\\Documents\\LTspice\\bfdac_cosim112.cir",
+ "params": {
+  "Ts": "162.7604n",
+  "tc": "{Ts/8}",
+  "tedge": "3n",
+  "skew": "1n",
+  "t0": "{tc}",
+  "twid": "{6*tc}",
+  "vlo": "1.1",
+  "vhi": "1.7",
+  "krep": "0.729m",
+  "cbus": "47n",
+  "rload": "28",
+  "gbw": "40Meg",
+  "slw": "27Meg",
+  "aol": "1e6",
+  "c1": "100p",
+  "gmv": "{2*pi*gbw*c1}",
+  "ilim": "{slw*c1}",
+  "r1": "{aol/gmv}",
+  "rsum": "10000",
+  "rsh": "156.25",
+  "csum": "50p",
+  "re_rep": "35.3"
+ },
+ "models": [
+  ".model LVFET VDMOS(Rg=3 Vto=0.6 Rd=0.3 Rs=.75 Rb=.14 Kp=.17 Lambda=.02  Cgdmax=80p Cgdmin=12p Cgs=50p Cjo=50p Is=.04p Ksubthres=.1)",
+  ".model LCFET VDMOS(Rg=3 Vto=0.6 Rd=0.3 Rs=.75 Rb=.14 Kp=.17 Lambda=.02  Cgdmax=8p Cgdmin=1.2p Cgs=5p Cjo=5p Is=.04p Ksubthres=.1)",
+  ".model Q5551 NPN(Is=2.511f Xti=3 Eg=1.11 Vaf=100 Bf=242.6 Ne=1.249  Ise=2.511f Ikf=.3458 Xtb=1.5 Br=3.197 Nc=2 Isc=0 Ikr=0 Rc=1  Cjc=4.883p Mjc=.3047 Vjc=.75 Fc=.5 Cje=5.5p Mje=.3621 Vje=.75  Tr=316.2n Tf=452.9p Itf=.1 Vtf=10 Xtf=2 Rb=10)",
+  ".lib THAT300series.lib",
+  ".model Si1555DL_N VDMOS(Rg=3 Vto=1.1 Rd=200m Rs=150m Rb=250m Kp=2 Cgdmax=.1n Cgdmin=.005n Cgs=.01n Cjo=.01n Is=2p ksubthres=.1 Vds=20 Ron=500m Qg=.8n)",
+  ".model 2SA1036K PNP(Is=60f Bf=194.1 Vaf=31.85 Ikf=1.986 Ise=60f Ne=1.449 Br=8.869 Var=100 Ikr=59.05m Isc=60.1p Nc=1.743 Nk=1.003 Re=110m Rb=1.744 Rc=259.6m Cje=60.61p Mje=520.4m Cjc=21.13p Mjc=404.3m Tf=14.87p Xtf=121.2 Vtf=54.43 Itf=27.78m Tr=102.1n Xtb=1.5 Vceo=32 Icrating=0.5 mfg=Rohm)"
+ ],
+ "control": [
+  ".options gmin=1e-10 abstol=1e-10 reltol=1e-5 plotwinsize=0",
+  ".temp 45",
+  ".tran 2n 10666.665574u 0",
+  ".save V(diffout) V(nsch)",
+  ".end"
+ ],
+ "n_cells": 64,
+ "cell_deviations": [],
+ "cell_template": {
+  "hardware": [
+   {
+    "name": "Q4N",
+    "type": "Q",
+    "nodes": [
+     "cN_s",
+     "q4_base",
+     "cN_e"
+    ],
+    "value": "QNPN_THAT_NS",
+    "block": "cell"
+   },
+   {
+    "name": "QSNa",
+    "type": "Q",
+    "nodes": [
+     "bus_plus",
+     "bsN1",
+     "cN_s"
+    ],
+    "value": "Q5551",
+    "block": "cell"
+   },
+   {
+    "name": "QSNb",
+    "type": "Q",
+    "nodes": [
+     "bus_minus",
+     "bsN2",
+     "cN_s"
+    ],
+    "value": "Q5551",
+    "block": "cell"
+   },
+   {
+    "name": "RNa",
+    "type": "R",
+    "nodes": [
+     "bsN1d",
+     "bsN1"
+    ],
+    "value": "10",
+    "block": "cell"
+   },
+   {
+    "name": "RNb",
+    "type": "R",
+    "nodes": [
+     "bsN2d",
+     "bsN2"
+    ],
+    "value": "10",
+    "block": "cell"
+   },
+   {
+    "name": "Rr1mN",
+    "type": "R",
+    "nodes": [
+     "qN",
+     "ns1m"
+    ],
+    "value": "{rsum}",
+    "block": "replica_ff"
+   },
+   {
+    "name": "Rr1pN",
+    "type": "R",
+    "nodes": [
+     "qbN",
+     "ns1p"
+    ],
+    "value": "{rsum}",
+    "block": "replica_ff"
+   },
+   {
+    "name": "RtN",
+    "type": "R",
+    "nodes": [
+     "cN_e",
+     "0"
+    ],
+    "value": "750",
+    "block": "cell"
+   }
+  ],
+  "sim_only": [
+   {
+    "name": "BNa",
+    "type": "B",
+    "nodes": [
+     "bsN1d",
+     "0"
+    ],
+    "value": "V={vlo+(vhi-vlo)*V(selN)*V(pwa)}",
+    "block": "cell_drive"
+   },
+   {
+    "name": "BNb",
+    "type": "B",
+    "nodes": [
+     "bsN2d",
+     "0"
+    ],
+    "value": "V={vhi-(vhi-vlo)*V(selN)*V(pwb)}",
+    "block": "cell_drive"
+   },
+   {
+    "name": "BqN",
+    "type": "B",
+    "nodes": [
+     "qN",
+     "0"
+    ],
+    "value": "V={3.3*V(selN)*V(pwa)}",
+    "block": "replica_ff"
+   },
+   {
+    "name": "BqbN",
+    "type": "B",
+    "nodes": [
+     "qbN",
+     "0"
+    ],
+    "value": "V={3.3*(1-V(selN)*V(pwb))}",
+    "block": "replica_ff"
+   },
+   {
+    "name": "RselN",
+    "type": "R",
+    "nodes": [
+     "selN",
+     "0"
+    ],
+    "value": "1Meg",
+    "block": "cell_drive"
+   },
+   {
+    "name": "VselN",
+    "type": "V",
+    "nodes": [
+     "selN",
+     "0"
+    ],
+    "value": "PWL file=\"C:\\Users\\ccros\\Documents\\LTspice\\pwl112\\selNN.txt\"",
+    "block": "cell_drive"
+   }
+  ],
+  "multiplicity": 64
+ },
+ "blocks": {
+  "rails_refs": {
+   "hardware": [
+    {
+     "name": "V_p15r",
+     "type": "V",
+     "nodes": [
+      "vcc15",
+      "0"
+     ],
+     "value": "DC 15"
+    },
+    {
+     "name": "V_n15r",
+     "type": "V",
+     "nodes": [
+      "vee15",
+      "0"
+     ],
+     "value": "DC -15"
+    },
+    {
+     "name": "V_p8",
+     "type": "V",
+     "nodes": [
+      "vp8",
+      "0"
+     ],
+     "value": "DC 9"
+    },
+    {
+     "name": "V_vg",
+     "type": "V",
+     "nodes": [
+      "v_vg",
+      "0"
+     ],
+     "value": "DC 4"
+    },
+    {
+     "name": "V_roff",
+     "type": "V",
+     "nodes": [
+      "v_roff",
+      "0"
+     ],
+     "value": "DC 15"
+    },
+    {
+     "name": "V_fr",
+     "type": "V",
+     "nodes": [
+      "vfr",
+      "0"
+     ],
+     "value": "DC 1.75"
+    },
+    {
+     "name": "V_fr2",
+     "type": "V",
+     "nodes": [
+      "vfr2",
+      "0"
+     ],
+     "value": "DC 3.0"
+    },
+    {
+     "name": "Vb1",
+     "type": "V",
+     "nodes": [
+      "vb1",
+      "0"
+     ],
+     "value": "DC 5.94"
+    },
+    {
+     "name": "Ve1",
+     "type": "V",
+     "nodes": [
+      "ve1",
+      "0"
+     ],
+     "value": "DC 7.2"
+    },
+    {
+     "name": "Vcb2p",
+     "type": "V",
+     "nodes": [
+      "casb2_p",
+      "0"
+     ],
+     "value": "DC 4.37"
+    },
+    {
+     "name": "Vcb2m",
+     "type": "V",
+     "nodes": [
+      "casb2_m",
+      "0"
+     ],
+     "value": "DC 4.37"
+    },
+    {
+     "name": "Vpadb",
+     "type": "V",
+     "nodes": [
+      "padb_base",
+      "0"
+     ],
+     "value": "DC 0.6"
+    },
+    {
+     "name": "V_ref",
+     "type": "V",
+     "nodes": [
+      "vref",
+      "0"
+     ],
+     "value": "DC 1.25"
+    }
+   ],
+   "sim_only": []
+  },
+  "iv": {
+   "hardware": [
+    {
+     "name": "C_col_p",
+     "type": "C",
+     "nodes": [
+      "col_p",
+      "0"
+     ],
+     "value": "12n"
+    },
+    {
+     "name": "C_col_m",
+     "type": "C",
+     "nodes": [
+      "col_m",
+      "0"
+     ],
+     "value": "12n"
+    },
+    {
+     "name": "R_off_p",
+     "type": "R",
+     "nodes": [
+      "v_roff",
+      "col_p"
+     ],
+     "value": "132.8"
+    },
+    {
+     "name": "R_f_p",
+     "type": "R",
+     "nodes": [
+      "out_p",
+      "col_p"
+     ],
+     "value": "270"
+    },
+    {
+     "name": "C_f_p",
+     "type": "C",
+     "nodes": [
+      "out_p",
+      "col_p"
+     ],
+     "value": "1.31e-09"
+    },
+    {
+     "name": "R_off_m",
+     "type": "R",
+     "nodes": [
+      "v_roff",
+      "col_m"
+     ],
+     "value": "116.0"
+    },
+    {
+     "name": "R_f_m",
+     "type": "R",
+     "nodes": [
+      "out_m",
+      "col_m"
+     ],
+     "value": "270"
+    },
+    {
+     "name": "C_f_m",
+     "type": "C",
+     "nodes": [
+      "out_m",
+      "col_m"
+     ],
+     "value": "1.31e-09"
+    }
+   ],
+   "sim_only": []
+  },
+  "probe": {
+   "hardware": [],
+   "sim_only": [
+    {
+     "name": "B_diff",
+     "type": "B",
+     "nodes": [
+      "diffout",
+      "0"
+     ],
+     "value": "V={(V(out_m)-V(out_p))*28/270}"
+    },
+    {
+     "name": "R_do",
+     "type": "R",
+     "nodes": [
+      "diffout",
+      "0"
+     ],
+     "value": "1Meg"
+    }
+   ]
+  },
+  "iv_amp": {
+   "hardware": [],
+   "sim_only": [
+    {
+     "name": "G_a_p",
+     "type": "G",
+     "nodes": [
+      "0",
+      "int_p",
+      "VALUE={ilim*tanh((V(v_vg)-V(col_p))*gmv/ilim)}"
+     ],
+     "value": ""
+    },
+    {
+     "name": "R_a_p",
+     "type": "R",
+     "nodes": [
+      "int_p",
+      "0"
+     ],
+     "value": "{r1}"
+    },
+    {
+     "name": "C_a_p",
+     "type": "C",
+     "nodes": [
+      "int_p",
+      "0"
+     ],
+     "value": "{c1}"
+    },
+    {
+     "name": "E_b_p",
+     "type": "E",
+     "nodes": [
+      "out_p",
+      "0",
+      "int_p",
+      "0"
+     ],
+     "value": "1"
+    },
+    {
+     "name": "R_ld_p",
+     "type": "R",
+     "nodes": [
+      "out_p",
+      "0"
+     ],
+     "value": "300"
+    },
+    {
+     "name": "G_a_m",
+     "type": "G",
+     "nodes": [
+      "0",
+      "int_m",
+      "VALUE={ilim*tanh((V(v_vg)-V(col_m))*gmv/ilim)}"
+     ],
+     "value": ""
+    },
+    {
+     "name": "R_a_m",
+     "type": "R",
+     "nodes": [
+      "int_m",
+      "0"
+     ],
+     "value": "{r1}"
+    },
+    {
+     "name": "C_a_m",
+     "type": "C",
+     "nodes": [
+      "int_m",
+      "0"
+     ],
+     "value": "{c1}"
+    },
+    {
+     "name": "E_b_m",
+     "type": "E",
+     "nodes": [
+      "out_m",
+      "0",
+      "int_m",
+      "0"
+     ],
+     "value": "1"
+    },
+    {
+     "name": "R_ld_m",
+     "type": "R",
+     "nodes": [
+      "out_m",
+      "0"
+     ],
+     "value": "300"
+    }
+   ]
+  },
+  "cascode": {
+   "hardware": [
+    {
+     "name": "M6p",
+     "type": "M",
+     "nodes": [
+      "col_p",
+      "m6g_p",
+      "mid_p",
+      "mid_p"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rg6_p",
+     "type": "R",
+     "nodes": [
+      "casb2_p",
+      "m6g_p"
+     ],
+     "value": "100"
+    },
+    {
+     "name": "M6m",
+     "type": "M",
+     "nodes": [
+      "col_m",
+      "m6g_m",
+      "mid_m",
+      "mid_m"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rg6_m",
+     "type": "R",
+     "nodes": [
+      "casb2_m",
+      "m6g_m"
+     ],
+     "value": "100"
+    },
+    {
+     "name": "M5p",
+     "type": "M",
+     "nodes": [
+      "mid_p",
+      "m5g_p",
+      "bus_plus",
+      "bus_plus"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rg5_p",
+     "type": "R",
+     "nodes": [
+      "casb_p",
+      "m5g_p"
+     ],
+     "value": "100"
+    },
+    {
+     "name": "M5m",
+     "type": "M",
+     "nodes": [
+      "mid_m",
+      "m5g_m",
+      "bus_minus",
+      "bus_minus"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rg5_m",
+     "type": "R",
+     "nodes": [
+      "casb_m",
+      "m5g_m"
+     ],
+     "value": "100"
+    },
+    {
+     "name": "MR_p",
+     "type": "M",
+     "nodes": [
+      "casb_p",
+      "casb_p",
+      "vfr",
+      "vfr"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "MR_m",
+     "type": "M",
+     "nodes": [
+      "casb_m",
+      "casb_m",
+      "vfr",
+      "vfr"
+     ],
+     "value": "Si1555DL_N"
+    }
+   ],
+   "sim_only": []
+  },
+  "replica_ff": {
+   "hardware": [
+    {
+     "name": "Rsh1p",
+     "type": "R",
+     "nodes": [
+      "ns1p",
+      "vb1"
+     ],
+     "value": "{rsh}"
+    },
+    {
+     "name": "Csh1p",
+     "type": "C",
+     "nodes": [
+      "ns1p",
+      "0"
+     ],
+     "value": "{csum}"
+    },
+    {
+     "name": "Rsh1m",
+     "type": "R",
+     "nodes": [
+      "ns1m",
+      "vb1"
+     ],
+     "value": "{rsh}"
+    },
+    {
+     "name": "Csh1m",
+     "type": "C",
+     "nodes": [
+      "ns1m",
+      "0"
+     ],
+     "value": "{csum}"
+    },
+    {
+     "name": "QR1p",
+     "type": "Q",
+     "nodes": [
+      "casb_p",
+      "ns1p",
+      "e1p"
+     ],
+     "value": "2SA1036K"
+    },
+    {
+     "name": "Re1p",
+     "type": "R",
+     "nodes": [
+      "e1p",
+      "ve1"
+     ],
+     "value": "{re_rep}"
+    },
+    {
+     "name": "QR1m",
+     "type": "Q",
+     "nodes": [
+      "casb_m",
+      "ns1m",
+      "e1m"
+     ],
+     "value": "2SA1036K"
+    },
+    {
+     "name": "Re1m",
+     "type": "R",
+     "nodes": [
+      "e1m",
+      "ve1"
+     ],
+     "value": "{re_rep}"
+    }
+   ],
+   "sim_only": []
+  },
+  "padding": {
+   "hardware": [
+    {
+     "name": "Cpadb",
+     "type": "C",
+     "nodes": [
+      "padb_base",
+      "0"
+     ],
+     "value": "100u"
+    },
+    {
+     "name": "Mpad_p",
+     "type": "M",
+     "nodes": [
+      "bus_plus",
+      "padb_base",
+      "padb_ep",
+      "padb_ep"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rpad_p",
+     "type": "R",
+     "nodes": [
+      "padb_ep",
+      "vee15"
+     ],
+     "value": "286"
+    },
+    {
+     "name": "Mpad_m",
+     "type": "M",
+     "nodes": [
+      "bus_minus",
+      "padb_base",
+      "padb_em",
+      "padb_em"
+     ],
+     "value": "Si1555DL_N"
+    },
+    {
+     "name": "Rpad_m",
+     "type": "R",
+     "nodes": [
+      "padb_em",
+      "vee15"
+     ],
+     "value": "286"
+    }
+   ],
+   "sim_only": []
+  },
+  "bus": {
+   "hardware": [
+    {
+     "name": "R_bleed_plus",
+     "type": "R",
+     "nodes": [
+      "bus_plus",
+      "0"
+     ],
+     "value": "910"
+    },
+    {
+     "name": "C_bus_p",
+     "type": "C",
+     "nodes": [
+      "bus_plus",
+      "0"
+     ],
+     "value": "{cbus}"
+    },
+    {
+     "name": "C_bus_m",
+     "type": "C",
+     "nodes": [
+      "bus_minus",
+      "0"
+     ],
+     "value": "{cbus}"
+    },
+    {
+     "name": "R_bleed_minus",
+     "type": "R",
+     "nodes": [
+      "bus_minus",
+      "0"
+     ],
+     "value": "910"
+    }
+   ],
+   "sim_only": []
+  },
+  "reference": {
+   "hardware": [
+    {
+     "name": "R_bias",
+     "type": "R",
+     "nodes": [
+      "vref",
+      "q4_base"
+     ],
+     "value": "100"
+    },
+    {
+     "name": "C_q4",
+     "type": "C",
+     "nodes": [
+      "q4_base",
+      "0"
+     ],
+     "value": "220u"
+    }
+   ],
+   "sim_only": []
+  },
+  "cell_drive": {
+   "hardware": [],
+   "sim_only": [
+    {
+     "name": "Vpwa",
+     "type": "V",
+     "nodes": [
+      "pwa",
+      "0"
+     ],
+     "value": "PULSE(0 1 {t0} {tedge} {tedge} {twid} {Ts})"
+    },
+    {
+     "name": "Vpwb",
+     "type": "V",
+     "nodes": [
+      "pwb",
+      "0"
+     ],
+     "value": "PULSE(0 1 {t0+skew} {tedge} {tedge} {twid} {Ts})"
+    },
+    {
+     "name": "R_pwa",
+     "type": "R",
+     "nodes": [
+      "pwa",
+      "0"
+     ],
+     "value": "1Meg"
+    },
+    {
+     "name": "R_pwb",
+     "type": "R",
+     "nodes": [
+      "pwb",
+      "0"
+     ],
+     "value": "1Meg"
+    },
+    {
+     "name": "Vnsch",
+     "type": "V",
+     "nodes": [
+      "nsch",
+      "0"
+     ],
+     "value": "PWL file=\"C:\\Users\\ccros\\Documents\\LTspice\\pwl112\\nsch.txt\""
+    },
+    {
+     "name": "R_nsch",
+     "type": "R",
+     "nodes": [
+      "nsch",
+      "0"
+     ],
+     "value": "1Meg"
+    }
+   ]
+  }
+ },
+ "notes": {
+  "rails_refs": "DC sources = regulated rails / references (bom 9); values are the ratified operating points",
+  "probe": "measurement only",
+  "iv_amp": "behavioural OPA1612-class amp + buffer: hardware = OPA1612 + BUF634A per rail (bom 4)",
+  "cell_drive": "FF Q/Qb levels vlo/vhi + RTZ window: realised by SN74LVC1G74 + level network (bom 1.2)",
+  "replica_ff": "= the same LVC1G74 Q/Qb outputs (3.3 V logic)",
+  "cell": "10R base stoppers"
+ },
+ "interface_nets": [
+  "bsN1d",
+  "bsN2d",
+  "qN",
+  "qbN",
+  "v_vg"
+ ],
+ "dead_nets": [
+  "vcc15",
+  "vfr2",
+  "vp8"
+ ]
+}

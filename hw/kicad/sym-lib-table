@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "bfdac")(type "KiCad")(uri "${KIPRJMOD}/bfdac.kicad_sym")(options "")(descr "BFDAC project symbols"))
+)

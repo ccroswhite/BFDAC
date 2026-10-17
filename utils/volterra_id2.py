@@ -24,6 +24,21 @@ if os.environ.get("V80") == "1":        # R80: frozen v80 plant, 6 fresh records
     RECS = {"80a": 37, "80b": 37, "80c": 17, "80d": 11, "80e": 5, "80f": 27}
 if os.environ.get("V86") == "1":        # R86: v80 plant at .temp 45 (Step 6.6)
     RECS = {"86a": 37, "86b": 37, "86c": 17, "86d": 11, "86e": 5, "86f": 27}
+if os.environ.get("V92") == "1":        # R92: v80 + PASSIVE replica-ff, .temp 45
+    RECS = {"92a": 37, "92b": 37, "92c": 17, "92d": 11, "92e": 5, "92f": 27}
+if os.environ.get("V101") == "1":       # R101: R92 plant + ratified P5 I/V (patch_p5), .temp 45
+    RECS = {"101a": 37, "101b": 37, "101c": 17, "101d": 11, "101e": 5, "101f": 27}
+for _v in ("104", "105", "107"):         # R104: TIA C_col 47n; R105: passive load + V-stage; R107: TIA + Rg5 100
+    if os.environ.get(f"V{_v}") == "1":
+        RECS = {f"{_v}{k}": b for k, b in zip("abcdef", (37, 37, 17, 11, 5, 27))}
+if os.environ.get("V109") == "1":       # R109: locked plant = 107a-f + the gate-108 two-tone 19+20 kHz record (bins 51/53) so D3 is not an extrapolation
+    RECS = {f"107{k}": b for k, b in zip("abcdef", (37, 37, 17, 11, 5, 27))}
+    RECS["108"] = (51, 53)
+_vrec = os.environ.get("VREC")        # R114+: generic variant <v>: records <v>a-f + two-tone <v>t (51/53) when present
+if _vrec:
+    RECS = {f"{_vrec}{k}": b for k, b in zip("abcdef", (37, 37, 17, 11, 5, 27))}
+    if os.path.exists(rf"{LT}\cosim{_vrec}t_pavg.npy"):
+        RECS[f"{_vrec}t"] = (51, 53)
 pairs = [(i, j) for i in range(QL + 1) for j in range(i, QL + 1)
          if not (i == 0 and j == 0)]
 if os.environ.get("CUBIC") == "1":
@@ -58,7 +73,8 @@ def prep(tag):
     yf = np.fft.rfft(y)
     qf = np.fft.rfft(quad, axis=0)
     bins = np.arange(1, BMAX + 1)
-    bins = bins[np.abs(bins - BIN * (M - K0) / M) > 4]   # drop fund mainlobe
+    for b in (BIN if isinstance(BIN, tuple) else (BIN,)):
+        bins = bins[np.abs(bins - b * (M - K0) / M) > 4]   # drop fund mainlobe(s)
     return yf[bins], qf[bins], y, quad, c, rows, BIN
 
 LAM = float(os.environ.get("RIDGE", "0"))
@@ -89,6 +105,11 @@ for hold in RECS:
     yf, qf, y, quad, c, rows, BIN = prep(hold)
     pred = quad @ Qh
     fund = 28.0 * 10 ** (-1 / 20) * 0.0310
+    if isinstance(BIN, tuple):
+        r = y - pred
+        print(f"hold {hold} (two-tone {BIN}): in-band resid {r.std()*1e6:.2f} uV rms "
+              f"vs {y.std()*1e6:.2f} unpredicted")
+        continue
     for h in (2, 3):
         mh = hdbin(hold, y, rows, h)
         ph_ = hdbin(hold, pred, rows, h)
@@ -148,6 +169,13 @@ if os.environ.get("V80") == "1":
     KF = "cosim80c3" if os.environ.get("CUBIC") == "1" else "cosim80"
 if os.environ.get("V86") == "1":
     KF = "cosim86c3" if os.environ.get("CUBIC") == "1" else "cosim86"
+if os.environ.get("V92") == "1":
+    KF = "cosim92c3" if os.environ.get("CUBIC") == "1" else "cosim92"
+for _v in ("101", "104", "105", "107", "109"):
+    if os.environ.get(f"V{_v}") == "1":
+        KF = f"cosim{_v}c3" if os.environ.get("CUBIC") == "1" else f"cosim{_v}"
+if _vrec:
+    KF = f"cosim{_vrec}c3" if os.environ.get("CUBIC") == "1" else f"cosim{_vrec}"
 if os.environ.get("NUALL") == "1":
     KF += "j"
 if os.environ.get("EXTREC") == "1":

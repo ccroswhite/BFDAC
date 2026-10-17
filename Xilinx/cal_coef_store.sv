@@ -16,30 +16,33 @@
 //   - A commit toggle flips the active bank pointer ATOMICALLY at the next
 //     sample tick (same gapless pattern as the FIR bank_select switch): no
 //     conversion ever sees a half-updated coefficient set.
-//   - The ACTIVE bank is continuously readable by the (Phase 6) DPD datapath
-//     on the dpd_rd_* port — values are applied to every conversion by
-//     construction, with no per-sample fetch transaction.
+//   - The ACTIVE bank is continuously readable by the DPD datapath on the
+//     dpd_rd_* ports (4 ports: 2 lanes x 2 channel engines, 2026-08-22) —
+//     values are applied to every conversion by construction. Distributed
+//     RAM: extra read ports cost only LUTRAM replication.
 //   - A verification read port lets ARM read back the ACTIVE bank over SPI
 //     (quasi-static after commit, so the ctrl-domain resample is safe).
 //
-// Word layout per channel (addr[8] = channel: 0 = L, 1 = R):
-//   addr[7:0]  0 -  63 : static LUT   (64 entries, one per cascode cell)
-//             64 - 102 : Volterra kernel (39 terms)
-//            103 - 118 : FIR nuisance taps (16)
-//            119 - 255 : reserved
-// Words are 24-bit (the SPI write payload width); field scaling/format is
-// owned by the cal tooling (volterra_id2.py / dpd_study.py port, Step 6.4).
+// Word layout per channel (addr[8] = channel: 0 = L, 1 = R) — W18/F24 format
+// per dpd_fx_golden.py (utils/dpd_rtl_gen.py is the layout source of truth):
+//   addr[7:0]  0 -  63 : lut24[code]  24-bit signed, 2^-24 code-LSB grid
+//             64 - 102 : Qm[39]   Volterra 18-bit signed mantissas
+//            103 - 118 : Fm[16]   FIR nuisance-tap mantissas
+//            119 - 122 : shQ / shS / shF / GF  (6-bit shifts, ARM-computed)
+//            128 - 191 : Sm[64]   static-content mantissas
+//            else      : reserved
 // =============================================================================
-module cal_coef_store (
+module cal_coef_store #(
+    parameter int NUM_DPD_PORTS = 4
+) (
     // --- dsp_clk domain ------------------------------------------------------
     input  logic        dsp_clk,
     input  logic        dsp_rst_n,
     input  logic        sample_tick,     // commit alignment (768k sample tick)
 
-    // Phase 6 DPD datapath port — active bank, 1-cycle registered read.
-    // Tied off until the predistortion stage lands in dac_dsp_core.
-    input  logic [8:0]  dpd_rd_addr,
-    output logic [23:0] dpd_rd_data,
+    // DPD datapath ports — active bank, 1-cycle registered reads
+    input  logic [NUM_DPD_PORTS-1:0][8:0]  dpd_rd_addr,
+    output logic [NUM_DPD_PORTS-1:0][23:0] dpd_rd_data,
 
     // --- ctrl_clk domain (SPI control plane, 200 MHz) ------------------------
     input  logic        ctrl_clk,
@@ -126,7 +129,9 @@ module cal_coef_store (
     // Active-bank read ports (registered)
     // =========================================================================
     always_ff @(posedge dsp_clk) begin
-        dpd_rd_data <= active_sel ? mem1[dpd_rd_addr] : mem0[dpd_rd_addr];
+        for (int p = 0; p < NUM_DPD_PORTS; p++)
+            dpd_rd_data[p] <= active_sel ? mem1[dpd_rd_addr[p]]
+                                         : mem0[dpd_rd_addr[p]];
     end
 
     // Verification readback: rd_addr is quasi-static (an SPI register written

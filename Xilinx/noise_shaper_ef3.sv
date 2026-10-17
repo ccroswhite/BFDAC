@@ -29,6 +29,12 @@
 //   Stage B2: f = sAB - sC; w = u_off + f
 //   Stage C : d = w + dither; quantize + range select
 //   Stage D : commit y, e (clamped), shift e/f delay lines
+//   Stage E (2026-08-22, Step 4D.1): DPD correction patch. Stage D also
+//             saves the UNCLAMPED e_raw and pulses y_valid; the external
+//             dpd_engine returns corr ~30-40 cycles later (before the next
+//             enable) and e1 is re-written as clamp(e_raw - corr) — the
+//             dpd_fx_golden.py semantics. With corr_valid never pulsed
+//             (DPD disabled) behavior is bit-identical to the legacy module.
 // =============================================================================
 module noise_shaper_ef3 #(
     parameter int INPUT_WIDTH = 48,
@@ -40,7 +46,12 @@ module noise_shaper_ef3 #(
     input  logic                          enable,
     input  logic signed [INPUT_WIDTH-1:0] data_in,
     input  logic signed [FRAC_WIDTH-1:0]  dither_in,
-    output logic [OUT_WIDTH-1:0]          dem_drive_out
+    output logic [OUT_WIDTH-1:0]          dem_drive_out,
+
+    // Stage-E DPD correction port (dpd_engine)
+    output logic                          y_valid,      // 1 pulse per commit
+    input  logic                          corr_valid,   // patch request
+    input  logic signed [INPUT_WIDTH+7:0] corr          // FRAC-scaled, 56-bit
 );
 
     localparam int IW = INPUT_WIDTH + 8;   // 56-bit internal
@@ -51,6 +62,9 @@ module noise_shaper_ef3 #(
     // delay lines
     logic signed [IW-1:0] e1, e2, e3;
     logic signed [IW-1:0] f1, f2, f3;
+
+    // Stage-E: unclamped raw error of the most recent commit
+    logic signed [IW-1:0] e_raw_d;
 
     logic [4:0] en_pipe;
 
@@ -87,7 +101,10 @@ module noise_shaper_ef3 #(
             f_r <= '0; w_r <= '0; dith_b <= '0;
             w_c <= '0; code_c <= '0; range_c <= 2'b00;
             dem_drive_out <= 7'd32;
+            e_raw_d <= '0;
+            y_valid <= 1'b0;
         end else begin
+            y_valid <= 1'b0;
             en_pipe <= {en_pipe[3:0], enable};
 
             // --- Stage A: dyadic partial products --------------------------
@@ -139,7 +156,9 @@ module noise_shaper_ef3 #(
                     default: y = code_c;
                 endcase
                 dem_drive_out <= y;
+                y_valid       <= 1'b1;
                 e_raw = w_c - (IW'($signed({1'b0, y})) <<< FRAC_WIDTH);
+                e_raw_d <= e_raw;
                 if (e_raw > E_CLAMP)
                     e1 <= E_CLAMP;
                 else if (e_raw < -E_CLAMP)
@@ -151,6 +170,18 @@ module noise_shaper_ef3 #(
                 f1 <= f_r;
                 f2 <= f1;
                 f3 <= f2;
+            end
+
+            // --- Stage E: DPD correction patch (never same cycle as D) -----
+            if (corr_valid && !en_pipe[3]) begin
+                automatic logic signed [IW-1:0] e_patch;
+                e_patch = e_raw_d - corr;
+                if (e_patch > E_CLAMP)
+                    e1 <= E_CLAMP;
+                else if (e_patch < -E_CLAMP)
+                    e1 <= -E_CLAMP;
+                else
+                    e1 <= e_patch;
             end
         end
     end

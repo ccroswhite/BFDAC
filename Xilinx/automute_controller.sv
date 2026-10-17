@@ -3,9 +3,22 @@
 // Relay sequencer per schematic Fig. 4d:
 //   mute -> switch select + rails -> settle -> unmute
 // De-energized = muted everywhere (line mute open+shunt, HP jack shorted).
-// Level taps (2/4/6 Vrms) and output select (line XLR / headphone) are only
-// ever switched while both mute relays are open and audio is force-zeroed,
-// so contacts never make/break current.
+// Output select (line XLR / headphone) is only ever switched while both mute
+// relays are open and audio is force-zeroed, so contacts never make/break
+// current.
+// LEVEL (bom 7 ruling 2026-10-07: DIGITAL, K1/K2 relays struck): the level
+// code is no longer a relay tap but a digital gain cap applied in the DSP
+// volume stage (top: level_gain LUT x boot_envelope_gain). It is still only
+// changed here, in ST_SWITCHING, while muted and force-zeroed, so a 10-30 dB
+// gain step never reaches the output as a click. The 'relay' naming is kept
+// for the port map; relay_level pins are no-connects on the board.
+//   level code: 000 = 2 Vrms, 001 = 4 Vrms, 010 = 6 Vrms, 011 = 0.6 Vrms,
+//               100 = 0.2 Vrms (others reserved -> treated as 2 V in top)
+// Pending is derived from (target != applied) rather than from the req
+// pulse: the target is quasi-static, so no single-cycle pulse has to survive
+// the clk_200m -> dsp_clk crossing, and a LEVEL write made while muted is
+// not lost. The level registers reset only on rst_n (NOT on mute / i2s_err /
+// rate change) so the applied level is never silently reverted to 2 V.
 module automute_controller #(
     // Timings at 90MHz (overridable for simulation)
     parameter logic [25:0] FLUSH_CYCLES       = 26'd4_500_000,  // 50ms pipeline drain
@@ -20,8 +33,8 @@ module automute_controller #(
     input  logic spi_unmute,
     input  logic base_rate_sel,
     input  logic i2s_err,
-    input  logic level_switch_req,   // Pulse: request level tap relay switch
-    input  logic [1:0] level_target, // 00 = 2 Vrms, 01 = 4 Vrms, 10 = 6 Vrms
+    input  logic level_switch_req,   // legacy pulse, unused (pending = target != applied)
+    input  logic [2:0] level_target, // level code, see header (quasi-static, 2-FF synced)
     input  logic outsel_switch_req,  // Pulse: request output select switch
     input  logic outsel_target,      // 0 = line XLR (rear), 1 = headphone (front)
 
@@ -29,7 +42,7 @@ module automute_controller #(
     output logic line_mute_drive,    // Line XLR mute relay (energized = unmuted)
     output logic hp_mute_drive,      // HP jack mute relay (energized = jack live)
     output logic hp_rails_drive,     // HP stage rail relay (energized = HP powered)
-    output logic [1:0] level_relay_drive, // 00 = 2V tap, 01 = 4V tap, 10 = 6V tap
+    output logic [2:0] level_relay_drive, // applied level code (digital gain cap select)
     output logic force_zero,         // 1 = Clamp audio to 0, 0 = Allow live audio
     output logic switch_busy         // 1 while any relay sequence is in progress
 );
@@ -48,12 +61,29 @@ module automute_controller #(
     logic        rate_sel_q;
     logic        rate_changed;
     logic        level_switch_pending;
-    logic [1:0]  level_target_q;
+    logic [2:0]  level_target_q1, level_target_q2;
     logic        outsel_switch_pending;
     logic        outsel_target_q;
     logic        outsel_active;          // Currently selected output
     logic        rails_changed;          // HP rails toggled this pass -> long settle
-    logic [1:0]  level_relay_int;
+    logic [2:0]  level_relay_int;
+
+    // Level state: reset only on rst_n. The synced target must be stable for
+    // two cycles before it counts (multi-bit CDC: bits may land a cycle apart).
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            level_target_q1 <= 3'b000;
+            level_target_q2 <= 3'b000;
+            level_relay_int <= 3'b000;
+        end else begin
+            level_target_q1 <= level_target;
+            level_target_q2 <= level_target_q1;
+            if (state == ST_SWITCHING && level_switch_pending)
+                level_relay_int <= level_target_q2;
+        end
+    end
+    assign level_switch_pending = (level_target_q1 == level_target_q2) &&
+                                  (level_target_q2 != level_relay_int);
 
     always_ff @(posedge clk) begin
         if (!rst_n) rate_sel_q <= 1'b0;
@@ -69,18 +99,11 @@ module automute_controller #(
             hp_mute_drive         <= 1'b0;   // de-energized = jack shorted
             hp_rails_drive        <= 1'b0;   // de-energized = HP stage unpowered
             force_zero            <= 1'b1;
-            level_switch_pending  <= 1'b0;
-            level_target_q        <= 2'b00;
             outsel_switch_pending <= 1'b0;
             outsel_target_q       <= 1'b0;
             outsel_active         <= 1'b0;   // line output is the cold-start default
             rails_changed         <= 1'b0;
-            level_relay_int       <= 2'b00;
         end else begin
-            if (level_switch_req) begin
-                level_switch_pending <= 1'b1;
-                level_target_q       <= level_target;
-            end
             if (outsel_switch_req) begin
                 outsel_switch_pending <= 1'b1;
                 outsel_target_q       <= outsel_target;
@@ -106,12 +129,9 @@ module automute_controller #(
                 end
 
                 ST_SWITCHING: begin
-                    // Apply level taps + output select + HP rails while everything
-                    // is muted. This is the only place these relays ever move.
-                    if (level_switch_pending) begin
-                        level_relay_int      <= level_target_q;
-                        level_switch_pending <= 1'b0;
-                    end
+                    // Apply output select + HP rails (and, in the level block
+                    // above, the digital level cap) while everything is muted.
+                    // This is the only place these ever change.
                     if (outsel_switch_pending) begin
                         rails_changed         <= (outsel_active != outsel_target_q);
                         outsel_active         <= outsel_target_q;

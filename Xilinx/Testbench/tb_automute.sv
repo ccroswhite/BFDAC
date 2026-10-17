@@ -32,13 +32,13 @@ module tb_automute;
     logic base_rate_sel;
     logic i2s_err;
     logic level_switch_req;
-    logic [1:0] level_target;
+    logic [2:0] level_target;
     logic outsel_switch_req;
     logic outsel_target;
     logic line_mute_drive;
     logic hp_mute_drive;
     logic hp_rails_drive;
-    logic [1:0] level_relay_drive;
+    logic [2:0] level_relay_drive;
     logic force_zero;
     logic switch_busy;
 
@@ -102,7 +102,7 @@ module tb_automute;
         base_rate_sel     = 0;
         i2s_err           = 0;
         level_switch_req  = 0;
-        level_target      = 2'b00;
+        level_target      = 3'b000;
         outsel_switch_req = 0;
         outsel_target     = 1'b0;
 
@@ -113,8 +113,8 @@ module tb_automute;
         // 1. Reset state: everything muted / de-energized
         check(line_mute_drive === 0 && hp_mute_drive === 0 &&
               hp_rails_drive === 0 && force_zero === 1 &&
-              level_relay_drive === 2'b00,
-              "reset state correct (all de-energized, clamped, 2V tap)");
+              level_relay_drive === 3'b000,
+              "reset state correct (all de-energized, clamped, 2V level)");
 
         // 2. Unmute -> Playing on line output
         spi_unmute = 1;
@@ -139,22 +139,39 @@ module tb_automute;
         base_rate_sel = 0;
         repeat(10) @(posedge clk);
 
-        // 5. Level tap switch 2V -> 6V while playing
+        // 5. Level cap 2V -> 6V while playing (digital gain cap, bom 7)
         wait (line_mute_drive === 1 && force_zero === 0);
         repeat(5) @(posedge clk);
-        level_target     = 2'b10;
+        level_target     = 3'b010;
         level_switch_req = 1;
         @(posedge clk);
         level_switch_req = 0;
-        // must re-mute before the tap moves
+        // must re-mute before the level changes
         wait (line_mute_drive === 0 && force_zero === 1);
-        check(level_relay_drive !== 2'b10,
-              "level tap did not move before mute");
-        wait (level_relay_drive === 2'b10);
+        check(level_relay_drive !== 3'b010,
+              "level did not change before mute");
+        wait (level_relay_drive === 3'b010);
         check(line_mute_drive === 0 && force_zero === 1,
-              "level tap moved while muted");
+              "level changed while muted");
         wait (line_mute_drive === 1 && force_zero === 0);
         $display("PASS: returned to Playing after level switch");
+        repeat(10) @(posedge clk);
+
+        // 5b. Level must SURVIVE a mute (was: reset to 2 V on every mute)
+        spi_unmute = 0;
+        repeat(5) @(posedge clk);
+        check(level_relay_drive === 3'b010, "level held at 6V through SPI mute");
+        // 5c. A LEVEL write made while muted is applied on the next unmute pass
+        //     (no req pulse at all: pending = target != applied)
+        level_target = 3'b100;   // 0.2 Vrms
+        repeat(5) @(posedge clk);
+        check(level_relay_drive === 3'b010, "level not applied while sitting muted");
+        spi_unmute = 1;
+        wait (level_relay_drive === 3'b100);
+        check(line_mute_drive === 0 && force_zero === 1,
+              "0.2V level applied while still muted");
+        wait (line_mute_drive === 1 && force_zero === 0);
+        $display("PASS: playing at 0.2V level after muted write");
         repeat(10) @(posedge clk);
 
         // 6. Output select line -> headphone

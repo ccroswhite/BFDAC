@@ -96,6 +96,9 @@ module tb_dac_dsp_core;
         .bank_load_target   (bank_load_target),
         .sys_volume         (sys_volume),
         .boot_envelope_gain (boot_envelope_gain),
+        .dpd_enable         (1'b0),
+        .dpd_cal_addr       (),
+        .dpd_cal_data       ('0),
         .sample_768k_tick   (sample_768k_tick),
         .cascode_l          (cascode_l),
         .cascode_r          (cascode_r)

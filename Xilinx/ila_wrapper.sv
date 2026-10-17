@@ -5,8 +5,8 @@
 //
 // When ILA_EN is defined, the module exposes a probe port and instantiates the
 // Vivado ILA IP.  When ILA_EN is not defined, it compiles away to nothing.
-// Use this to capture debug signals on the SPI control plane, automute FSM,
-// and I2C bus without perturbing the production build.
+// Use this to capture debug signals on the SPI control plane and automute
+// FSM without perturbing the production build.
 // =============================================================================
 module ila_wrapper #(
     parameter int PROBE_WIDTH = 32

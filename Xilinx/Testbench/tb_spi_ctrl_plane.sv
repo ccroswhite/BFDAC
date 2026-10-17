@@ -11,7 +11,7 @@
 //   - base_rate_sel/clk_source_sel single-register alias (0x03 drives both)
 //   - Mute/relay status register reflects injected inputs
 //   - Clock/PLL status register reflects clk_locked / ddr4_calib
-//   - i2s_err produces a sticky error and drops fpga_irq_n; W1C releases it
+//   - i2s_err produces a sticky error and drops fpga_irq_n; W1C (write 0x16) releases it
 //   - Level / output-select relay writes pulse the switch request lines
 // =============================================================================
 module tb_spi_ctrl_plane;
@@ -27,12 +27,13 @@ module tb_spi_ctrl_plane;
     logic spi_miso;
     logic fpga_irq_n;
     logic       level_switch_req;
-    logic [1:0] level_target;
+    logic [2:0] level_target;
     logic       outsel_switch_req;
     logic       outsel_target;
 
     // Status inputs
     logic mgr_busy;
+    logic bank_valid = 1'b0;
     logic coef_load_done;
     logic [3:0] current_bank_id;
     logic i2s_err;
@@ -41,6 +42,12 @@ module tb_spi_ctrl_plane;
     logic ddr4_init_calib_complete;
     logic line_mute_status;
     logic hp_mute_status;
+    logic flash_cmd_busy;
+    logic flash_cmd_err;
+    logic boot_crc_fail;
+    logic boot_axi_fail;
+    logic       coef_load_err;
+    logic [1:0] coef_load_err_code;
 
     // Single-cycle pulse catchers (200 MHz pulses vs #-delay stimulus)
     logic seen_level_req, seen_outsel_req;
@@ -66,6 +73,7 @@ module tb_spi_ctrl_plane;
         .outsel_switch_req      (outsel_switch_req),
         .outsel_target          (outsel_target),
         .mgr_busy               (mgr_busy),
+        .bank_valid             (bank_valid),
         .coef_load_done         (coef_load_done),
         .current_bank_id        (current_bank_id),
         .i2s_err                (i2s_err),
@@ -74,6 +82,12 @@ module tb_spi_ctrl_plane;
         .ddr4_init_calib_complete(ddr4_init_calib_complete),
         .line_mute_status       (line_mute_status),
         .hp_mute_status         (hp_mute_status),
+        .flash_cmd_busy         (flash_cmd_busy),
+        .flash_cmd_err          (flash_cmd_err),
+        .boot_crc_fail          (boot_crc_fail),
+        .boot_axi_fail          (boot_axi_fail),
+        .coef_load_err          (coef_load_err),
+        .coef_load_err_code     (coef_load_err_code),
         .sys_volume             (sys_volume),
         .base_rate_sel          (base_rate_sel),
         .clk_source_sel         (clk_source_sel),
@@ -143,6 +157,28 @@ module tb_spi_ctrl_plane;
             spi_cs_n = 1'b1;
             spi_mosi = 1'b0;
             #(SPI_HALF_NS * 4); // inter-frame gap: allow CS-rise detection + data_valid
+        end
+    endtask
+
+    // spi_bad_frame: clock a WRONG number of bits (not 40) inside one CS
+    // assertion — the slave must discard it and pulse frame_err (sticky[4]).
+    task automatic spi_bad_frame(input int nbits);
+        begin
+            spi_cs_n = 1'b0;
+            spi_sclk = 1'b0;
+            spi_mosi = 1'b0;
+            #(SPI_HALF_NS * 4);
+            for (int i = 0; i < nbits; i++) begin
+                spi_mosi = 1'b1;
+                #(SPI_HALF_NS);
+                spi_sclk = 1'b1;
+                #(SPI_HALF_NS);
+                spi_sclk = 1'b0;
+            end
+            #(SPI_HALF_NS);
+            spi_cs_n = 1'b1;
+            spi_mosi = 1'b0;
+            #(SPI_HALF_NS * 4);
         end
     endtask
 
@@ -239,6 +275,12 @@ module tb_spi_ctrl_plane;
         ddr4_init_calib_complete = 1;
         line_mute_status = 0;
         hp_mute_status = 0;
+        flash_cmd_busy = 0;
+        flash_cmd_err  = 0;
+        boot_crc_fail  = 0;
+        boot_axi_fail  = 0;
+        coef_load_err  = 0;
+        coef_load_err_code = 2'd0;
         seen_level_req  = 0;
         seen_outsel_req = 0;
 
@@ -250,8 +292,8 @@ module tb_spi_ctrl_plane;
         //    Verifies SPI write path + CRC acceptance + register latch
         spi_write(7'h01, 24'h00_1234);
         #(CLK_PERIOD_NS * 20);
-        if (sys_volume !== 32'h0000_1234)
-            $display("FAIL: [1] volume write  addr=0x01 got=0x%08X exp=0x00001234", sys_volume);
+        if (sys_volume !== 32'h0012_3400)
+            $display("FAIL: [1] volume write  addr=0x01 got=0x%08X exp=0x00123400 (24-bit word left-justified)", sys_volume);
         else
             $display("PASS: [1] volume write  addr=0x01 sys_volume=0x%08X", sys_volume);
 
@@ -266,15 +308,15 @@ module tb_spi_ctrl_plane;
             $display("PASS: [2] rate write  base_rate_sel=%0b clk_source_sel=%0b (alias ok)",
                      base_rate_sel, clk_source_sel);
 
-        // 3. Write level relay target (addr=0x02): 2'b10 = 6 Vrms.
+        // 3. Write level cap (addr=0x02): 3'b010 = 6 Vrms (digital gain cap, bom 7).
         //    Verifies level_target latches and the change fires level_switch_req.
         //    Then write output select (addr=0x07): 1 = headphone.
         spi_write(7'h02, 24'h00_0002);
         #(CLK_PERIOD_NS * 20);
         spi_write(7'h07, 24'h00_0001);
         #(CLK_PERIOD_NS * 20);
-        if (level_target !== 2'b10 || !seen_level_req)
-            $display("FAIL: [3a] level addr=0x02 target=%0b req_seen=%0b (exp 10, 1)",
+        if (level_target !== 3'b010 || !seen_level_req)
+            $display("FAIL: [3a] level addr=0x02 target=%0b req_seen=%0b (exp 010, 1)",
                      level_target, seen_level_req);
         else
             $display("PASS: [3a] level addr=0x02 target=%0b, level_switch_req pulsed", level_target);
@@ -304,12 +346,21 @@ module tb_spi_ctrl_plane;
         else
             $display("PASS: [5] fpga_irq_n deasserted on i2s_err sticky latch");
 
-        // 6. Clear sticky error register (addr=0x11, data=0xF clears all error bits)
-        //    Verifies write-to-clear logic and IRQ line releases when all errors cleared
+        // 6a. Regression (2026-08-26 fix): a FLASH_ADDR_HI write (addr=0x11)
+        //     with bits [3:0] set must NOT clear sticky errors (old collision bug)
         spi_write(7'h11, 24'h00_000F);
         #(CLK_PERIOD_NS * 20);
+        if (fpga_irq_n !== 0)
+            $display("FAIL: [6a] FLASH_ADDR_HI write (addr=0x11) cleared sticky errors (collision regression)");
+        else
+            $display("PASS: [6a] FLASH_ADDR_HI write (addr=0x11) left sticky errors latched");
+
+        // 6. Clear sticky error register (addr=0x16, data=0xF clears all error bits)
+        //    Verifies write-1-to-clear logic and IRQ line releases when all errors cleared
+        spi_write(7'h16, 24'h00_000F);
+        #(CLK_PERIOD_NS * 20);
         if (fpga_irq_n !== 1)
-            $display("FAIL: [6] fpga_irq_n still low after sticky clear (addr=0x11 wr=0xF)");
+            $display("FAIL: [6] fpga_irq_n still low after sticky clear (addr=0x16 wr=0xF)");
         else
             $display("PASS: [6] fpga_irq_n reasserted after sticky error cleared");
 
@@ -318,6 +369,7 @@ module tb_spi_ctrl_plane;
         // ---------------------------------------------------------------
         begin
             logic [31:0] rd;
+            logic [31:0] rd2;
 
             // 7. Read magic ID register (addr=0x10, read-only)
             //    Verifies SPI read path: 2-transaction read, MISO shift-out, CRC on read frame
@@ -337,15 +389,15 @@ module tb_spi_ctrl_plane;
                 $display("PASS: [8] sticky_err addr=0x11 = 0x%08X (cleared)", rd);
 
             // 9. Read control state register (addr=0x12)
-            //    Fields: {clk_source_sel[4], base_rate_sel[3], cmd_outsel[2], cmd_level[1:0]}
-            //    From tests 2+3: clk_src=1, base_rate=1, outsel=1, level=2'b10 -> 0x1E
+            //    Fields: {clk_source_sel[5], base_rate_sel[4], cmd_outsel[3], cmd_level[2:0]}
+            //    From tests 2+3: clk_src=1, base_rate=1, outsel=1, level=3'b010 -> 0x3A
             spi_read(7'h12, rd);
-            if (rd[4:0] !== 5'b11110)
-                $display("FAIL: [9] ctrl_state addr=0x12 [4:0]=0x%X exp=0x1E {clk_src,base_rate,outsel,level[1:0]}",
-                         rd[4:0]);
+            if (rd[5:0] !== 6'b111010)
+                $display("FAIL: [9] ctrl_state addr=0x12 [5:0]=0x%X exp=0x3A {clk_src,base_rate,outsel,level[2:0]}",
+                         rd[5:0]);
             else
-                $display("PASS: [9] ctrl_state addr=0x12 [4:0]=0x%X {clk_src=%0b,base_rate=%0b,outsel=%0b,level=%0b}",
-                         rd[4:0], rd[4], rd[3], rd[2], rd[1:0]);
+                $display("PASS: [9] ctrl_state addr=0x12 [5:0]=0x%X {clk_src=%0b,base_rate=%0b,outsel=%0b,level=%0b}",
+                         rd[5:0], rd[5], rd[4], rd[3], rd[2:0]);
 
             // 10. Read mute/relay status register (addr=0x14)
             //     Fields: {i2s_err_r[4], switch_busy_r[3], hp_mute_r[2], line_mute_r[1], cmd_unmute[0]}
@@ -384,6 +436,132 @@ module tb_spi_ctrl_plane;
                 $display("FAIL: [12] unknown addr=0x7F got=0x%08X exp=0xDEADBEEF", rd);
             else
                 $display("PASS: [12] unknown addr=0x7F returned sentinel 0x%08X", rd);
+
+            // ---------------------------------------------------------------
+            // ERROR-PATH TESTS (2026-08-28: sticky[7:4] + CMD_ERR_INFO 0x1C)
+            // ---------------------------------------------------------------
+
+            // 13. Invalid write address (0x7E) -> sticky[5] + CMD_ERR_INFO
+            spi_write(7'h7E, 24'h123456);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            if (rd[7:0] !== 8'h20)
+                $display("FAIL: [13a] sticky after bad addr got=0x%02X exp=0x20 (bit5)", rd[7:0]);
+            else
+                $display("PASS: [13a] invalid write addr 0x7E latched sticky[5]");
+            spi_read(7'h1C, rd);
+            if (rd[10:0] !== {7'h7E, 4'h1})
+                $display("FAIL: [13b] CMD_ERR_INFO got=0x%03X exp=0x7E1 {addr=7E,reason=1}", rd[10:0]);
+            else
+                $display("PASS: [13b] CMD_ERR_INFO = {addr=0x%02X, reason=%0d} (BAD_ADDR)", rd[10:4], rd[3:0]);
+
+            // 14. W1C full clear (0xFF) also clears CMD_ERR_INFO
+            spi_write(7'h16, 24'h0000FF);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h00 || rd2[10:0] !== 11'h000 || fpga_irq_n !== 1)
+                $display("FAIL: [14] after W1C 0xFF sticky=0x%02X info=0x%03X irq=%0b (exp 0,0,1)",
+                         rd[7:0], rd2[10:0], fpga_irq_n);
+            else
+                $display("PASS: [14] W1C 0xFF cleared sticky + CMD_ERR_INFO, IRQ released");
+
+            // 15. Rejected command: FILTER_SELECT on empty list -> sticky[6], reason 5
+            spi_write(7'h0A, 24'h010000);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h40 || rd2[10:0] !== {7'h0A, 4'h5})
+                $display("FAIL: [15] filter-empty reject sticky=0x%02X info=0x%03X (exp 0x40, 0x0A5)",
+                         rd[7:0], rd2[10:0]);
+            else
+                $display("PASS: [15] FILTER_SELECT on empty list -> sticky[6], info={0x0A, FILT_EMPTY}");
+            spi_write(7'h16, 24'h0000FF);
+
+            // 16. Rejected command: FLASH_CMD with unknown opcode 0xFF -> reason 3, no trigger
+            spi_write(7'h12, 24'h0000FF);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h40 || rd2[10:0] !== {7'h12, 4'h3})
+                $display("FAIL: [16] flash bad-opcode sticky=0x%02X info=0x%03X (exp 0x40, 0x123)",
+                         rd[7:0], rd2[10:0]);
+            else
+                $display("PASS: [16] FLASH_CMD bad opcode -> sticky[6], info={0x12, FLASH_OP}");
+            spi_write(7'h16, 24'h0000FF);
+
+            // 17. Rejected command: FLASH_CMD while busy -> reason 2
+            flash_cmd_busy = 1;
+            spi_write(7'h12, 24'h000001);
+            #(CLK_PERIOD_NS * 20);
+            flash_cmd_busy = 0;
+            spi_read(7'h1C, rd2);
+            if (rd2[10:0] !== {7'h12, 4'h2})
+                $display("FAIL: [17] flash-busy reject info=0x%03X (exp 0x122)", rd2[10:0]);
+            else
+                $display("PASS: [17] FLASH_CMD while busy -> info={0x12, FLASH_BUSY}");
+            spi_write(7'h16, 24'h0000FF);
+
+            // 18. Frame-length error: 39-clock runt frame -> sticky[4], reason 9
+            spi_bad_frame(39);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h10 || rd2[3:0] !== 4'h9)
+                $display("FAIL: [18] runt frame sticky=0x%02X reason=%0d (exp 0x10, 9)",
+                         rd[7:0], rd2[3:0]);
+            else
+                $display("PASS: [18] 39-bit runt frame -> sticky[4] frame error, reason FRAME_LEN");
+            spi_write(7'h16, 24'h0000FF);
+            #(CLK_PERIOD_NS * 20);
+            if (fpga_irq_n !== 1)
+                $display("FAIL: [18b] IRQ not released after final W1C");
+            else
+                $display("PASS: [18b] IRQ released after final W1C");
+
+            // 19. Filter load failure: ID not in directory -> sticky[6], reason 0xA, addr 0x0A
+            coef_load_err_code = 2'd1;
+            #(CLK_PERIOD_NS * 2);
+            coef_load_err = 1;
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h40 || rd2[10:0] !== {7'h0A, 4'hA} || fpga_irq_n !== 0)
+                $display("FAIL: [19a] load-err NOTFOUND sticky=0x%02X info=0x%03X irq=%0b (exp 0x40, 0x0AA, 0)",
+                         rd[7:0], rd2[10:0], fpga_irq_n);
+            else
+                $display("PASS: [19a] coef_load_err code=1 -> sticky[6], info={0x0A, FILT_NOTFOUND}");
+            // Level stays high: W1C must clear and it must NOT re-latch (edge-triggered)
+            spi_write(7'h16, 24'h0000FF);
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            if (rd[7:0] !== 8'h00 || fpga_irq_n !== 1)
+                $display("FAIL: [19b] sticky re-latched while coef_load_err level held: 0x%02X irq=%0b",
+                         rd[7:0], fpga_irq_n);
+            else
+                $display("PASS: [19b] held coef_load_err level does not re-latch after W1C");
+            coef_load_err = 0;
+            #(CLK_PERIOD_NS * 10);
+
+            // 20. Filter load failure: size mismatch -> reason 0xB
+            coef_load_err_code = 2'd2;
+            #(CLK_PERIOD_NS * 2);
+            coef_load_err = 1;
+            #(CLK_PERIOD_NS * 20);
+            spi_read(7'h11, rd);
+            spi_read(7'h1C, rd2);
+            if (rd[7:0] !== 8'h40 || rd2[10:0] !== {7'h0A, 4'hB})
+                $display("FAIL: [20] load-err SIZE sticky=0x%02X info=0x%03X (exp 0x40, 0x0AB)",
+                         rd[7:0], rd2[10:0]);
+            else
+                $display("PASS: [20] coef_load_err code=2 -> sticky[6], info={0x0A, FILT_SIZE}");
+            coef_load_err = 0;
+            spi_write(7'h16, 24'h0000FF);
+            #(CLK_PERIOD_NS * 20);
+            if (fpga_irq_n !== 1)
+                $display("FAIL: [20b] IRQ not released after W1C");
+            else
+                $display("PASS: [20b] IRQ released after W1C");
         end
 
         $display("=== tb_spi_ctrl_plane complete ===");

@@ -4,7 +4,8 @@
 // DAC DSP Core — XCVU13P single-FPGA stereo design
 //
 // Signal chain (stereo throughout):
-//   1. fir_polyphase_stereo  : ×16 polyphase FIR, 1M taps, URAM288 coef storage
+//   1. fir_polyphase_stereo  : ×16 polyphase FIR, 16*NUM_MACS*TAPS_PER_PHASE taps
+//                              (release 1M = 256x256; 5.24M = 1280x256 proven), URAM288 coefs
 //   2. halfband_x2 HB1       : ×2 interpolation, 768k  → 1.536 MHz, 63 taps
 //   3. halfband_x2 HB2       : ×2 interpolation, 1.536 → 3.072 MHz, 31 taps
 //   4. halfband_x2 HB3       : ×2 interpolation, 3.072 → 6.144 MHz, 15 taps
@@ -27,8 +28,9 @@
 // No LVDS serial TX, no CDC FIFO, no external FPGA interface.
 // =============================================================================
 module dac_dsp_core #(
-    parameter int NUM_MACS = 1024,  // Production: 1024 (1M taps) or 2048 (2M taps)
-    parameter int TAPS_PER_PHASE = 64  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int NUM_MACS = 1024,  // Set at top: 256 (1M taps @ TPP=256, release) / 1280 (5.24M)
+    parameter int TAPS_PER_PHASE = 64,  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int CELL_TEST_MUTE_CYCLES = 4000000
 )(
     // Single clock domain — all logic runs on dsp_clk (350-400 MHz, BUFG)
     input  logic        dsp_clk,
@@ -56,12 +58,26 @@ module dac_dsp_core #(
     // Boot envelope gain (from dac_coef_subsys, dsp_clk domain)
     input  logic [15:0] boot_envelope_gain,
 
+    // DPD (Step 4D.1): enable level (dsp_clk-synced in top) + cal_coef_store
+    // active-bank read ports (2 lanes x 2 channel engines)
+    input  logic              dpd_enable,
+    output logic [3:0][8:0]   dpd_cal_addr,
+    input  logic [3:0][23:0]  dpd_cal_data,
+
     // Sample tick output (768 kHz post-FIR, to dac_coef_subsys)
     output logic        sample_768k_tick,
 
     // Cascode IOB launch clock — mclk-rate MMCM output, phase-aligned to the
     // external SN74LVC1G74 reclock-FF clock (same LMK00304 tree, Round 30)
     input  logic        cell_clk,
+    input  logic [1:0][7:0] cell_test_cfg,
+    input  logic [1:0]      cell_test_req,
+    output logic [1:0]      cell_test_ack,
+    input  logic            cell_test_safe,
+    input  tri0             bench_req,
+    input  logic [10:0]     bench_cmd,
+    output logic           bench_ack,
+    output logic           bench_ready,
 
     // Direct cascode cell outputs — IOB-registered on cell_clk, RTZ-encoded
     // (6-of-8 mclk pulse per selected cell per sample, Round 30). ONE pin per
@@ -310,6 +326,18 @@ module dac_dsp_core #(
     end
     assign pace_tick = pace_sync[2] ^ pace_sync[1];
 
+    logic cell_test_ready;
+    logic [10:0] bench_applied;
+    logic signed [47:0] bench_sample_l, bench_sample_r;
+    wire bench_active = bench_applied[1:0] != 0;
+    wire bench_audio = bench_applied[1:0] >= 2;
+    assign bench_ready = cell_test_ready && cell_test_safe;
+    bench_test_stimulus u_bench_stimulus (
+        .clk(dsp_clk), .rst_n(sys_rst_n), .tick(pace_tick), .allowed(bench_ready),
+        .cmd(bench_cmd), .req(bench_req), .ack(bench_ack), .applied(bench_applied),
+        .sample_l(bench_sample_l), .sample_r(bench_sample_r)
+    );
+
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             pace_wptr  <= '0;
@@ -340,6 +368,14 @@ module dac_dsp_core #(
                 2'b01:   pace_count <= pace_count - 9'd1;
                 default: pace_count <= pace_count;
             endcase
+            if (bench_active) begin
+                pace_count <= 0;
+                pace_wptr <= 0;
+                pace_rptr <= 0;
+                pace_valid <= pace_tick && bench_audio;
+                paced_l <= bench_sample_l;
+                paced_r <= bench_sample_r;
+            end
         end
     end
 
@@ -372,6 +408,10 @@ module dac_dsp_core #(
     // =========================================================================
     logic [6:0] dem_cmd_l, dem_cmd_r;
 
+    logic        ns_y_valid_l, ns_y_valid_r;
+    logic        dpd_corr_valid_l, dpd_corr_valid_r;
+    logic signed [55:0] dpd_corr_l, dpd_corr_r;
+
     noise_shaper_ef3 #(
         .INPUT_WIDTH (48),
         .FRAC_WIDTH  (42),
@@ -382,7 +422,10 @@ module dac_dsp_core #(
         .enable        (pace_valid),
         .data_in       (paced_l),
         .dither_in     (dither_l),
-        .dem_drive_out (dem_cmd_l)
+        .dem_drive_out (dem_cmd_l),
+        .y_valid       (ns_y_valid_l),
+        .corr_valid    (dpd_corr_valid_l),
+        .corr          (dpd_corr_l)
     );
 
     noise_shaper_ef3 #(
@@ -395,7 +438,49 @@ module dac_dsp_core #(
         .enable        (pace_valid),
         .data_in       (paced_r),
         .dither_in     (dither_r),
-        .dem_drive_out (dem_cmd_r)
+        .dem_drive_out (dem_cmd_r),
+        .y_valid       (ns_y_valid_r),
+        .corr_valid    (dpd_corr_valid_r),
+        .corr          (dpd_corr_r)
+    );
+
+    // =========================================================================
+    // 8b. DPD Engines (Step 4D.1, 2026-08-22) — per channel, EF3-embedded
+    //     Volterra predistortion (certified dpd_fx_golden.py fixed point).
+    //     Coefficients from cal_coef_store (top level) via 2 lanes x 2 ports.
+    //     dpd_enable low -> corr_valid never fires -> legacy NS behavior.
+    // =========================================================================
+    logic [7:0] dpd_addr_l_a, dpd_addr_l_b, dpd_addr_r_a, dpd_addr_r_b;
+
+    assign dpd_cal_addr = {{1'b1, dpd_addr_r_b}, {1'b1, dpd_addr_r_a},
+                           {1'b0, dpd_addr_l_b}, {1'b0, dpd_addr_l_a}};
+
+    dpd_engine u_dpd_l (
+        .clk        (dsp_clk),
+        .rst_n      (sys_rst_n),
+        .dpd_enable (dpd_enable && !bench_active),
+        .y_valid    (ns_y_valid_l),
+        .y          (dem_cmd_l),
+        .cal_addr_a (dpd_addr_l_a),
+        .cal_data_a (dpd_cal_data[0]),
+        .cal_addr_b (dpd_addr_l_b),
+        .cal_data_b (dpd_cal_data[1]),
+        .corr       (dpd_corr_l),
+        .corr_valid (dpd_corr_valid_l)
+    );
+
+    dpd_engine u_dpd_r (
+        .clk        (dsp_clk),
+        .rst_n      (sys_rst_n),
+        .dpd_enable (dpd_enable && !bench_active),
+        .y_valid    (ns_y_valid_r),
+        .y          (dem_cmd_r),
+        .cal_addr_a (dpd_addr_r_a),
+        .cal_data_a (dpd_cal_data[2]),
+        .cal_addr_b (dpd_addr_r_b),
+        .cal_data_b (dpd_cal_data[3]),
+        .corr       (dpd_corr_r),
+        .corr_valid (dpd_corr_valid_r)
     );
 
     // =========================================================================
@@ -472,8 +557,52 @@ module dac_dsp_core #(
 
     // DEM output valid: dem_sort is multi-cycle; both channels get identical
     // enable cadence so their valids coincide — use the L one.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] cell_test_req_meta, cell_test_req_sync;
+    logic [1:0][7:0] cell_test_applied;
+    localparam int CELL_TEST_WAIT_W = $clog2(CELL_TEST_MUTE_CYCLES + 1);
+    logic [CELL_TEST_WAIT_W-1:0] cell_test_mute_count;
+    assign cell_test_ready = cell_test_mute_count == CELL_TEST_WAIT_W'(CELL_TEST_MUTE_CYCLES);
+    wire cell_test_active = (cell_test_applied[0][7] || cell_test_applied[1][7]) && cell_test_ready;
+
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) begin
+            cell_test_req_meta <= '0;
+            cell_test_req_sync <= '0;
+            cell_test_ack <= '0;
+            cell_test_applied <= '0;
+            cell_test_mute_count <= '0;
+        end else begin
+            cell_test_req_meta <= cell_test_req;
+            cell_test_req_sync <= cell_test_req_meta;
+            if (!cell_test_safe)
+                cell_test_mute_count <= '0;
+            else if (!cell_test_ready)
+                cell_test_mute_count <= cell_test_mute_count + 1'b1;
+            for (int ch = 0; ch < 2; ch++) begin
+                if ((cell_test_req_sync[ch] != cell_test_ack[ch]) &&
+                    (!cell_test_cfg[ch][7] || (cell_test_safe && cell_test_ready))) begin
+                    cell_test_applied[ch] <= cell_test_cfg[ch];
+                    cell_test_ack[ch] <= cell_test_req_sync[ch];
+                end
+            end
+        end
+    end
+
+    function automatic logic [63:0] cell_test_pattern(input logic [7:0] cfg);
+        logic [63:0] pattern;
+        pattern = 64'h00000000ffffffff;
+        if (cfg[7]) begin
+            pattern = '0;
+            for (int i = 1; i <= 32; i++) pattern[(int'(cfg[5:0]) + i) % 64] = 1'b1;
+            pattern[cfg[5:0]] = cfg[6];
+        end
+        return pattern;
+    endfunction
+
+    wire bench_cell = bench_applied[1:0] == 1;
+    wire [7:0] bench_cell_cfg = {1'b1, bench_applied[3], bench_applied[9:4]};
     logic dem_out_valid;
-    assign dem_out_valid = dem_valid_l;
+    assign dem_out_valid = (bench_cell || cell_test_active) ? pace_tick : dem_valid_l;
 
     // Stage 1: staging registers (fabric, gated load)
     logic [63:0] staging_l, staging_r;
@@ -483,8 +612,10 @@ module dac_dsp_core #(
             staging_l <= '0;
             staging_r <= '0;
         end else if (dem_out_valid) begin
-            staging_l <= dem_out_l;
-            staging_r <= dem_out_r;
+            staging_l <= bench_cell ? cell_test_pattern(bench_applied[2] ? 8'd0 : bench_cell_cfg) :
+                         cell_test_active ? cell_test_pattern(cell_test_applied[0]) : dem_out_l;
+            staging_r <= bench_cell ? cell_test_pattern(bench_applied[2] ? bench_cell_cfg : 8'd0) :
+                         cell_test_active ? cell_test_pattern(cell_test_applied[1]) : dem_out_r;
         end
     end
 

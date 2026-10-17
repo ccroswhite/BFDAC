@@ -6,8 +6,8 @@
 //   TOPOLOGY (2026-08-11): 64-bit data (4× MT40A1G16, 8 GB; DDR4 MIG
 //   controller maxes at 72-bit so the SOM's 5th chip is unused).
 //   DDR4 reference clock: C0_DDR4_CLKREF (AD33/AE33) on-module 200 MHz
-// Exposes AXI4 read-only master for coef_bank_loader and ui_clk for the
-// coefficient subsystem. Write channels are tied off (read-only design).
+// Exposes AXI4 slave ports: read side for coef_bank_loader, write side for
+// qspi_boot_loader (added 2026-08-22); ui_clk for the coefficient subsystem.
 // NOTE: this is the SIMULATION STUB. The real MIG wrapper is
 // dac_ddr4_if_mig.sv (+ ip/ddr4_0, ip/axi_dwc_coef) — include exactly one
 // of the two files per fileset.
@@ -54,7 +54,23 @@ module dac_ddr4_if (
     output logic [1:0]   m_axi_rresp,
     output logic         m_axi_rlast,
     output logic         m_axi_rvalid,
-    input  logic         m_axi_rready
+    input  logic         m_axi_rready,
+
+    // AXI4 Write Channels (driven by qspi_boot_loader)
+    input  logic [29:0]  s_axi_awaddr,
+    input  logic [7:0]   s_axi_awlen,
+    input  logic [2:0]   s_axi_awsize,
+    input  logic [1:0]   s_axi_awburst,
+    input  logic         s_axi_awvalid,
+    output logic         s_axi_awready,
+    input  logic [127:0] s_axi_wdata,
+    input  logic [15:0]  s_axi_wstrb,
+    input  logic         s_axi_wlast,
+    input  logic         s_axi_wvalid,
+    output logic         s_axi_wready,
+    output logic [1:0]   s_axi_bresp,
+    output logic         s_axi_bvalid,
+    input  logic         s_axi_bready
 );
 
     // =========================================================================
@@ -101,5 +117,11 @@ module dac_ddr4_if (
     assign m_axi_rresp   = 2'b00;
     assign m_axi_rlast   = 1'b0;
     assign m_axi_rvalid  = 1'b0;
+
+    // AXI4 write channels — stub stalls all transactions
+    assign s_axi_awready = 1'b0;
+    assign s_axi_wready  = 1'b0;
+    assign s_axi_bresp   = 2'b00;
+    assign s_axi_bvalid  = 1'b0;
 
 endmodule

@@ -28,7 +28,8 @@ module tb_ns_ef3;
     ) u_dut (
         .clk(clk), .rst_n(rst_n), .enable(enable),
         .data_in(data_in), .dither_in(dither_in),
-        .dem_drive_out(dem_drive_out)
+        .dem_drive_out(dem_drive_out),
+        .y_valid(), .corr_valid(1'b0), .corr(56'sd0)   // DPD off: legacy exact
     );
 
     logic [99:0] golden [0:N_GOLDEN-1];

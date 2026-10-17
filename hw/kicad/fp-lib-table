@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "bfdac")(type "KiCad")(uri "${KIPRJMOD}/bfdac.pretty")(options "")(descr "BFDAC project footprints"))
+)

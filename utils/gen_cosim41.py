@@ -5,10 +5,11 @@
 # to below the ~-111 dBc sensing floor.
 import numpy as np
 import os
+import re
 import sys
 
 TAG = sys.argv[1] if len(sys.argv) > 1 else "41"
-M = 16384
+M = int(os.environ.get("M", "16384"))   # R95: 65536 for the 1 kHz long gate
 TS = 162.7604e-9
 NCELL = 64
 OUT = r"C:\Users\ccros\Documents\LTspice"
@@ -65,6 +66,8 @@ with open(os.path.join(PWLDIR, "nsch.txt"), "w") as f:
 src = open(os.path.join(OUT, "bfdac_cosim72.cir")).read()
 src = src.replace("v72", f"v{TAG}")
 src = src.replace("pwl72", f"pwl{TAG}")
+src = re.sub(r"^\.tran (\S+) \S+ 0", lambda m: f".tran {m.group(1)} {tend*1e6:.6f}u 0",
+             src, count=1, flags=re.M)
 with open(os.path.join(OUT, f"bfdac_cosim{TAG}.cir"), "w") as f:
     f.write(src)
 print(f"cosim{TAG}: {M} periods, corrected code range {code.min()}..{code.max()}, "

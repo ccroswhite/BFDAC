@@ -1,548 +1,424 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-//  TB_SYSTEM_DDR4_TO_FIR
+//  TB_SYSTEM_DDR4_TO_FIR  (rewritten 2026-09-03, progress.md TODO-19)
 //
-//  Complete system integration testbench verifying:
-//    1. AXI slave generates coefficient data on-the-fly (no pre-init loop)
-//    2. coef_bank_loader fetches via AXI4 read bursts
-//    3. CDC bridge passes coef write bus from ui_clk -> dsp_clk
-//    4. Coefficients land in fir_polyphase_stereo BRAMs
-//    5. FIR processes audio samples with loaded coefficients
+//  End-to-end coefficient path at the RELEASE geometry (TAPS_PER_PHASE=256,
+//  NUM_MACS scaled 256 -> 64 for sim time; same per-MAC burst structure):
 //
-//  AXI data is computed combinatorially from address — no memory array needed.
-//  This avoids the 524K-iteration pre-init loop that blocked simulation start.
+//    AXI memory model (on-the-fly data + filter directory)
+//      -> dac_coef_subsys (loader @ ui_clk, CDC, bank manager, boot envelope)
+//      -> fir_polyphase_stereo (URAM coefficient banks, dsp_clk)
+//
+//  Tests
+//    T1  request before boot_ok is QUEUED: no AXI traffic, bank_valid=0,
+//        boot envelope fully muted                         (TODO-16)
+//    T2  boot_ok -> queued legacy-slot load runs; write count, swap, bank_valid
+//    T3  boot fade-in starts after the first good load     (TODO-16)
+//    T4  FIR impulse -> interpolated output valid and X-free
+//    T5  directory load by ID while the FIR runs (gapless): writes, swap,
+//        no load_err, FIR output still X-free               (TODO-23 path)
+//    T6  directory miss   -> coef_load_err code 1, no swap
+//    T7  payload mismatch -> coef_load_err code 2, no swap
 // =============================================================================
 
 module tb_system_ddr4_to_fir;
 
-    // -------------------------------------------------------------------------
-    //  Parameters (must match DUTs)
-    //  -------------------------------------------------------------------------
-    localparam int NUM_MACS       = 64;    // Scaled down for simulation (production=1024)
+    // ---- Geometry -------------------------------------------------------------
+    localparam int NUM_MACS       = 64;
+    localparam int TAPS_PER_PHASE = 256;
+    localparam int COEF_DEPTH     = 16 * TAPS_PER_PHASE;      // 4096
     localparam int COEF_WIDTH     = 18;
-    localparam int COEF_DEPTH     = 1024;  // 16 phases * 64 taps/phase
-    localparam int BANK_BITS      = 4;
-    localparam int AXI_DATA_WIDTH = 128;
-    localparam int AXI_ADDR_WIDTH = 32;
     localparam int AUDIO_WIDTH    = 24;
-    
-    localparam logic [31:0] DDR4_BASE      = 32'h0000_0000;
-    localparam logic [31:0] BANK_SIZE      = 32'h0040_0000;  // 4 MB per bank (1024 MACs × 1024 coefs × 4B)
-    
-    // Clock periods
-    localparam real UI_CLK_PERIOD  = 5.0;   // 200 MHz
-    localparam real DSP_CLK_PERIOD = 3.875; // 258 MHz (from 45.1584 MHz × 6 ÷ 3.5)
-    
-    // Coefficient generation constants
-    localparam int COEFS_PER_BEAT  = AXI_DATA_WIDTH / 32;  // 4
-    localparam int BEATS_PER_BURST = 256;
-    localparam int COEFS_PER_BURST = COEFS_PER_BEAT * BEATS_PER_BURST; // 1024
-    localparam int BURSTS_PER_MAC  = COEF_DEPTH / COEFS_PER_BURST;      // 1 (1024 coefs fits in one 256-beat burst)
-    localparam int MAC_BYTES       = COEF_DEPTH * 4;                     // 4 KB
-    
-    // -------------------------------------------------------------------------
-    //  Clocks
-    //  -------------------------------------------------------------------------
-    logic ui_clk = 1'b0;
-    logic dsp_clk = 1'b0;
-    
-    always #(UI_CLK_PERIOD/2.0) ui_clk = ~ui_clk;
+    localparam int AXI_DATA_WIDTH = 128;
+
+    localparam logic [31:0] BANK_SIZE     = 32'(NUM_MACS * COEF_DEPTH * 4);  // 1 MB
+    localparam logic [31:0] DIR_BASE_ADDR = 32'h3FFF_0000;                    // loader default
+    localparam int          MAC_BYTES     = COEF_DEPTH * 4;
+
+    // Directory contents served by the AXI model (32-byte entries)
+    localparam logic [15:0] FILT_OK_ID   = 16'h0101;  // -> bank-2 region, payload = BANK_SIZE
+    localparam logic [15:0] FILT_BAD_SZ  = 16'h0202;  // payload = BANK_SIZE/2 -> FILT_SIZE
+    localparam logic [15:0] FILT_MISSING = 16'h0404;  // not in directory
+
+    localparam real UI_CLK_PERIOD  = 3.333;  // 300 MHz MIG ui_clk
+    localparam real DSP_CLK_PERIOD = 2.8;    // ~357 MHz
+
+    // ---- Clocks / resets ------------------------------------------------------
+    logic ui_clk = 0, dsp_clk = 0;
+    always #(UI_CLK_PERIOD/2.0)  ui_clk  = ~ui_clk;
     always #(DSP_CLK_PERIOD/2.0) dsp_clk = ~dsp_clk;
-    
-    // -------------------------------------------------------------------------
-    //  Resets
-    //  -------------------------------------------------------------------------
-    logic ui_rst_n;
-    logic dsp_rst_n;
-    
-    // -------------------------------------------------------------------------
-    //  DDR4/AXI Interface (ui_clk domain)
-    //  -------------------------------------------------------------------------
-    logic [AXI_ADDR_WIDTH-1:0] axi_araddr;
+    logic ui_rst_n = 0, dsp_rst_n = 0;
+
+    // ---- AXI (ui_clk) -----------------------------------------------------------
+    logic [29:0]               axi_araddr;
     logic [7:0]                axi_arlen;
     logic [2:0]                axi_arsize;
     logic [1:0]                axi_arburst;
-    logic                      axi_arvalid;
-    logic                      axi_arready;
+    logic                      axi_arvalid, axi_arready;
     logic [AXI_DATA_WIDTH-1:0] axi_rdata;
     logic [1:0]                axi_rresp;
-    logic                      axi_rlast;
-    logic                      axi_rvalid;
-    logic                      axi_rready;
-    
-    // -------------------------------------------------------------------------
-    //  Coefficient Write Bus (dsp_clk domain, from coef_subsys)
-    //  -------------------------------------------------------------------------
-    logic                      coef_we;
-    logic [$clog2(COEF_DEPTH)-1:0]  coef_waddr;   // 10 bits
-    logic signed [COEF_WIDTH-1:0]   coef_wdata;
-    logic [$clog2(NUM_MACS)-1:0]    coef_wmac;
-    
-    // -------------------------------------------------------------------------
-    //  Bank Control (dsp_clk domain)
-    //  -------------------------------------------------------------------------
-    wire                       bank_select;
-    wire                       bank_load_target;
-    logic [3:0]                current_bank_id;
-    logic                      mgr_busy;
-    logic                      coef_load_done;
-    
-    // -------------------------------------------------------------------------
-    //  FIR Interface (dsp_clk domain)
-    //  -------------------------------------------------------------------------
-    logic [AUDIO_WIDTH-1:0]  audio_l_in;
-    logic [AUDIO_WIDTH-1:0]  audio_r_in;
-    logic                      new_sample;
-    logic [47:0]               fir_l_out;  // ACC_WIDTH from interpolator
-    logic [47:0]               fir_r_out;
-    wire                       fir_l_valid;
-    wire                       fir_r_valid;
-    logic                      fir_valid_seen;  // sticky latch — set on any fir_l_valid pulse
-    logic                      fir_rst_n;       // held low during coef loading
-    logic                      sample_768k_tick;
-    
-    // -------------------------------------------------------------------------
-    //  Testbench state
-    //  -------------------------------------------------------------------------
-    int                        error_count;
-    int                        total_coef_writes;
-    int                        ar_burst_count;
-    // Expected coef function: coef(mac, idx) = (mac * COEF_DEPTH + idx) & 18'h3FFFF
-    
-    // -------------------------------------------------------------------------
-    //  Testbench SPI-side control signals (into dac_coef_subsys)
-    //  -------------------------------------------------------------------------
-    logic [3:0]  coef_bank_id_tb;     // target bank from "SPI"
-    logic        coef_load_start_tb;  // single-cycle pulse to trigger load
+    logic                      axi_rlast, axi_rvalid, axi_rready;
+
+    // ---- Coef bus / bank control (dsp_clk) ---------------------------------------
+    logic                          coef_we;
+    logic [$clog2(COEF_DEPTH)-1:0] coef_waddr;
+    logic signed [COEF_WIDTH-1:0]  coef_wdata;
+    logic [$clog2(NUM_MACS)-1:0]   coef_wmac;
+    wire  bank_select, bank_load_target;
+    logic [3:0] current_bank_id;
+    logic mgr_busy, bank_valid, coef_load_done, coef_load_err;
+    logic [1:0] coef_load_err_code;
     logic [15:0] boot_envelope_gain;
 
-    // -------------------------------------------------------------------------
-    //  DUT: dac_coef_subsys
-    //  Contains: coef_bank_loader + coef_bank_manager + CDC + boot envelope
-    //  -------------------------------------------------------------------------
-    dac_coef_subsys u_coef_subsys (
-        .ui_clk              (ui_clk),
-        .ui_clk_sync_rst     (~ui_rst_n),
-        .dsp_clk             (dsp_clk),
-        .sys_rst_n           (dsp_rst_n),
-        .sample_768k_tick    (sample_768k_tick),
-        .coef_bank_id        (coef_bank_id_tb),
-        .coef_load_start     (coef_load_start_tb),
-        .m_axi_araddr        (axi_araddr),
-        .m_axi_arlen         (axi_arlen),
-        .m_axi_arsize        (axi_arsize),
-        .m_axi_arburst       (axi_arburst),
-        .m_axi_arvalid       (axi_arvalid),
-        .m_axi_arready       (axi_arready),
-        .m_axi_rdata         (axi_rdata),
-        .m_axi_rresp         (axi_rresp),
-        .m_axi_rlast         (axi_rlast),
-        .m_axi_rvalid        (axi_rvalid),
-        .m_axi_rready        (axi_rready),
-        .coef_we             (coef_we),
-        .coef_waddr          (coef_waddr),
-        .coef_wdata          (coef_wdata),
-        .coef_wmac           (coef_wmac),
-        .bank_select         (bank_select),
-        .bank_load_target    (bank_load_target),
-        .boot_envelope_gain  (boot_envelope_gain),
-        .current_bank_id     (current_bank_id),
-        .mgr_busy            (mgr_busy),
-        .coef_load_done      (coef_load_done)
+    // ---- "SPI side" controls (driven on dsp_clk in this TB) ----------------------
+    logic [3:0]  coef_bank_id_tb    = 4'd0;
+    logic        coef_load_start_tb = 1'b0;
+    logic [15:0] filter_id_tb       = 16'd0;
+    logic        filter_load_req_tb = 1'b0;
+    logic        boot_ok_tb         = 1'b0;
+
+    // ---- FIR ----------------------------------------------------------------------
+    logic [AUDIO_WIDTH-1:0] audio_l_in = '0, audio_r_in = '0;
+    logic        new_sample = 1'b0;
+    logic [47:0] fir_l_out, fir_r_out;
+    wire         fir_l_valid, fir_r_valid;
+    logic        fir_rst_n = 1'b0;
+    logic        sample_768k_tick;
+
+    // ---- DUT: coefficient subsystem ------------------------------------------------
+    dac_coef_subsys #(
+        .NUM_MACS       (NUM_MACS),
+        .TAPS_PER_PHASE (TAPS_PER_PHASE)
+    ) u_coef_subsys (
+        .ui_clk             (ui_clk),
+        .ui_clk_sync_rst    (~ui_rst_n),
+        .dsp_clk            (dsp_clk),
+        .sys_rst_n          (dsp_rst_n),
+        .sample_768k_tick   (sample_768k_tick),
+        .coef_bank_id       (coef_bank_id_tb),
+        .coef_load_start    (coef_load_start_tb),
+        .filter_id          (filter_id_tb),
+        .filter_load_req    (filter_load_req_tb),
+        .boot_ok            (boot_ok_tb),
+        .m_axi_araddr       (axi_araddr),
+        .m_axi_arlen        (axi_arlen),
+        .m_axi_arsize       (axi_arsize),
+        .m_axi_arburst      (axi_arburst),
+        .m_axi_arvalid      (axi_arvalid),
+        .m_axi_arready      (axi_arready),
+        .m_axi_rdata        (axi_rdata),
+        .m_axi_rresp        (axi_rresp),
+        .m_axi_rlast        (axi_rlast),
+        .m_axi_rvalid       (axi_rvalid),
+        .m_axi_rready       (axi_rready),
+        .coef_we            (coef_we),
+        .coef_waddr         (coef_waddr),
+        .coef_wdata         (coef_wdata),
+        .coef_wmac          (coef_wmac),
+        .bank_select        (bank_select),
+        .bank_load_target   (bank_load_target),
+        .boot_envelope_gain (boot_envelope_gain),
+        .current_bank_id    (current_bank_id),
+        .mgr_busy           (mgr_busy),
+        .bank_valid         (bank_valid),
+        .coef_load_done     (coef_load_done),
+        .coef_load_err      (coef_load_err),
+        .coef_load_err_code (coef_load_err_code)
     );
-    
-    // -------------------------------------------------------------------------
-    //  DUT: fir_polyphase_stereo (dsp_clk domain)
-    //  -------------------------------------------------------------------------
+
+    // ---- DUT: FIR -------------------------------------------------------------------
     fir_polyphase_stereo #(
         .NUM_MACS       (NUM_MACS),
-        .TAPS_PER_PHASE (64),
+        .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (AUDIO_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),
         .ACC_WIDTH      (48)
     ) u_stereo_fir (
-        .clk                    (dsp_clk),
-        .rst_n                  (fir_rst_n),
-        .new_sample_valid       (new_sample),
-        .new_sample_l           (audio_l_in),
-        .new_sample_r           (audio_r_in),
-        .interpolated_l         (fir_l_out),
-        .interpolated_l_valid   (fir_l_valid),
-        .interpolated_r         (fir_r_out),
-        .interpolated_r_valid   (fir_r_valid),
-        .coef_we                (coef_we),
-        .coef_waddr             (coef_waddr),
-        .coef_wdata             (coef_wdata),
-        .coef_wmac              (coef_wmac),
-        .bank_select            (bank_select),
-        .bank_load_target       (bank_load_target)
+        .clk                  (dsp_clk),
+        .rst_n                (fir_rst_n),
+        .new_sample_valid     (new_sample),
+        .new_sample_l         (audio_l_in),
+        .new_sample_r         (audio_r_in),
+        .interpolated_l       (fir_l_out),
+        .interpolated_l_valid (fir_l_valid),
+        .interpolated_r       (fir_r_out),
+        .interpolated_r_valid (fir_r_valid),
+        .coef_we              (coef_we),
+        .coef_waddr           (coef_waddr),
+        .coef_wdata           (coef_wdata),
+        .coef_wmac            (coef_wmac),
+        .bank_select          (bank_select),
+        .bank_load_target     (bank_load_target)
     );
-    
-    // -------------------------------------------------------------------------
-    //  AXI4 Slave Memory Model — on-the-fly data generation
-    //  No memory array: coefficient value is computed from address each beat.
-    //  Layout: word_value = (mac * COEF_DEPTH + coef_idx) & 18'h3FFFF
-    //  where mac      = (byte_offset_from_bank_base) / MAC_BYTES
-    //        coef_idx = ((byte_offset % MAC_BYTES) / 4)  (word index within mac)
-    //  -------------------------------------------------------------------------
-    typedef enum logic [1:0] {AR_IDLE, AR_LATENCY, R_BURST} r_state_t;
-    r_state_t r_state;
-    
-    logic [AXI_ADDR_WIDTH-1:0] slave_araddr;
-    logic [7:0]                slave_arlen;
-    logic [7:0]                r_beat_cnt;
-    int                        latency_cnt;
-    
-    // Compute one 32-bit word from its byte address (bank-relative)
-    function automatic logic [31:0] coef_from_addr(
-        input logic [AXI_ADDR_WIDTH-1:0] byte_addr
-    );
+
+    // ---- AXI slave model: coefficient data + directory, computed from address ----
+    //  coef word = (mac * COEF_DEPTH + idx) & 0x3FFFF within any bank-sized region
+    function automatic logic [31:0] coef_from_addr(input logic [31:0] byte_addr);
         int bank_off, mac_num, word_in_mac;
-        // Strip bank offset: loader uses bank_id * BANK_SIZE as base
         bank_off    = int'(byte_addr) % int'(BANK_SIZE);
-        mac_num     = bank_off / (COEF_DEPTH * 4);
-        word_in_mac = (bank_off % (COEF_DEPTH * 4)) / 4;
+        mac_num     = bank_off / MAC_BYTES;
+        word_in_mac = (bank_off % MAC_BYTES) / 4;
         return 32'((mac_num * COEF_DEPTH + word_in_mac) & 32'h3FFFF);
     endfunction
-    
-    // Pack 128-bit beat from current burst address + beat index
-    function automatic logic [AXI_DATA_WIDTH-1:0] gen_beat(
-        input logic [AXI_ADDR_WIDTH-1:0] burst_base,
-        input int                        beat
-    );
-        logic [AXI_DATA_WIDTH-1:0] d;
-        d[31:0]   = coef_from_addr(burst_base + beat * 16 + 0);
-        d[63:32]  = coef_from_addr(burst_base + beat * 16 + 4);
-        d[95:64]  = coef_from_addr(burst_base + beat * 16 + 8);
-        d[127:96] = coef_from_addr(burst_base + beat * 16 + 12);
+
+    //  Directory entry beat 0: {payload_bytes, ddr4_offset(16B units), tap_count,
+    //  rate_family, phase_type, filter_id}; beat 1 = 0. Entry 2 = terminator.
+    function automatic logic [AXI_DATA_WIDTH-1:0] dir_beat(input int entry, input int beat);
+        logic [AXI_DATA_WIDTH-1:0] d = '0;
+        if (beat != 0) return '0;
+        case (entry)
+            0: d = {BANK_SIZE, 32'((2 * BANK_SIZE) >> 4), 32'(16 * NUM_MACS * TAPS_PER_PHASE),
+                    8'd1, 8'd0, FILT_OK_ID};
+            1: d = {32'(BANK_SIZE / 2), 32'((3 * BANK_SIZE) >> 4), 32'd0,
+                    8'd1, 8'd0, FILT_BAD_SZ};
+            default: d = '0;
+        endcase
         return d;
     endfunction
-    
+
+    function automatic logic [AXI_DATA_WIDTH-1:0] gen_beat(input logic [31:0] burst_base, input int beat);
+        logic [AXI_DATA_WIDTH-1:0] d;
+        if (burst_base >= DIR_BASE_ADDR)
+            return dir_beat(int'((burst_base - DIR_BASE_ADDR) / 32), beat);
+        d[31:0]   = coef_from_addr(burst_base + beat*16 + 0);
+        d[63:32]  = coef_from_addr(burst_base + beat*16 + 4);
+        d[95:64]  = coef_from_addr(burst_base + beat*16 + 8);
+        d[127:96] = coef_from_addr(burst_base + beat*16 + 12);
+        return d;
+    endfunction
+
+    typedef enum logic [1:0] {AR_IDLE, AR_LATENCY, R_BURST} r_state_t;
+    r_state_t    r_state;
+    logic [31:0] slave_araddr;
+    logic [7:0]  slave_arlen, r_beat_cnt;
+    int          latency_cnt;
+    int          ar_burst_count = 0;
+
     always_ff @(posedge ui_clk) begin
         if (!ui_rst_n) begin
-            axi_arready <= 1'b0;
-            axi_rvalid  <= 1'b0;
-            axi_rlast   <= 1'b0;
-            axi_rdata   <= '0;
-            r_state     <= AR_IDLE;
+            axi_arready <= 1'b0; axi_rvalid <= 1'b0; axi_rlast <= 1'b0;
+            axi_rdata <= '0;     r_state <= AR_IDLE;
         end else begin
             case (r_state)
                 AR_IDLE: begin
                     axi_arready <= 1'b1;
                     axi_rvalid  <= 1'b0;
                     if (axi_arvalid && axi_arready) begin
-                        slave_araddr <= axi_araddr;
+                        slave_araddr <= {2'b00, axi_araddr};
                         slave_arlen  <= axi_arlen;
                         axi_arready  <= 1'b0;
-                        latency_cnt  <= 4;  // 4-cycle DDR4 read latency
+                        latency_cnt  <= 4;
+                        ar_burst_count <= ar_burst_count + 1;
                         r_state      <= AR_LATENCY;
                     end
                 end
-                
                 AR_LATENCY: begin
-                    if (latency_cnt > 0)
-                        latency_cnt <= latency_cnt - 1;
-                    else begin
-                        r_beat_cnt <= 8'd0;
-                        r_state    <= R_BURST;
-                    end
+                    if (latency_cnt > 0) latency_cnt <= latency_cnt - 1;
+                    else begin r_beat_cnt <= 8'd0; r_state <= R_BURST; end
                 end
-                
                 R_BURST: begin
                     if (!axi_rvalid || axi_rready) begin
                         axi_rvalid <= 1'b1;
                         axi_rdata  <= gen_beat(slave_araddr, int'(r_beat_cnt));
                         axi_rlast  <= (r_beat_cnt == slave_arlen);
-                        if (r_beat_cnt == slave_arlen) begin
-                            r_state <= AR_IDLE;
-                        end else begin
-                            r_beat_cnt <= r_beat_cnt + 1'b1;
-                        end
+                        if (r_beat_cnt == slave_arlen) r_state <= AR_IDLE;
+                        else                            r_beat_cnt <= r_beat_cnt + 1'b1;
                     end
                 end
             endcase
         end
     end
-    
-    assign axi_rresp = 2'b00;  // OKAY
-    
-    // -------------------------------------------------------------------------
-    //  Sample 768k tick generator (in dsp_clk domain)
-    //  258 MHz / 768 kHz = 336 cycles per sample
-    //  -------------------------------------------------------------------------
-    localparam int SAMPLE_DIV = 336;
+    assign axi_rresp = 2'b00;
+
+    // ---- 768 kHz tick (dsp_clk) --------------------------------------------------------
+    localparam int SAMPLE_DIV = 465;   // 357 MHz / 768 kHz
     logic [$clog2(SAMPLE_DIV)-1:0] sample_cnt;
-    
     always_ff @(posedge dsp_clk) begin
-        if (!dsp_rst_n) begin
-            sample_cnt <= '0;
-            sample_768k_tick <= 1'b0;
-        end else begin
-            sample_768k_tick <= 1'b0;
-            if (sample_cnt == SAMPLE_DIV - 1) begin
-                sample_cnt <= '0;
-                sample_768k_tick <= 1'b1;
-            end else begin
-                sample_cnt <= sample_cnt + 1'b1;
-            end
+        if (!dsp_rst_n) begin sample_cnt <= '0; sample_768k_tick <= 1'b0; end
+        else begin
+            sample_768k_tick <= (sample_cnt == SAMPLE_DIV-1);
+            sample_cnt <= (sample_cnt == SAMPLE_DIV-1) ? '0 : sample_cnt + 1'b1;
         end
     end
-    
-    // -------------------------------------------------------------------------
-    //  Diagnostic monitors — trace signal chain, print first occurrence only
-    //  -------------------------------------------------------------------------
-    always @(posedge dsp_clk) begin
-        if (coef_load_start_tb)
-            $display("[DIAG @%0t] coef_load_start_tb pulsed, bank_id=%0d", $time, coef_bank_id_tb);
-    end
 
-    always @(posedge dsp_clk) begin
-        if (u_coef_subsys.u_coef_mgr.load_start_r)
-            $display("[DIAG @%0t] mgr_load_start_dsp pulsed (bank_manager issued load)", $time);
-    end
-
-    // Monitor bank_select_pulse directly on every cycle it is high
-    always @(posedge dsp_clk) begin
-        if (u_coef_subsys.u_coef_mgr.bank_select_pulse)
-            $display("[DIAG @%0t] bank_select_pulse seen inside manager, req=%0d state=%0d",
-                $time,
-                u_coef_subsys.u_coef_mgr.bank_select_req,
-                u_coef_subsys.u_coef_mgr.state);
-    end
-
-    // Monitor queued_valid going high
-    always @(posedge dsp_clk) begin
-        if (u_coef_subsys.u_coef_mgr.queued_valid)
-            $display("[DIAG @%0t] queued_valid asserted, queued_bank=%0d",
-                $time, u_coef_subsys.u_coef_mgr.queued_bank);
-    end
-
-    always @(posedge ui_clk) begin
-        if (u_coef_subsys.mgr_load_start_ui_sync)
-            $display("[DIAG @%0t] mgr_load_start_ui_sync pulsed (reached loader)", $time);
-    end
-
-    // Monitor loader FSM state transitions only
-    logic [2:0] loader_state_prev;
-    always @(posedge ui_clk) begin
-        loader_state_prev <= u_coef_subsys.u_coef_loader.state;
-        if (u_coef_subsys.u_coef_loader.state !== loader_state_prev)
-            $display("[DIAG @%0t] loader state %0d->%0d mac=%0d half=%0b arvalid=%0b arready=%0b",
-                $time,
-                loader_state_prev,
-                u_coef_subsys.u_coef_loader.state,
-                u_coef_subsys.u_coef_loader.mac_idx,
-                u_coef_subsys.u_coef_loader.burst_half,
-                axi_arvalid, axi_arready);
-    end
-
-    always @(posedge ui_clk) begin
-        if (axi_arvalid)
-            $display("[DIAG @%0t] AXI AR: addr=%0h len=%0d", $time, axi_araddr, axi_arlen);
-    end
-
-    always @(posedge ui_clk) begin
-        if (u_coef_subsys.loader_done_ui)
-            $display("[DIAG @%0t] loader_done_ui pulsed", $time);
-    end
-
-    always @(posedge dsp_clk) begin
-        if (coef_load_done)
-            $display("[DIAG @%0t] coef_load_done pulsed", $time);
-    end
-
-    // Sticky latch: capture any fir_l_valid pulse
-    always @(posedge dsp_clk) begin
-        if (!dsp_rst_n)         fir_valid_seen <= 1'b0;
-        else if (fir_l_valid)   fir_valid_seen <= 1'b1;
-    end
-
-    // FIR diagnostics — log every new_sample pulse and every interpolated_valid
-    always @(posedge dsp_clk) begin
-        if (new_sample)
-            $display("[FIR @%0t] new_sample pulsed, tap_ctr=%0d mca=%0d",
-                $time,
-                u_stereo_fir.u_l_fir.tap_counter,
-                u_stereo_fir.u_l_fir.master_coef_addr);
-    end
-    always @(posedge dsp_clk) begin
-        if (fir_l_valid)
-            $display("[FIR @%0t] interpolated_valid! mca=%0d out=%0h bank_sel=%0b",
-                $time,
-                u_stereo_fir.u_l_fir.master_coef_addr,
-                fir_l_out,
-                bank_select);
-    end
-    // Log tap_counter every 50 cycles after coef load done to see if it's running
-    logic fir_mon_en = 1'b0;
-    always @(posedge dsp_clk) begin
-        if (coef_load_done) fir_mon_en <= 1'b1;
-    end
-    always @(posedge dsp_clk) begin
-        if (fir_mon_en && (u_stereo_fir.u_l_fir.tap_counter % 7'd50 == 7'd49))
-            $display("[FIR @%0t] tap_ctr=%0d mca=%0d nsv=%0b",
-                $time,
-                u_stereo_fir.u_l_fir.tap_counter,
-                u_stereo_fir.u_l_fir.master_coef_addr,
-                new_sample);
-    end
-
-    // -------------------------------------------------------------------------
-    //  Test sequence
-    //  -------------------------------------------------------------------------
-    initial begin
-        $display("========================================");
-        $display("TB_SYSTEM_DDR4_TO_FIR: Starting simulation");
-        $display("========================================");
-        
-        error_count = 0;
-        total_coef_writes = 0;
-        ar_burst_count = 0;
-        
-        // Apply reset  (no memory pre-init needed - AXI slave generates data on-the-fly)
-        ui_rst_n = 1'b0;
-        dsp_rst_n = 1'b0;
-        // NOTE: bank_select is driven by dac_coef_subsys output - do not override here
-        coef_bank_id_tb    = 4'd0;
-        coef_load_start_tb = 1'b0;
-        fir_rst_n          = 1'b0;  // Hold FIR in reset during coef loading
-        
-        repeat(20) @(posedge ui_clk);
-        ui_rst_n = 1'b1;
-        repeat(10) @(posedge ui_clk);   // Let ui_clk domain fully settle
-        dsp_rst_n = 1'b1;
-        // Wait 100 dsp_clk cycles: manager exits ST_BOOT_WAIT in 1 cycle,
-        // then sits in ST_IDLE. 100 cycles gives plenty of margin.
-        repeat(100) @(posedge dsp_clk);
-        
-        $display("\n--- Test 1: Load coefficients from DDR4 Bank 0 ---");
-        $display("[DIAG] mgr state=%0d queued_valid=%0b current_bank=%0d",
-            u_coef_subsys.u_coef_mgr.state,
-            u_coef_subsys.u_coef_mgr.queued_valid,
-            u_coef_subsys.u_coef_mgr.current_bank_r);
-        
-        // Trigger coefficient load via SPI-side pulse (dsp_clk domain).
-        // Set bank_id ONE cycle before the pulse so the manager's bank_select_req
-        // input is stable at 1 when bank_select_pulse is sampled.
-        coef_bank_id_tb = 4'd1;
-        @(posedge dsp_clk);
-        coef_load_start_tb = 1'b1;
-        @(posedge dsp_clk);
-        coef_load_start_tb = 1'b0;
-        repeat(5) @(posedge dsp_clk);
-        $display("[DIAG] After pulse: mgr state=%0d queued_valid=%0b load_start_r=%0b",
-            u_coef_subsys.u_coef_mgr.state,
-            u_coef_subsys.u_coef_mgr.queued_valid,
-            u_coef_subsys.u_coef_mgr.load_start_r);
-        
-        // Wait for completion (in dsp_clk domain)
-        fork
-            begin: wait_done
-                @(posedge dsp_clk iff coef_load_done);
-                $display("Coefficient load completed at time %0t", $time);
-                disable wait_timeout;
-            end
-            begin: wait_timeout
-                repeat(10_000_000) @(posedge dsp_clk);
-                $display("ERROR: Timeout waiting for coef_load_done");
-                error_count++;
-                disable wait_done;
-            end
-        join
-        
-        // Verify coefficient count
-        repeat(100) @(posedge dsp_clk);
-        $display("Total coefficient writes observed: %0d (expected: %0d)",
-                 total_coef_writes, NUM_MACS * COEF_DEPTH);
-        
-        if (total_coef_writes != NUM_MACS * COEF_DEPTH) begin
-            $display("ERROR: Coefficient write count mismatch!");
-            error_count++;
-        end
-        
-        // --- Test 2: Run audio samples through FIR ---
-        $display("\n--- Test 2: FIR processing with loaded coefficients ---");
-
-        // Release FIR reset now that coefficients are loaded and bank has switched.
-        // Holding reset during loading prevents X-propagation from BRAM collisions.
-        fir_rst_n = 1'b1;
-        repeat(10) @(posedge dsp_clk);  // let FIR pipeline flush reset state
-        $display("[FIR] bank_select=%0b (0=Bank A active, 1=Bank B active)", bank_select);
-
-        // Wait for a 768k tick boundary before sending impulse
-        @(posedge sample_768k_tick);
-        @(posedge dsp_clk);
-
-        // Send impulse on L — 1-cycle pulse only.
-        // new_sample_valid=1 RESETS the FIR tap counter; it must be low for
-        // 128 cycles so tap_counter counts 0..127 and fires interpolated_valid.
-        audio_l_in = 24'h7FFFFF;  // Max positive impulse
-        audio_r_in = 24'h000000;
-        new_sample = 1'b1;
-        @(posedge dsp_clk);
-        new_sample = 1'b0;
-        audio_l_in = 24'h000000;
-        audio_r_in = 24'h000000;
-
-        // Drive 300 sample periods with 1-cycle pulses at 768k tick boundaries.
-        // Each tick period = 336 dsp_clk cycles; FIR needs 128 free cycles to
-        // complete one phase and assert interpolated_valid.
-        repeat(300) begin
-            @(posedge sample_768k_tick);
-            new_sample = 1'b1;
-            @(posedge dsp_clk);
-            new_sample = 1'b0;
-            // Wait for interpolated_valid within this tick period
-            repeat(200) @(posedge dsp_clk);
-            if (fir_l_valid)
-                $display("FIR output valid. L=%h R=%h", fir_l_out[23:0], fir_r_out[23:0]);
-        end
-
-        if (!fir_valid_seen) begin
-            $display("ERROR: FIR interpolated_valid never asserted after 300 sample periods");
-            error_count++;
-        end else if (^fir_l_out === 1'bx) begin
-            $display("ERROR: FIR output is X (coef BRAM X-propagation)");
-            error_count++;
-        end else begin
-            $display("FIR output valid. Final: L=%h R=%h", fir_l_out[23:0], fir_r_out[23:0]);
-        end
-        
-        // --- Summary ---
-        $display("\n========================================");
-        if (error_count == 0)
-            $display("TEST PASSED: All checks successful");
-        else
-            $display("TEST FAILED: %0d errors detected", error_count);
-        $display("========================================");
-        
-        $finish;
-    end
-    
-    // -------------------------------------------------------------------------
-    //  Monitors
-    //  -------------------------------------------------------------------------
-    // Track coefficient writes
-    always_ff @(posedge dsp_clk) begin
-        if (coef_we) begin
-            total_coef_writes++;
-            if (total_coef_writes <= 10 || total_coef_writes % 10000 == 0)
-                $display("[%0t] Coef write: mac=%0d addr=%0d data=%0d",
+    // ---- Monitors -------------------------------------------------------------------------
+    int  total_coef_writes = 0;
+    int  coef_data_errors  = 0;
+    always @(posedge dsp_clk) if (coef_we) begin
+        total_coef_writes++;
+        if (coef_wdata !== 18'((int'(coef_wmac) * COEF_DEPTH + int'(coef_waddr)) & 32'h3FFFF)) begin
+            coef_data_errors++;
+            if (coef_data_errors <= 5)
+                $display("[%0t] COEF DATA MISMATCH mac=%0d addr=%0d got=%0h",
                          $time, coef_wmac, coef_waddr, coef_wdata);
         end
     end
-    
-    // Track AXI bursts
-    always_ff @(posedge ui_clk) begin
-        if (axi_arvalid && axi_arready)
-            ar_burst_count++;
+
+    logic fir_valid_seen;
+    logic fir_x_seen;
+    always @(posedge dsp_clk) begin
+        if (!fir_rst_n) begin fir_valid_seen <= 1'b0; fir_x_seen <= 1'b0; end
+        else if (fir_l_valid) begin
+            fir_valid_seen <= 1'b1;
+            if (^fir_l_out === 1'bx || ^fir_r_out === 1'bx) fir_x_seen <= 1'b1;
+        end
     end
-    
-    // Waveform dump
+
+    // ---- Helpers --------------------------------------------------------------------------
+    int errors = 0;
+    task automatic check(input string name, input longint got, input longint exp);
+        if (got !== exp) begin
+            $display("FAIL: %s got=%0d exp=%0d", name, got, exp);
+            errors++;
+        end else
+            $display("PASS: %s = %0d", name, got);
+    endtask
+
+    task automatic legacy_load(input [3:0] bank);
+        @(posedge dsp_clk); coef_bank_id_tb    <= bank;
+        @(posedge dsp_clk); coef_load_start_tb <= 1'b1;
+        @(posedge dsp_clk); coef_load_start_tb <= 1'b0;
+    endtask
+
+    task automatic filter_load(input [15:0] id);
+        @(posedge dsp_clk); filter_id_tb       <= id;
+        @(posedge dsp_clk); filter_load_req_tb <= 1'b1;
+        @(posedge dsp_clk); filter_load_req_tb <= 1'b0;
+    endtask
+
+    task automatic wait_load_done(input string what);
+        fork
+            begin : w_done
+                @(posedge dsp_clk iff coef_load_done);
+                $display("[%0t] %s: coef_load_done", $time, what);
+                disable w_to;
+            end
+            begin : w_to
+                repeat (4_000_000) @(posedge dsp_clk);
+                $display("FAIL: %s: timeout waiting for coef_load_done", what);
+                errors++;
+                disable w_done;
+            end
+        join
+        repeat (20) @(posedge dsp_clk);   // manager SWITCHING -> IDLE, status settle
+    endtask
+
+    // Drive N INPUT-rate samples (48 kHz = one per 16 output ticks; the FIR
+    // needs 16 phases x TAPS_PER_PHASE cycles per input sample), impulse first.
+    task automatic run_fir_samples(input int n, input bit impulse);
+        for (int i = 0; i < n; i++) begin
+            repeat (16) @(posedge sample_768k_tick);
+            @(posedge dsp_clk);
+            audio_l_in <= (impulse && i == 0) ? 24'h7FFFFF : 24'h000000;
+            audio_r_in <= 24'h000000;
+            new_sample <= 1'b1;
+            @(posedge dsp_clk);
+            new_sample <= 1'b0;
+        end
+    endtask
+
+    // ---- Test sequence -----------------------------------------------------------------------
     initial begin
-        $dumpfile("tb_system_ddr4_to_fir.vcd");
-        $dumpvars(1, tb_system_ddr4_to_fir);  // depth=1: top-level signals only (depth=0 causes ~2GB VCD on 256-MAC design)
+        $display("=== TB_SYSTEM_DDR4_TO_FIR: NUM_MACS=%0d TPP=%0d (COEF_DEPTH=%0d, bank=%0d B) ===",
+                 NUM_MACS, TAPS_PER_PHASE, COEF_DEPTH, BANK_SIZE);
+
+        repeat (20) @(posedge ui_clk);  ui_rst_n  = 1'b1;
+        repeat (10) @(posedge ui_clk);  dsp_rst_n = 1'b1;
+        repeat (50) @(posedge dsp_clk);
+
+        // T1: request before DDR4 is staged must queue, not run
+        $display("\n--- T1: legacy load request before boot_ok ---");
+        legacy_load(4'd1);
+        repeat (3000) @(posedge dsp_clk);
+        check("T1 no AXI bursts before boot_ok", ar_burst_count, 0);
+        check("T1 bank_valid",                  bank_valid, 0);
+        check("T1 manager busy (BOOT_WAIT)",    mgr_busy, 1);
+        check("T1 boot envelope muted",         boot_envelope_gain, 0);
+
+        // T2: boot_ok releases the queued request
+        $display("\n--- T2: boot_ok -> queued load runs ---");
+        @(posedge dsp_clk); boot_ok_tb <= 1'b1;
+        wait_load_done("T2");
+        check("T2 coef writes",       total_coef_writes, NUM_MACS * COEF_DEPTH);
+        check("T2 coef data errors",  coef_data_errors, 0);
+        check("T2 AXI bursts",        ar_burst_count, NUM_MACS * (COEF_DEPTH / 1024));
+        check("T2 bank_select -> B",  bank_select, 1);
+        check("T2 bank_valid",        bank_valid, 1);
+        check("T2 current_bank_id",   current_bank_id, 1);
+        check("T2 no load_err",       coef_load_err, 0);
+
+        // T3: boot fade-in starts only now
+        $display("\n--- T3: boot fade-in after first good load ---");
+        repeat (40) @(posedge sample_768k_tick);
+        if (boot_envelope_gain == 16'h0000) begin
+            $display("FAIL: T3 envelope still muted 40 ticks after first load"); errors++;
+        end else
+            $display("PASS: T3 envelope ramping (gain=0x%04h)", boot_envelope_gain);
+
+        // T4: FIR with loaded coefficients
+        $display("\n--- T4: FIR impulse response ---");
+        @(posedge dsp_clk); fir_rst_n <= 1'b1;
+        repeat (10) @(posedge dsp_clk);
+        run_fir_samples(40, 1);
+        check("T4 FIR output seen",   fir_valid_seen, 1);
+        check("T4 FIR output X-free", fir_x_seen, 0);
+
+        // T5: directory load by ID while FIR keeps running (gapless path)
+        $display("\n--- T5: filter load by ID %h under running FIR ---", FILT_OK_ID);
+        begin
+            automatic int writes_before = total_coef_writes;
+            fork
+                begin : t5_audio
+                    forever run_fir_samples(1, 0);
+                end
+                begin : t5_load
+                    filter_load(FILT_OK_ID);
+                    wait_load_done("T5");
+                    disable t5_audio;
+                end
+            join
+            @(posedge dsp_clk); new_sample <= 1'b0;
+            check("T5 coef writes",      total_coef_writes - writes_before, NUM_MACS * COEF_DEPTH);
+            check("T5 coef data errors", coef_data_errors, 0);
+            check("T5 bank_select -> A", bank_select, 0);
+            check("T5 no load_err",      coef_load_err, 0);
+            check("T5 bank_valid",       bank_valid, 1);
+            fir_x_seen = 1'b0;
+            run_fir_samples(20, 1);
+            check("T5 FIR X-free after swap", fir_x_seen, 0);
+        end
+
+        // T6: directory miss
+        $display("\n--- T6: filter ID %h not in directory ---", FILT_MISSING);
+        begin
+            automatic int writes_before = total_coef_writes;
+            filter_load(FILT_MISSING);
+            wait_load_done("T6");
+            check("T6 load_err",        coef_load_err, 1);
+            check("T6 err code",        coef_load_err_code, 1);
+            check("T6 no coef writes",  total_coef_writes - writes_before, 0);
+            check("T6 bank unchanged",  bank_select, 0);
+            check("T6 bank_valid held", bank_valid, 1);
+        end
+
+        // T7: payload size mismatch
+        $display("\n--- T7: filter ID %h payload mismatch ---", FILT_BAD_SZ);
+        begin
+            automatic int writes_before = total_coef_writes;
+            filter_load(FILT_BAD_SZ);
+            wait_load_done("T7");
+            check("T7 load_err",        coef_load_err, 1);
+            check("T7 err code",        coef_load_err_code, 2);
+            check("T7 no coef writes",  total_coef_writes - writes_before, 0);
+            check("T7 bank unchanged",  bank_select, 0);
+        end
+
+        $display("\n========================================");
+        if (errors == 0) $display("TB_PASS: tb_system_ddr4_to_fir all tests passed");
+        else             $display("TB_FAIL: %0d errors", errors);
+        $display("========================================");
+        $finish;
     end
 
 endmodule

@@ -11,6 +11,8 @@
 >
 > **EXCEPTION (2026-07-26):** the "Predistortion & Calibration" section and
 > Phase 6 below are CURRENT (added after cosim rounds 41–71).
+> **EXCEPTION (2026-09-03):** "Design Decisions — Confirmed" and "Filter UX
+> Features" are CURRENT and maintained (rulings dated 2026-08-22 / 2026-09-03).
 
 **Last Updated:** 2026-06-29 (archived 2026-07-22)  
 **Target FPGA:** Xilinx XCVU13P on Alinx ACVU13 SOM  
@@ -174,14 +176,22 @@ L_k = c_k + LUT_static[c_k]                     — static INL (64-entry LUT)
 ### Phase 3 — Top Level + Constraints (partially blocked)
 - [x] **Step 3.1** — Update `vu13p_dac_top.sv` — cascode_l/r[63:0] ports, removed DDR4 ref clk, removed lvds_bit_clk, updated header ✅
 - [x] **Step 3.2** — Update `sys_clock_gen.sv` — removed lvds_bit_clk port/BUFG, single dsp_clk domain, XCVU13P header ✅
-- [ ] **Step 3.3** — Create `vu13p_dac_master.xdc` — pin assignments *(BLOCKED: awaiting ACVU13 SOM connector docs from Alinx)*
-- [ ] **Step 3.4** — Update `dac_ddr4_if.sv` — MIG for XCVU13P *(BLOCKED: awaiting ACVU13 SOM DDR4 topology)*
+- [x] **Step 3.3** — Pin assignments DONE — Alinx delivered the ACVU13P pin CSVs (`Alinx/ACVU13P-Pin-Assignment-20260703.csv` + per-subsystem sheets); all 273 PACKAGE_PINs live in the single master `vu13p_dac_top.xdc` (audit 2026-08-22: every top-level port pin-referenced) ✅
+- [x] **Step 3.4** — DDR4 MIG generated (`Xilinx/scripts/gen_ddr4_mig.tcl` → `Xilinx/ip/ddr4_0/ddr4_0.xci` + .dcp) per the SOM 5× MT40A1G16KD topology; `dac_ddr4_if_mig.sv` wraps it ✅
+
+### Phase 3C — Flash / DDR4 Write Subsystem (2026-08-22, user-directed — all RTL in the P&R budget)
+- [x] **Step 3C.1** — DDR4 write path: un-tied the AXI write channels through `axi_dwc_coef` (IP was already READ_WRITE) and the MIG slave; `dac_ddr4_if` (both MIG wrapper and sim stub) now exposes a 128-bit AXI write port for the boot loader ✅
+- [x] **Step 3C.2** — `qspi_flash_ctrl.sv`: single x1-SPI engine, dual target (Flash 1 coef on bank-65 pins / Flash 0 bin via STARTUPE3), 4-byte-address opcodes (0x13/0x12/0xDC — both flashes >16 MB), 50 MHz SCK from clk_200m, ARM erase/program/read + boot streaming port with back-pressure. SUPERSEDES `flash_bridge.sv` (3-byte addr, 90 MHz assumption — file retained as reference, unused) ✅
+- [x] **Step 3C.3** — `qspi_boot_loader.sv`: **FPGA boots on its own (user ruling)** — at STARTUPE3.EOS + MIG calib, walks the Flash 1 record chain ({magic 'BFDC', dest, len, CRC32} headers), streams payloads through a gray-pointer async FIFO to a ui_clk AXI write master → DDR4; per-record CRC32 verify; boot_ok/crc_fail/axi_fail/record_count status ✅
+- [x] **Step 3C.4** — Top integration: STARTUPE3 (shared CCLK, Flash 0 D0/D1 + FCSBO), qspi1 pin muxing, boot gate sync; ctrl-plane regs 0x10-0x14 (FLASH_ADDR_LO/HI+target, FLASH_CMD, FLASH_DATA auto-inc, FLASH_PTR) + status 0x1A / readback 0x1B. **Bin and coefficients are independently field-updateable over ARM SPI (user requirement)**: target bit selects flash; JTAG remains the zero-RTL bring-up/recovery path ✅
+- [x] **Step 3C.5** — Multiboot safety: `BITSTREAM.CONFIG.CONFIGFALLBACK ENABLE` in XDC; Flash 0 layout golden@0x0 (never field-written) / update@0x0400_0000, golden build sets NEXT_CONFIG_ADDR (commented template). XDC CDC constraints added for all new clk_200m↔ui_clk crossings ✅
+- [x] **Step 3C.6** — Verified: `tb_qspi_subsys` (behavioral SPI flash + AXI memory models) — autonomous 2-record boot with data compare, bad-CRC fault, ARM erase/program/read-back 256 B, target mux; found+fixed an rx bit-alignment bug (last header edge sampled as data). Full regression (`tb_dac_ctrl_plane`, `tb_spi_ctrl_plane`, `tb_cal_coef_store`) + top elab clean ✅
 
 ### Phase 4 — Simulation & Verification (DDR4-independent)
 - [x] **Step 4.1** — Run `tb_coef_bank_loader.sv` — 256 MACs × 1024 coefs, 4 tests, 0 errors ✅
 - [x] **Step 4.2** — Fix `coef_bank_loader.sv` burst_half bug — coef_waddr +0x400 offset on half=1 ✅
 - [x] **Step 4.3** — Run `tb_dsp_core.sv` — full signal chain, 0 errors ✅
-- [ ] **Step 4.4** — Run `tb_system_ddr4_to_fir.sv` — *(BLOCKED: requires MIG IP)*
+- [ ] **Step 4.4** — Run `tb_system_ddr4_to_fir.sv` — *(UNBLOCKED 2026-08-22: MIG IP generated — needs the MIG sim model compiled into the xsim flow; also gates `tb_vu13p_top`)*
 
 ### Phase 4B — Verification (unblocked, do now)
 - [x] **Step 4B.1** — Run `tb_noise_shaper.sv` — 6 tests, 0 errors ✅ (found and fixed: binomial NTF unstable → conservative coefficients + error clamp)
@@ -199,7 +209,76 @@ L_k = c_k + LUT_static[c_k]                     — static INL (64-entry LUT)
 
 ### Phase 5 — Synthesis & Implementation (MIG IP still pending for DDR4 path; ⚠️ Step 5.1 results predate the Step 4C.5 FIR datapath fix — re-synth required)
 - [x] **Step 5.1** — First full synthesis DONE (2026-07-27, **Vivado 2026.1** — NOT 2025.2.1, which cannot check out the xcvu13p license; always `call C:\AMDDesignTools\2026.1\Vivado\settings64.bat` first). Two XDC bugs found+fixed: (1) `create_generated_clock -master_clock` without `-add` rejected (12-672) → dsp_clk/cell_clk kept auto-derived names and ALL CDC false paths silently matched nothing — fixed with the name-only rename idiom on the MMCM CLKOUT pins; (2) `CONFIGRATE 33` → 31.9 (valid US+ enum). Final (`synth51b.log`): **0 errors / 0 critical warnings, setup WNS +0.309 ns TNS 0 @ dsp_clk 280.87 MHz**; utilization LUT 8.6%, FF 5.7%, DSP 2062 (16.8%), URAM 512 (40%), BRAM 0.2%, IOB 177/702. Checkpoint `synth_top.dcp` + utilization/timing/exceptions reports written. Hold: pre-route intra-clock hold is router-fixed; `cell_clk→ff_clk` WHS -0.785 on the 128 cascode ports (vs ±5 ns RTZ tolerance — review output-delay -min at Step 5.2) ✅
-- [ ] **Step 5.2** — First implementation run — timing closure at 350–400 MHz
+- [x] **Step 5.2** — First implementation run — TIMING CLOSED (f13f, 2026-08-25): full production RTL (5M-tap FIR NUM_MACS=1280/TPP=256 + QSPI boot + DDR4 write + cal_coef_store + DPD + ctrl plane) routed on xcvu13p, WNS 0.000 / TNS 0.000 / 0 failing endpoints, hold +0.010, PW +0.039 — `impl_f13f_routed.dcp`. (Plan header said "350–400 MHz"; the ratified production clock is dsp_clk 280.87 MHz per Step 5.1.) Run history below ✅
+  - **f12 (2026-08-23): first COMPLETE-RTL routed datum** — f9 flow (NUM_MACS=1280,
+    TPP=256, SLR pblocks) + everything since: QSPI flash ctrl + boot loader,
+    DDR4 write path, `cal_coef_store`, DPD engines (Step 4D.1), ctrl-plane regs.
+    Routed clean, congestion NOT a problem (no windows > level 5 placer/router;
+    the mid-route "4226 CLBs high pin utilization" INFO resolved). Timing:
+    intra dsp_clk -0.074 (311 endpoints; boot/flash `rd_stall` decode);
+    overall WNS -2.35 — see f13 root cause (CORRECTION 2026-08-23: the -0.074
+    was initially misread as the design WNS; the -2.35 group is inter-clock).
+    Hold clean. DPD/NS/cal logic absent from all top-50 paths. Flow files:
+    `scripts/impl_top_f12.tcl`, `scripts/impl_f12_resume.tcl`.
+  - **f13 (2026-08-23)**: + registered `rd_stall` in `qspi_boot_loader`
+    (gray2bin+sub+compare was 5 LUT levels into the flash byte FSM CEs;
+    `tb_qspi_subsys` re-passed — 1 clk stall latency vs 3-word headroom).
+    dsp_clk group down to -0.090 (112 endpoints, hb1 DSP→acc CARRY8 chains).
+    **Design WNS -2.054 root-caused**: 513 clk_200m→mmcm_clkout0 (ui_clk)
+    endpoints — `m_axi_wdata = fifo_rdata` leaves the boot loader
+    COMBINATIONALLY, so the async-FIFO read CDC lands in the AXI upsizer
+    WDATA regs; the XDC exception's `-to u_boot_loader/*wdata*` matched
+    NOTHING and the group was timed at the 0.336 ns unrelated-edge
+    requirement (unmeetable by construction; also poisoned phys_opt effort,
+    TNS -1000). XDC scope-fixed (drop `-to`, keep `-from fifo_mem*`,
+    3.3 ns datapath-only — safe: gray-pointer handshake guarantees word
+    stability). **f13b (routed 2026-08-24)**: dsp_clk AND mmcm_clkout0 fully
+    MET (hb1 acc chain closed once phys_opt stopped chasing the fake group) —
+    ONE endpoint left at -1.874: `wptr_bin_reg[4]` → `wptr_gray_ui1_reg[4]`,
+    a register-merge alias (gray[4]==bin[4], synthesis folded the gray MSB
+    into the binary pointer, so `-from *gray_reg` missed that bit). XDC:
+    added `-from *ptr_bin_reg[*] -to` sync-FF exceptions both directions.
+    **f13c (routed 2026-08-24)**: alias path CLEARED; the incremental route
+    perturbed 25 hb1 accumulator endpoints to -0.031 (f13c script omitted
+    the post-route phys_opt that closed this group in f13b). **f13d**:
+    phys_opt AggressiveExplore did NOT move the -0.031/25 group — placement
+    exhausted. Path audit: `halfband_x2` products (load on valid_pipe[0]) →
+    acc_filtered (captures on valid_pipe[2]) is a TRUE 2-cycle path with
+    audio-rate input spacing (no intermediate capture possible) — the tools
+    were timing it single-cycle. XDC: `set_multicycle_path 2 -setup / 1
+    -hold` on `u_hb*/products_reg*+center_product_reg* → acc_filtered_reg*`.
+    **f13e (2026-08-24)**: MCP absorbed the halfband endpoints (25→15);
+    remaining 15 at -0.029 are REAL single-cycle FIR paths — `rd_addr_s2[7]`
+    → `rd_addr_s3[144..159]` fanout replicas, wr_addr s2→s3, cap_s3 →
+    boundary CE, one adder-tree hop (route-dominated). **f13f (2026-08-25):
+    ALL CONSTRAINTS MET** — phys_opt AggressiveExplore + AggressiveFanoutOpt
+    on `impl_f13e_routed.dcp` closed the last 15 endpoints once the MCP
+    removed the unfixable paths from the pool. Final: WNS/TNS 0.000, WHS
+    +0.010, `impl_f13f_routed.dcp` + timing/utilization reports.
+    FOLLOW-UP for Step 5.3: fold the f13 lessons (registered rd_stall RTL,
+    fifo_mem CDC scope, gray-MSB alias exceptions, halfband MCP — all in
+    `vu13p_dac_top.xdc` already) into ONE clean synth→route confirmation
+    run (`impl_top_f14.tcl` class) to prove closure from scratch before
+    Step 5.4 bitstream.
+  - **f14 (2026-08-25)**: clean flow launched; synth 0 err / 0 crit-warn;
+    place completed; post-place phys_opt: estimated **WNS +0.199, TNS 0**
+    (all setup opts skipped — nothing to fix). Then Vivado **OOM'd writing
+    `impl_f14_placed.dcp`** (ShapeDB writer ballooned to a reported ~1.9 TB
+    peak on this memory-tight box) — placement lost. LESSON: skip placed-
+    checkpoint writes on this machine; routed-dcp writes have always
+    succeeded. **f14b (routed 2026-08-26): CLEAN-FLOW CLOSURE CONFIRMED** —
+    re-place+route from `impl_f14_synth.dcp` after 64 GB pagefile added
+    (91.7 GB virtual total; first attempt OOM'd at the 43 GB ceiling; also
+    required restarting lmgrd, which does NOT survive reboots —
+    `lmgrd.exe -c C:\AMDDesignTools\Xilinx.lic`, license is served
+    2100@localhost). Final: **WNS +0.024 / TNS 0 / 0 failing, hold +0.005,
+    PW +0.039 — all constraints met** (`impl_f14b_route_timing.rpt`).
+    CAVEAT: the final `write_checkpoint impl_f14b_routed.dcp` HUNG (zero
+    CPU/IO ~6.5 h, killed) — the DCP writer is unreliable on this box for
+    this design; `impl_f14b_routed.dcp` was NOT produced. Reports +
+    utilization written. CONSEQUENCE for Step 5.4: generate the bitstream
+    in the SAME session as place+route (no intermediate DCP), `impl_f15`
+    class: synth dcp → opt/pblocks/place/route/recovery → write_bitstream.
 - [ ] **Step 5.3** — Iterate on timing — adjust pipeline stages if needed
 - [ ] **Step 5.4** — Generate bitstream
 
@@ -211,54 +290,51 @@ separate pipeline block — it is embedded in the EF3 error feedback (R67):
 Kernel dims (frozen `cosim80c3j` class): **39 terms, orders 2+3, max lag 5**, STAT[64],
 FIRW[16], max|q| ≈ 4.2 µcode/unit² → history depth 16, products ≤ 21 bits.
 
-- [ ] **Step 4D.1** — `dpd_engine.sv` (per channel): serial 2-lane MAC engine hanging off
-  `noise_shaper_ef3` Stage D. Timing budget: y commits at pipe cycle 4; enable period is
-  56–65 dsp_clk → ~50 cycles available; 39 kernel terms + 16 FIR taps on 2 lanes ≈ 36
-  cycles ✓ (~6 DSP48/channel). e1 patched with the correction before the next enable —
-  `noise_shaper_ef3` gets a Stage-E correction port (module extension, algorithm 
-  otherwise untouched).
-  Fixed point: q_int = round(q·2^48) signed 32-bit; hist products 21-bit; 56-bit
-  accumulate; final ≫6 → FRAC=42 domain. LUT/STAT as 43-bit LSB-scaled entries.
-- [ ] **Step 4D.2** — Coefficient banks: per channel × per temp point
-  {LUT[64], STAT[64], FIRW[16], Q[39], lag-tuple ROM[39×3]}. 3 factory temp points
-  (27/36/45 °C, headroom to 8) → ~183 words × 48 b × 2 ch × 3 pts ≈ 53 kb (BRAM).
-  **Double-buffered** (active/shadow): temp-point switch loads shadow, swaps at an
-  enable boundary — no mute needed (corrections are µcode–mcode scale).
-- [ ] **Step 4D.3** — `dpd_cal_loader.sv`: FPGA-autonomous load FSM on the
-  **dedicated QSPI bus** (full bandwidth, **completely divorced from the ARM SPI
-  control link** — user ruling 2026-07-30; coefficients NEVER transit the isolated SPI
-  slave). **Refined 2026-07-31: ALL coefficient data (pre-distortion, temp-correction,
-  etc.) stages in external DDR4** — boot: QSPI → CRC check → DDR4 coefficient region;
-  runtime consumers source from DDR4 (mechanism = open sub-question under (a)).
-  `dpd_enable` held OFF until a valid-CRC set is resident. Ctrl plane gets
-  STATUS/CONTROL ONLY: dpd_enable bit, active-temp-index readback, CRC-ok/fault bits,
-  recal advisory — a few registers, no data path. BLOCKED by DDR4 MIG IP (TODO-12).
-- [ ] **Step 4D.4** — QSPI cal-store schema: one record per (temp point, channel):
-  header {magic, version, temp_centi_degC, channel, len, CRC32} + payload. Sector
-  aligned. Arbitration with `flash_bridge` (cal write path) required: loader is
-  read-only master; define bus mux/grant so cal-fixture writes and runtime loads
-  never collide.
-- [ ] **Step 4D.5** — Verification: fixed-point golden model (port of `dpd_volt.py` to
-  the exact RTL arithmetic) → bit-exact xsim TB (same methodology as `ns_ef3_gen.py`
-  vs `noise_shaper_ef3`); then e2e: DSP-core sim codes → `gen_cosim41`-class deck →
-  LTspice FFT gates at 27/45 °C, targets -112 dBc class per R87/88. Loader TB with
-  QSPI flash model (good record, bad CRC, missing record).
+- [x] **Step 4D.1** — `dpd_engine.sv` DONE (2026-08-22): per-channel serial 2-lane MAC
+  engine off `noise_shaper_ef3` Stage D, implementing the CERTIFIED `dpd_fx_golden.py`
+  fixed point (W=18 block-fixed-point mantissas + per-class shared-exponent shifts
+  shQ/shS/shF/GF, F=24 action grid, 56-bit modular accumulator — NOT the older 32-bit
+  q_int sketch below, which the 2026-08-03 golden model superseded). 31 issue slots,
+  measured 42-cycle corr latency (budget ≥51) ✓, one 18×17 DSP48 + one small fabric
+  mult per lane (~4 DSP48/channel). `noise_shaper_ef3` Stage-E port added: Stage D
+  saves unclamped e_raw + pulses y_valid; corr_valid patches e1 = clamp(e_raw − corr);
+  corr_valid never pulsed ⇒ bit-identical legacy behavior (tb_ns_ef3 golden re-passed).
+  Coefficients: `cal_coef_store` active bank, widened to 4 read ports (2 lanes × 2
+  channels, LUTRAM replication); layout finalized (lut24[64] / Qm[39] / Fm[16] /
+  shifts / Sm[64] — `utils/dpd_rtl_gen.py` is the layout+ROM source of truth; lag
+  tuple ROM `dpd_lag_rom.svh` generated: 21 order-2 + 18 order-3 canonical basis,
+  swap = regen + resynth when Step 6.4 tooling exports the frozen cosim80c3j tuples).
+  Ctrl plane: DPD_EN write reg 0x15 (+ readback bit 2 of status 0x15), 2-FF sync to
+  dsp_clk. Legacy plan text (superseded): q_int = round(q·2^48) signed 32-bit; hist
+  products 21-bit; final ≫6; LUT/STAT 43-bit.
+- [x] **Step 4D.2** — ~~Per-temp coefficient banks in FPGA~~ **SUPERSEDED + IMPLEMENTED (2026-08-22 ruling)**: the FPGA holds NO per-temp-point banks and NO temp index — ARM computes the temperature-corrected values and writes ONE working set into `cal_coef_store.sv` (dual-bank 2×512×24b, atomic sample-boundary commit — see Step 6.3). The lag-tuple ROM[39×3] is static and stays with the future `dpd_engine.sv` ✅
+- [x] **Step 4D.3** — ~~`dpd_cal_loader.sv` FPGA-autonomous QSPI→DDR4 cal load FSM~~ **STRICKEN (2026-08-22 ruling, reverses the 2026-07-30/31 ruling for CAL DATA ONLY)**: temperature/cal coefficients now arrive over the ARM SPI control plane into `cal_coef_store` — no FPGA-side cal loader, no CRC/staging path for cal data. Retained from this step: ctrl-plane `dpd_enable` bit + status registers (fold into Step 4D.1). The QSPI→DDR4 boot path for FIR FILTER coefficients is IMPLEMENTED as `qspi_boot_loader.sv` (Phase 3C) ✅
+- [x] **Step 4D.4** — ~~QSPI cal-store schema~~ **STRICKEN (2026-08-22 ruling)**: cal/temp records are REMOVED from the flash file format — the temperature-indexed cal table lives with the ARM (which needs the table format / generation formula from cal tooling, Step 6.4). Flash retains ONLY the FIR filter coefficient store (`docs/coef_format_v2.md` unchanged in scope); the flash_bridge arbitration question disappears with the loader ✅
+- [½] **Step 4D.5** — Verification: BIT-EXACT RTL GATE DONE (2026-08-22):
+  `utils/dpd_rtl_gen.py` (integer-exact mirror of the RTL loop, dpd_fx_golden
+  semantics) → `tb_dpd_engine` — cal_coef_store + noise_shaper_ef3 + dpd_engine
+  chain, 2000 vectors × 2 channels, DPD ON and OFF both 0 mismatches, latency gate
+  pass; full regression (tb_ns_ef3 golden, tb_cal_coef_store, tb_dac_ctrl_plane,
+  tb_dac_dsp_core) + top elab clean. REMAINING: e2e analog gates — DSP-core sim
+  codes → `gen_cosim41`-class deck → LTspice FFT at 27/45 °C, -112 dBc class per
+  R87/88, using the REAL cosim80c3j kernel values (needs Step 6.4 cal tooling to
+  export mantissas/shifts in the Step 4D.1 layout). ~~Loader TB with QSPI flash
+  model~~ (stricken with 4D.3/4D.4 — covered by `tb_cal_coef_store`).
 
 **Decision status (user rulings 2026-07-30):**
-(a) **RATIFIED (refined 2026-07-31)**: FPGA loads ALL coefficient data —
-pre-distortion, temperature-correction coefficients, etc. — from the dedicated QSPI
-interface, fully separated from the isolated ARM SPI control link (which never
-carries coefficient data), and **all coefficient data is stored in the external RAM
-(SOM DDR4)**: boot flow QSPI → DDR4 staging store → runtime consumers. This aligns
-the DPD/temp path with the existing FIR coefficient path (`dac_coef_subsys` already
-sources from DDR4 over ui_clk). CONSEQUENCE: the DDR4 MIG IP (TODO-12) is now a
-BLOCKER for the coefficient loader, not just the FIR path. OPEN sub-question (user):
-does the runtime DPD engine read its working set from DDR4 directly per temp-point
-switch, or from small on-chip active banks refreshed from DDR4?
-(b) **OPEN — new TODO-14**: the temperature-correction runtime process is not yet
-defined: what the "temperature coefficient" is, how temperature is captured, and how
-it affects the correction at runtime (nearest-point bank swap vs interpolation vs
-continuous correction factor). Must be architected before 4D.2/4D.3 freeze.
+(a) ~~RATIFIED (refined 2026-07-31): FPGA loads ALL coefficient data from QSPI→DDR4~~
+**PARTIALLY SUPERSEDED (2026-08-22 user ruling)**: the QSPI→DDR4 path now carries
+FIR FILTER coefficients ONLY (unchanged: `dac_coef_subsys` sources from DDR4 over
+ui_clk). Predistortion/temperature-correction coefficients NO LONGER touch flash or
+DDR4 — the ARM computes the corrected values and delivers them over the SPI control
+plane into `cal_coef_store` (dual-bank, atomic commit). The old sub-question (DDR4
+direct vs on-chip active banks) is CLOSED: on-chip banks, ARM-refreshed.
+(b) ~~OPEN — TODO-14: temperature-correction runtime process undefined~~ **CLOSED
+(Aug 2026 rulings)**: temperature is captured by sensors on the ARM's I2C bus; the
+correction computation (nearest-point ≤ 9 °C table per Step 6.6, interpolation at
+ARM's discretion) runs ENTIRELY on the ARM; the FPGA applies whatever values are in
+the active `cal_coef_store` bank on every conversion. Remaining artifact: the table
+format + generation formula belong to cal tooling (Step 6.4) and ARM software.
 (c) **C5 STUDY COMPLETE (2026-08-01, user-commissioned) — data favors C1;
 ratification pending.** `utils/mpc_c5_study.py` ran lookahead code-selection
 (C5: branch nearest±2, horizons L=0/1/2, cost=Σe²) against the certified C1
@@ -333,11 +409,16 @@ Decisions (a)–(d) now closed → Step 4D.1 (correction engine RTL) unblocked
 
 ---
 
-## Blocked Items — Waiting on Alinx ACVU13 SOM Docs
-1. **XDC pin assignments** — need Samtec connector pinout, HP bank assignments
-2. **DDR4 MIG configuration** — need SOM DDR4 topology (ranks, speed, bus width)
-3. **`sys_clock_gen.sv` MMCM** — need to confirm whether SOM local clock is used or external OCXOs only
-4. **LVDS I/O standard** — need to confirm HP bank voltage (1.2V or 1.8V) for LVDS_25 vs LVDS
+## ~~Blocked Items — Waiting on Alinx ACVU13 SOM Docs~~ ALL CLEARED (audit 2026-08-22)
+1. ~~XDC pin assignments~~ — **RESOLVED**: Alinx pin CSVs in `Alinx/` (2026-07-03 delivery); `vu13p_dac_top.xdc` carries all 273 PACKAGE_PINs, every top port covered
+2. ~~DDR4 MIG configuration~~ — **RESOLVED**: `ddr4_0` MIG generated (`Xilinx/ip/ddr4_0/`, 5× MT40A1G16KD per SOM topology, `gen_ddr4_mig.tcl`)
+3. ~~`sys_clock_gen.sv` MMCM source~~ — **RESOLVED by design**: external OCXOs via LMK00304 mux (single 0x03 register drives DSP family + mclk mux); Step 3.2 done
+4. ~~LVDS I/O standard~~ — **RESOLVED**: only the clk_200m/mclk differential inputs use LVDS; XDC commits to LVDS (1.8 V HP) on CSV-assigned pins
+
+Remaining external dependency: NONE for P&R. Next hardware gate is the circuit
+diagram (manufacturing release). ~~which also gates the tap-count re-evaluation~~
+— tap count for initial release was settled 2026-09-03 by coefficient-storage
+capacity (see Design Decisions: FIR taps).
 
 ---
 
@@ -347,8 +428,10 @@ Decisions (a)–(d) now closed → Step 4D.1 (correction engine RTL) unblocked
 | Target FPGA | XCVU13P on ACVU13 SOM | ✅ RE-RATIFIED 2026-08-11 — KU15P rejected on CX tenets, see below |
 | Single FPGA (no dual-FPGA) | Yes | ✅ |
 | Coefficient storage | URAM288, 2 MACs/URAM | ✅ |
-| NUM_MACS production | 1024 (upgrade path: 2048) | ⚠️ tied to tap-count re-evaluation below |
-| FIR taps | 1M (upgrade path: 2M) | ⚠️ 4M target under consideration — see below |
+| NUM_MACS production | ~~1280 × TPP=256~~ → **1M geometry TBD: 1024×64 (original TB-verified) or 256×256 (keeps f15b deep-sweep geometry)** | ⏳ RULING NEEDED (2026-09-03); 1280×256 stays the proven 5M configuration (f15b WNS 0.000) |
+| FIR taps | **1,048,576 (1M) for INITIAL RELEASE** — 5.24M retained as a proven, future option | ✅ RULING 2026-09-03 (supersedes 2026-08-22 "hold at 5M / defer"): driver is coefficient STORAGE, not FPGA cost — see next row |
+| Coefficient storage / filter count | SOM Flash 1 (MT25QU01G, 128 MiB) holds ALL coefficient records; Flash 0 = golden + update bitstreams (64 MiB slots). Per filter: 5M taps = 21.0 MB (32-bit records) → **6 filters**, 11.8 MB (18-bit packed) → **10**; 1M taps = 4.19 MB → **31**, 2.36 MB packed → **56**. Halve for separate 44.1k/48k designs. | ✅ RULING 2026-09-03: target ≥32 selectable filters for the "sounding" phase → 1M taps; 18-bit record packing is OPTIONAL headroom (31 fit unpacked). Exceeding ~10 filters at 5M needs baseboard flash or ARM→DDR4 filter streaming |
+| Filter switch mechanism | Dual-bank, ON-DEMAND load into the shadow bank while audio plays from the active bank, atomic swap, no fade (gapless). Latency: ~4.4 ms @ 1M, ~22 ms @ 5M (drain-bus bound, 1 coef/cycle @ 300 MHz) | ✅ RULING 2026-09-03: next-entry PRELOAD DROPPED as a requirement — UX is "select any filter at any time"; on-demand latency is imperceptible |
 | Half-band stages | 3× ×2 post-FIR | ✅ |
 | Final output rate | 6.144 / 5.6448 MHz | ✅ |
 | Noise shaper | EF3 — 3rd-order error feedback, IIR NTF (Round 30; replaced 7th-order FIR-EF) | ✅ |
@@ -452,36 +535,54 @@ headline) to be settled by that run's resource/timing margins.
 ### Filter UX Features (2026-08-11, user-directed — codified, final ratification pending)
 **FEATURE 1 — VIDEO MODE (Chord-style low-latency mode).** Rationale:
 linear-phase megatap group delay (~0.7 s @ 1M … ~2.9 s @ 4M) breaks lip
-sync; min-phase group delay is ms-class regardless of tap count. Video mode
-= a mode that constrains the selectable filter set to a curated low-latency
-subset (min-phase filters + optionally one short linear-phase ~16k-tap
-entry). Manual engagement (no video signaling on I2S/USB/SPDIF inputs).
-Latency budget target: ≤20 ms end-to-end incl. halfbands and ingress
-buffering; every filter in the menu carries a published latency figure.
-Mode entry is a normal dual-bank gapless flip. RTL cost is minimal: an SPI
-command + load-filter logic that restricts selection to min-phase-tagged
-sets.
+sync; min-phase group delay is ms-class regardless of tap count.
+~~Video mode = a curated low-latency subset with published latency
+figures.~~ **REVISED 2026-09-04 (user):** video mode = **exactly ONE reserved
+filter** (min-phase or short, zero-padded to the 4 MB bank at staging);
+**customers are never shown latency numbers**. Manual engagement (no video
+signaling on I2S/USB/SPDIF inputs). Latency budget ≤20 ms end-to-end incl.
+halfbands and ingress buffering, checked by the filter builder from the
+`.bfc` `latency_us` field — comfortably inside lip-sync tolerance (audio lag
+is the tolerant direction: ITU-R BT.1359 ~125 ms detectable, ATSC IS-191
+≤45 ms). Mode entry = DAC_MODE 0x0B[0]=1 + FILTER_SELECT_ID 0x17 with the
+video filter ID: a normal on-demand dual-bank gapless load (~4.4 ms). **No
+RTL beyond what exists**; no latency readback (progress.md TODO-20 closed).
 
 **FEATURE 2 — NAMED FILTERS + USER-CURATED TOGGLE LIST (A/B/x playlist).**
 The customer specifies, by name, an explicit ordered list of filters to
 cycle through with the filter-toggle control — a single favorite as
 default, an A/B pair for comparison, or a longer evaluation sequence.
-Toggling through the list is seamless (dual-bank preload of the next
-entry). This changes which/how filters load and is NOT currently
-supported. Required work:
-1. **SPI command set**: define/select the active filter list (ordered names
-   or IDs), query available filters, report current selection + latency;
-2. **Named filter loading from DDR4**: loader resolves a filter by name/ID
-   to its DDR4 coefficient region (directory/index structure in DDR4,
-   populated at QSPI→DDR4 staging time);
-3. **Coefficient file format v2**: current format is bare coefficients —
-   add a header with name label, plus (while we're in there) metadata the
-   features above need: phase type (linear/min-phase → video-mode
-   eligibility), tap count, sample-rate family, latency figure, format
-   version, checksum;
-4. **Tooling update**: filter-design/packing scripts emit the v2 format
-   with embedded name + metadata; DDR4 bank layout generator builds the
-   filter directory.
+~~Toggling through the list is seamless (dual-bank preload of the next
+entry).~~ **REVISED 2026-09-03 (user):** the list is up to **32 entries**
+("sounding" phase will evaluate many designs), and the user may select ANY
+filter at ANY time (e.g. 16, then 2, then 29) — not only the next list
+entry. Switching is therefore ON-DEMAND: shadow bank fills while the active
+bank plays, atomic swap, no fade (gapless); ~4.4 ms @ 1M taps. Next-entry
+preload is DROPPED. The first list entry is the user's default; the FPGA
+cannot know it at boot (list lives in ARM RAM + FPGA volatile regs), so
+**default-filter load at boot is ARM policy**: on BOOT_STATUS(0x1A).boot_ok
+the ARM writes the list and issues FILTER_SELECT index 0 (progress.md
+TODO-16). Required work — status:
+1. **SPI command set** — DONE (regs 0x08 clear / 0x09 append / 0x0A
+   advance-or-index / 0x0B DAC_MODE; readback 0x16/0x17; `tb_spi_ctrl_plane`
+   20/20). 16→32 entries + direct FILTER_SELECT_ID 0x17 DONE 2026-09-03
+   (progress.md TODO-23); latency readback CLOSED as not needed (TODO-20);
+2. **Named filter loading from DDR4** — DONE (2026-09-02): `coef_bank_loader`
+   directory walk (32-byte entries at DIR_BASE_ADDR, FILT_NOTFOUND /
+   FILT_SIZE errors via sticky[6] + CMD_ERR_INFO); routed at 5M, f15b WNS
+   0.000;
+3. **Coefficient file format v2** — DRAFT `docs/coef_format_v2.md` (header +
+   directory spec); 4 open questions pending ratification; record payload
+   stays 32-bit/coef (18-bit packing optional, see Design Decisions);
+4. **Tooling update** — OPEN (host): emit v2 headers, build the DDR4
+   directory at staging, `payload_bytes` = NUM_MACS×COEF_DEPTH×4 exactly
+   (4,194,304 B at 1M).
+
+**STORAGE RULING (2026-09-03)** — see Design Decisions table: SOM Flash 1
+(128 MiB) is the entire coefficient store; 32 filters at 5M taps cannot fit
+(≈380 MB even packed). Initial release ships **1M taps** (31 filters
+unpacked, 56 packed); 5M remains a proven future option gated on added
+storage (baseboard flash or ARM→DDR4 streaming).
 
 ---
 

@@ -61,6 +61,10 @@ module tb_vu13p_top;
     wire [3:0]  led_debug;   // [3]=clk_locked [2]=ddr4_calib [1]=i2s_err [0]=force_zero
     wire        qspi1_cs_n;
     wire [3:0]  qspi1_dq;
+    wire        cf_sck;              // carrier coef flash (bom 18a) - not populated here
+    wire [3:0]  cf_cs_n;
+    wire [3:0]  cf_dq;
+    pullup (cf_dq[1]);               // absent device reads 0xFF -> SoM Flash 1 fallback
     wire [63:0] cascode_l;
     wire [63:0] cascode_r;
 
@@ -109,6 +113,7 @@ module tb_vu13p_top;
         .mclk_n         (~mclk),
         .clk_sel        (clk_sel),
         .ext_rst_n      (ext_rst_n),
+        .test_select_n  (1'b1), .test_step_n(1'b1), .pg_all(1'b1), .test_led(),
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
         .i2s_data       (i2s_data),
@@ -125,6 +130,9 @@ module tb_vu13p_top;
         .led_debug      (led_debug),
         .qspi1_cs_n     (qspi1_cs_n),
         .qspi1_dq       (qspi1_dq),
+        .cf_sck         (cf_sck),
+        .cf_cs_n        (cf_cs_n),
+        .cf_dq          (cf_dq),
         .cascode_l      (cascode_l),
         .cascode_r      (cascode_r),
         .ddr4_dq        (ddr4_dq),

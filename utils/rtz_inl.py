@@ -10,6 +10,7 @@ from read_ltraw import read_raw
 
 Ts = 162.7604e-9
 N_LIST = [1, 8, 16, 32, 48, 64]
+_mono = {}
 
 def split_steps(t):
     """Step boundaries = where time decreases."""
@@ -20,7 +21,13 @@ def period_avg(t, y, t0, t1):
     """Integrate over EXACTLY [t0, t1]: interpolate boundary samples. Nearest-
     sample windows misalign by up to one timestep; on a +-2.6V square that
     fakes mV-level INL (8mV/0.5ns at Ts=163ns)."""
-    m = (t > t0) & (t < t1)
+    key = (id(t), len(t))
+    if key not in _mono:
+        _mono[key] = bool(np.all(np.diff(t) >= 0))
+    if _mono[key]:
+        m = slice(np.searchsorted(t, t0, "right"), np.searchsorted(t, t1, "left"))
+    else:
+        m = (t > t0) & (t < t1)
     tt = np.concatenate(([t0], t[m], [t1]))
     yy = np.concatenate(([np.interp(t0, t, y)], y[m], [np.interp(t1, t, y)]))
     return np.trapezoid(yy, tt) / (t1 - t0)

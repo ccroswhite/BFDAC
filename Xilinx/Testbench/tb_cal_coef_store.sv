@@ -30,8 +30,8 @@ module tb_cal_coef_store;
     logic [8:0]  wr_addr = '0, rd_addr = '0;
     logic [23:0] wr_data = '0, rd_data;
     logic        active_bank, commit_pending;
-    logic [8:0]  dpd_rd_addr = '0;
-    logic [23:0] dpd_rd_data;
+    logic [3:0][8:0]  dpd_rd_addr = '0;
+    logic [3:0][23:0] dpd_rd_data;
 
     cal_coef_store dut (
         .dsp_clk(dsp_clk), .dsp_rst_n(dsp_rst_n), .sample_tick(sample_tick),
@@ -155,10 +155,12 @@ module tb_cal_coef_store;
         $display("T5 second commit swap: %s", errors ? "FAIL" : "PASS");
 
         // --- T6: dpd read port -------------------------------------------
-        dpd_rd_addr = 9'd42;
+        dpd_rd_addr[0] = 9'd42;
+        dpd_rd_addr[3] = 9'd42;
         repeat (5) @(posedge dsp_clk);
-        if (dpd_rd_data !== pat_b(9'd42)) begin
-            $display("FAIL T6: dpd port read %h expect %h", dpd_rd_data, pat_b(9'd42));
+        if (dpd_rd_data[0] !== pat_b(9'd42) || dpd_rd_data[3] !== pat_b(9'd42)) begin
+            $display("FAIL T6: dpd ports read %h/%h expect %h",
+                     dpd_rd_data[0], dpd_rd_data[3], pat_b(9'd42));
             errors++;
         end
         $display("T6 dpd read port: %s", errors ? "FAIL" : "PASS");

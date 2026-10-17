@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from read_ltraw import read_raw
 from rtz_inl import period_avg, Ts
+from lp_ls import lowpass
 
 TAG = sys.argv[1] if len(sys.argv) > 1 else "39"
 M = int(sys.argv[2]) if len(sys.argv) > 2 else 16384
@@ -36,10 +37,17 @@ else:
     a = np.array([period_avg(t, d, k * Ts, (k + 1) * Ts) for k in range(M)])
     np.save(pav_path, a)
 
+LP = os.environ.get("LP", "1") == "1"     # R109: anti-leakage lowpass (lp_ls.py)
+
 def ls_harmonics(x, label):
-    x = x[DISCARD:].astype(float)
+    x = x.astype(float)
+    d0, d1 = DISCARD, len(x)
+    if LP:
+        x, edge = lowpass(x)
+        d0, d1 = max(DISCARD, edge), len(x) - edge
+    x = x[d0:d1]
     n = np.arange(len(x), dtype=float)
-    ph = 2 * np.pi * BIN * (n + DISCARD) / M
+    ph = 2 * np.pi * BIN * (n + d0) / M
     cols = [np.ones_like(n), n / len(n), (n / len(n)) ** 2]
     for h in range(1, NH + 1):
         cols.append(np.cos(h * ph))

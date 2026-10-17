@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, r"C:\Users\ccros\src\BFDAC")
 from ns_ef3_gen import FRAC, LSB, CLAMP
 
-M = 16384
+M = int(os.environ.get("M", "16384"))   # R95: 65536 for the 1 kHz long gate
 BIN = int(os.environ.get("BIN", "17"))
 LT = r"C:\Users\ccros\Documents\LTspice"
 
@@ -16,6 +16,12 @@ LUTF = sys.argv[1] if len(sys.argv) > 1 else "cosim55lut_inl.npy"
 OUTF = sys.argv[2] if len(sys.argv) > 2 else "cosim67_code.npy"
 
 ppm = np.load(rf"{LT}\{LUTF}")
+K2TRIM = float(os.environ.get("K2TRIM", "1"))   # R116: scale the LUT bow (x^2 term of a deg-4 fit); <1 = less 2nd-order predistortion
+if K2TRIM != 1.0:
+    _x = np.arange(1, 65) - 32.5
+    _a2 = np.polyfit(_x, ppm, 4)[2]
+    ppm = ppm - (1.0 - K2TRIM) * _a2 * (_x ** 2 - (_x ** 2).mean())
+    print(f"K2TRIM={K2TRIM:g}: LUT bow {_a2:.4f} ppm/cell^2 scaled by {K2TRIM:g}")
 err_lsb = np.zeros(65)
 err_lsb[1:65] = ppm * 1e-6 * 64
 LUT = np.round(err_lsb * LSB).astype(np.int64)
@@ -38,9 +44,24 @@ print(f"kernel: {len(Q)} terms, max lag {QL}, max|q| {np.abs(Q).max()*1e6:.2f} u
 rng = np.random.default_rng(int(os.environ.get("DSEED", "5")))
 n = np.arange(M)
 amp = 28.0 * 10 ** (float(os.environ.get("AMPDB", "-1")) / 20)
-u = (amp * np.sin(2 * np.pi * BIN * n / M) * LSB).astype(np.int64)
-HD = LSB >> 1
+BIN2 = int(os.environ.get("BIN2", "0"))   # P2: equal two-tone, peak sum = amp
+if BIN2:
+    u = (0.5 * amp * (np.sin(2 * np.pi * BIN * n / M) + np.sin(2 * np.pi * BIN2 * n / M))
+         * LSB).astype(np.int64)
+else:
+    u = (amp * np.sin(2 * np.pi * BIN * n / M) * LSB).astype(np.int64)
+HD = max(1, int(round((LSB >> 1) * float(os.environ.get("DITH", "1")))))   # R109: TPDF dither half-width, x(LSB/2)
 dith = (rng.integers(0, HD, M) + rng.integers(0, HD, M) - HD).astype(np.int64)
+u = u + int(round(float(os.environ.get("DCOFF", "0")) * LSB))              # R109: input DC offset, codes
+if os.environ.get("OOB"):                # R110: DC-free breaker 1 - tone of <amp> codes at fs/<div>
+    _a, _d = os.environ["OOB"].split(",")
+    u = u + (float(_a) * np.sin(2 * np.pi * n / float(_d)) * LSB).astype(np.int64)
+if os.environ.get("HPD"):                # R110: DC-free breaker 2 - uniform +/-<amp> code dither, <order>-th difference (zero at DC)
+    _a, _k = os.environ["HPD"].split(",")
+    _w = rng.uniform(-float(_a), float(_a), M)
+    for _ in range(int(_k)):
+        _w = np.diff(_w, prepend=0.0)
+    u = u + (_w * LSB).astype(np.int64)
 
 st = (0, 0, 0, 0, 0, 0)
 hist = [0.0] * (max(QL, DLW) + 1)    # c-32 history, hist[0] = current

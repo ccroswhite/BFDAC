@@ -17,7 +17,8 @@ module spi_slave (
     input  logic [31:0] tx_data_in,
     output logic [31:0] data_out,
     output logic        data_valid,
-    output logic        crc_err_pulse
+    output logic        crc_err_pulse,
+    output logic        frame_err_pulse  // CS rose with a nonzero bit count != 40
 );
 
     // =========================================================
@@ -92,12 +93,14 @@ module spi_slave (
             shift_reg     <= '0;
             bit_cnt       <= '0;
             calc_crc      <= 8'h00;
-            data_valid    <= 1'b0;
-            crc_err_pulse <= 1'b0;
-            data_out      <= '0;
+            data_valid      <= 1'b0;
+            crc_err_pulse   <= 1'b0;
+            frame_err_pulse <= 1'b0;
+            data_out        <= '0;
         end else begin
-            data_valid    <= 1'b0; 
-            crc_err_pulse <= 1'b0;
+            data_valid      <= 1'b0;
+            crc_err_pulse   <= 1'b0;
+            frame_err_pulse <= 1'b0;
 
             if (cs_n_fall) begin
                 bit_cnt  <= '0;
@@ -107,7 +110,10 @@ module spi_slave (
             end else if (cs_n_active) begin
                 if (sclk_rise) begin
                     shift_reg <= {shift_reg[38:0], mosi_val};
-                    bit_cnt   <= bit_cnt + 1;
+                    // Saturate: a 64+40-clock overrun must not alias to a
+                    // valid count of 40 after the 6-bit wrap.
+                    if (bit_cnt != 6'd63)
+                        bit_cnt <= bit_cnt + 1;
 
                     // Calculate CRC only over the first 32 bits
                     if (bit_cnt < 32) begin
@@ -130,6 +136,11 @@ module spi_slave (
                     end else begin
                         crc_err_pulse <= 1'b1;
                     end
+                end else if (bit_cnt != 0) begin
+                    // Wrong-length frame (runt or overrun): discard + flag.
+                    // bit_cnt == 0 (CS pulse with no clocks) is treated as a
+                    // CS glitch, not an error.
+                    frame_err_pulse <= 1'b1;
                 end
             end
         end

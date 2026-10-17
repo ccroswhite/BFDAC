@@ -16,7 +16,9 @@ codes = [c for c in range(1, 65) if c != 32]
 if TAGARG.startswith(("cosim44lut", "cosim49lut", "cosim50lut", "cosim54lut",
                       "cosim57lut", "cosim61")):
     import random
-    seed = 45 if TAGARG.startswith(("cosim44lut2", "cosim54lut2")) else 44
+    import re
+    _m = re.search(r"lut(\d*)", TAGARG)
+    seed = 43 + (int(_m.group(1)) if _m and _m.group(1) else 1)   # lut 44, lut2 45, lut3 46 ... (reorder_lut.py)
     random.Random(seed).shuffle(codes)
     # must match gen_cosim40.py shuf / shuf2
 sched = []
