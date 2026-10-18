@@ -6,6 +6,7 @@ module tb_cell_measurement;
     logic rst_n = 0, safe = 1;
     logic spi_sclk = 0, spi_cs_n = 1, spi_mosi = 0;
     wire spi_miso, unmute;
+    wire relay_switch_busy;
     wire [1:0][7:0] cfg;
     wire [1:0] req, ack;
     wire [63:0] out_l, out_r;
@@ -27,10 +28,24 @@ module tb_cell_measurement;
     always #1.4 dsp_clk = ~dsp_clk;
     always #8.0 cell_clk = ~cell_clk;
 
+    automute_controller #(
+        .FLUSH_CYCLES(28'd5000),
+        .SETTLE_CYCLES(28'd100),
+        .SWITCH_CYCLES(28'd100),
+        .RAIL_SETTLE_CYCLES(28'd100)
+    ) auto (
+        .clk(dsp_clk), .rst_n(rst_n),
+        .spi_unmute(unmute && !manual_busy), .base_rate_sel(1'b0),
+        .i2s_err(1'b0), .level_switch_req(1'b0), .level_target(3'b000),
+        .outsel_switch_req(1'b0), .outsel_target(1'b0),
+        .line_mute_drive(), .hp_mute_drive(), .hp_rails_drive(),
+        .level_relay_drive(), .force_zero(), .switch_busy(relay_switch_busy)
+    );
+
     dac_ctrl_plane ctrl (
         .clk(ctrl_clk), .ext_rst_n(rst_n),
         .spi_sclk(spi_sclk), .spi_cs_n(spi_cs_n), .spi_mosi(spi_mosi), .spi_miso(spi_miso),
-        .line_mute_status(!safe), .hp_mute_status(1'b0), .switch_busy(1'b0),
+        .line_mute_status(!safe), .hp_mute_status(1'b0), .switch_busy(relay_switch_busy),
         .clk_locked(1'b1), .ddr4_init_calib_complete(1'b1),
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
         .boot_crc_fail(1'b0), .boot_axi_fail(1'b0), .flash_cmd_err(1'b0),
@@ -154,6 +169,7 @@ module tb_cell_measurement;
     initial begin
         #100 rst_n = 1;
         wr(`SPI_W_UNMUTE, 24'd1);
+        if (!relay_switch_busy) $fatal(1, "automute did not report its live relay transition");
         wr(`SPI_W_CELL_TEST_L, 24'h80);
         if (cfg !== 16'd0) $fatal(1, "diagnostics accepted while unmute requested");
         read_reg(`SPI_R_CMD_ERR_INFO, rd);
@@ -241,7 +257,7 @@ module tb_cell_measurement;
         if (manual_busy || manual_led || unmute) $fatal(1, "manual completion did not stay muted/dark");
         button_press(0); button_press(0); button_press(0); manual_hold(3,0,0);
         begin
-            int lo=64, hi=0, frames=0;
+            automatic int lo=64, hi=0, frames=0;
             while(frames<8192) begin
                 @(posedge cell_clk); #0.1;
                 if(core.cell_capture_en) begin
