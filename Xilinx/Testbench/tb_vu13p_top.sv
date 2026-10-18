@@ -3,9 +3,11 @@
 // =============================================================================
 // Integration testbench for vu13p_dac_top ? REFRESHED Round 30 (todo #14)
 //
-// Matches the current top: differential 200M/mclk inputs, LMK00304 behavioral
-// mux, Fig. 4d relay set, led_debug, QSPI1, 80-bit DDR4 stub tie-offs, and the
-// Round-29/30 cascode path (dsp_clk -> cell_clk CDC -> IOB regs on cell_clk).
+// Matches the current top: differential 200M/mclk inputs, behavioral
+// dual-frequency clock selector, Fig. 4d relay set, led_debug, QSPI1, 80-bit
+// DDR4 stub tie-offs, and the Round-29/30 cascode path (dsp_clk -> cell_clk
+// CDC -> IOB regs on cell_clk). This is a top-level smoke test, not autonomous
+// QSPI-to-DDR4 boot qualification.
 //
 // Tests:
 //   1. MMCM lock (led_debug[3])
@@ -13,8 +15,8 @@
 //   3. SPI write (40-bit frame: {rw,addr[6:0],data[23:0]} + CRC-8 0x07):
 //      volume then unmute -> relay_line_mute asserts (automute FSM, shortened
 //      timers via defparam)
-//   4. Cascode outputs: no X, and DWA rotation causes toggling on cell_clk
-//      (covers the new dsp_clk -> cell_clk CDC end-to-end)
+//   4. Cascode outputs: no X, and dither/DEM activity causes mask updates on
+//      cell_clk (covers the dsp_clk -> cell_clk CDC end-to-end at idle input)
 //   5. I2S watchdog: stop BCLK -> i2s_err -> automute drops relay_line_mute
 //
 // Notes:
@@ -81,8 +83,10 @@ module tb_vu13p_top;
     always #(P49/2)  clk_49m  = ~clk_49m;
     always #(P45/2)  clk_45m  = ~clk_45m;
 
-    // Behavioral LMK00304 2:1 mux (real part is not glitch-free; the DUT
-    // holds its MMCM in reset across switches, so zero-delay mux is fine)
+    // Behavioral frequency selector. Hardware uses the dual-oscillator
+    // enable/XOCLK network; this model checks source polarity/frequency only.
+    // The DUT holds its MMCM in reset across switches, so zero-delay selection
+    // is adequate here but does not model oscillator startup or mux glitches.
     assign mclk = clk_sel ? clk_45m : clk_49m;
 
     // ------------------------------------------------------------------
@@ -242,8 +246,10 @@ module tb_vu13p_top;
 
         // --- TEST 3: SPI volume + unmute -> line relay --------------------
         wait (u_dut.stream_clock_ready);
-        // This stub-based test supplies filter-valid explicitly. The real MIG
-        // test and loader tests cover directory validation and bank loading.
+        // The DDR4 stub does not calibrate and no flash contents are modeled
+        // here. Force filter-valid only for this relay/clock/CDC smoke test;
+        // this does not verify autonomous QSPI boot or DDR4 staging. Separate
+        // loader tests cover those blocks.
         force u_dut.bank_valid = 1'b1;
         spi_write(7'h1B, 24'd1);
         spi_write(7'h01, 24'h123456);            // volume (smoke: CRC path)
@@ -310,6 +316,9 @@ module tb_vu13p_top;
         // One write must: mute (automute rate_changed), wait relay release,
         // flip clk_sel while MMCM is reset; recovery requires explicit
         // source readiness, a valid filter and a fresh unmute request.
+        // Rate 0 starts on clk_sel=1 (45.1584 MHz); the first check below
+        // verifies that the old source remains selected until the mute delay
+        // completes. The next check expects clk_sel=0 for the new 48 kHz rate.
         release u_dut.bank_valid;
         spi_write(7'h03, 24'h000001);            // 44.1k family -> 48k family
         wdog = 0;                                // a) automute drops the relay
