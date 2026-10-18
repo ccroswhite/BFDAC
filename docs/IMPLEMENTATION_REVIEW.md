@@ -87,6 +87,7 @@ timing and R05 DPD deadlines remain open.
 11. [Verification evidence and its limits](#11-verification-evidence-and-its-limits)
 12. [Open findings and review actions](#12-open-findings-and-review-actions)
 13. [Review gates and required handoff package](#13-review-gates-and-required-handoff-package)
+14. [Executable release-readiness checklist](#14-executable-release-readiness-checklist)
 
 ## 1. How to use this specification
 
@@ -898,3 +899,114 @@ using the smaller dither range are not evidence for the current implementation.
 6. A release decision separating **safe first-article bring-up**, **functional operation**, and **performance qualification**. None should be inferred from the other two.
 
 **Bottom line:** the architectural approach and substantial implementation work are present, but the current baseline contains unresolved cross-domain contracts. Review and reconcile those contracts before treating this repository as a correct, manufacturable high-performance DAC.
+
+## 14. Executable release-readiness checklist
+
+Added 2026-10-18 from the engineering review suggestions. Every item below is
+OPEN until its specified evidence is produced. RTL simulation success is not
+implementation or hardware closure.
+
+**Evidence available now:** the repository contains historical implementation
+artifacts (including f12-f17 routed runs and f18 synthesis-only reports), but
+none is a sign-off report for the current RTL/XDC and exact release configuration.
+The XDC and KiCad schematic capture exist; the carrier PCB layout has not
+started. `hw/ref_netlist.md` is the analog reference netlist, not an FPGA package
+pin-to-carrier routed netlist. The real-MIG `tb_vu13p_mig` has its own
+`run_tb_mig.ps1` flow and is not part of the 26-job stream-rate regression.
+There is no ARM host-driver implementation in this repository.
+
+### 14.1 Vivado implementation and reports (P0 before bitstream)
+
+- [ ] Freeze the candidate commit, XCVU13P part/speed grade, `NUM_MACS`,
+  `TAPS_PER_PHASE`, clock/rate configuration, generated-IP versions, XDC and
+  coefficient/image hashes. Reconcile the chosen build with the archived
+  implementation scripts; do not assume their older generics are current.
+- [ ] Regenerate/check OOC synthesis for `ddr4_0` and `axi_dwc_coef`, then run
+  full-top synthesis, placement, physical optimization and routing on that exact
+  candidate. Preserve the routed DCP and tool/version manifest.
+- [ ] Archive `report_timing_summary` for setup and hold, with WNS/TNS, clock
+  interaction and unconstrained-path results for `dsp_clk`, `clk_200m`,
+  `cell_clk` and generated audio clocks. Inspect critical paths and per-SLR
+  utilization at the actual release parameters.
+- [ ] Prove that every intended datapath-only constraint is active and matches
+  endpoints, including the XDC's 3.3/3.5/5.0 ns limits. Review `report_exceptions`
+  and path reports to ensure no held bus is hidden by a broader false path.
+- [ ] Run `report_cdc` (and reset-domain checks if available). Classify every
+  finding; confirm synchronizer `ASYNC_REG` attributes, narrow first-stage
+  exceptions, held-bus max-delay coverage, and no unexplained crossings or
+  unconstrained paths. Record reviewed waivers rather than asserting “zero”
+  without a report.
+- [ ] Run `report_drc`, `report_io` and `report_utilization`. Confirm all 128
+  cascode output registers are packed into IOB flops, inspect QSPI `cf_*` I/O
+  assignments, check bank-voltage/IOSTANDARD compatibility (including Bank 61
+  at 1.2 V and the 1.8 V banks), and close all unexplained DRCs.
+- [ ] Review routed high-fanout DEM metric paths and calibration-store read
+  paths before adding replication or pipeline stages. Retain the reports that
+  justify any timing-driven RTL changes.
+- [ ] Run `run_tb_mig.ps1` with generated MIG simulation assets and record its
+  result separately from the stream-rate suite. Confirm the boot test exercises
+  QSPI-to-DDR4 staging and coefficient readback without forcing internal
+  `bank_valid`.
+
+### 14.2 Pin, bank and schematic cross-check (P0 before layout freeze)
+
+- [ ] Create a repeatable parity check among the top-level port list, XDC
+  `PACKAGE_PIN`/`IOSTANDARD` assignments, the Alinx pin-assignment CSV and the
+  KiCad SoM/carrier connector sheets. The existing `kicad_xcheck.py` checks
+  analog-reference connectivity, not FPGA XDC pin parity.
+- [ ] Resolve `mclk_p` AW28 and the XDC-assigned `mclk_n` AY28 against the
+  carrier no-connect intent. Explicitly reserve/terminate the unused pin or
+  remove its top-level port and XDC assignment consistently. Verify `clk_sel`
+  AR25 polarity against the dual-CCHD-957/XOCLK enable circuit; the current
+  architecture is not an LMK00304 mux.
+- [ ] Verify Bank 61 VCCO/`led_status` BC33 LVCMOS12 and each 1.8 V bank against
+  the actual SoM power schematic, including the LED load. Check BIVC and I/O DRC
+  in Vivado.
+- [ ] Trace every `cascode_l/r` pin through the connector map, level translator
+  and per-cell reclock input. Reconcile the current schematic/BOM parts
+  (AXC8T245 translators and LVC1G74 reclock flops) with any legacy
+  MC100EP52/resistive-shifter references, then verify actual routing and skew
+  after PCB layout.
+- [ ] Trace `relay_line_mute`, `relay_hp_mute` and `relay_hp_rails` from their
+  XDC pins through the current schematic to the ULN/coil loads. Resolve outputs
+  that are intentionally NC or removed in the current assembly variant.
+- [ ] Start the carrier layout only after the above parity checks; then review
+  connector footprints, return paths, SI/PI, clock and cascode matching, and
+  manufacturing constraints on the actual PCB database.
+
+### 14.3 SPI host contract and software (P1 before AP integration)
+
+- [ ] Assign an owner/repository for the ARM host driver. Freeze the 40-bit
+  mode-0 frame, MSB-first payload, and CRC-8 polynomial `0x07`, init `0x00`,
+  over bits `[39:8]`; use shared golden frame/CRC vectors.
+- [ ] Set the initial host SCLK to 10 MHz or lower. Qualify operation up to the
+  RTL's 12.5 MHz standard-timing limit through the actual isolator and board;
+  faster operation requires a documented delayed-MISO-sampling scheme and
+  hardware timing evidence.
+- [ ] Implement CS setup/hold guards: at least four 200 MHz system-clock periods
+  before the first SCLK edge and at least 20 ns after the final edge. Exercise
+  the close-edge case already covered by the SPI RTL test.
+- [ ] Match the host volume encoding to the current SPI contract: normalized
+  unsigned Q0.24, `0xFFFFFF` full scale, mapped internally to 28 noise-shaper
+  code units. Validate rate/filter/volume/unmute ordering and read/clear error
+  status through the host driver.
+
+### 14.4 Operator-controlled hardware bring-up (P0 before audio operation)
+
+- [ ] Use current-limited power with analog outputs disconnected. Confirm each
+  supply and reference, `pg_all`, temperatures and absence of abnormal current.
+- [ ] Verify oscillator family selection, `mclk_p`, `clk_sel` polarity and
+  `led_debug[3]` MMCM lock before enabling the converter path.
+- [ ] Verify DDR4 calibration (`led_debug[2]`), then read SPI boot status
+  `0x1A` and confirm `boot_done`, `boot_ok`, expected record count, valid filter
+  bank and no CRC/AXI/load errors.
+- [ ] With outputs still disconnected, select a known compatible filter, send a
+  valid rate/source-ready sequence, apply normalized Q0.24 volume, then issue an
+  explicit unmute. Confirm line relay sequencing and stable I2S/RTZ behavior.
+- [ ] Run cell/DC/frequency diagnostics manually, one condition at a time, with
+  documented settling and probe loading. Stop on any unexpected relay, clock,
+  PG, boot or stream fault; do not automate a sweep.
+- [ ] After functional bring-up, measure the signed N1/D1/D2/D3/L1 matrix and
+  128 dB0 / HD2-HD3 stretch goals across both channels, approved loads,
+  temperature, supply and low-level/silence conditions. Archive raw captures,
+  calibration image and analysis provenance.
