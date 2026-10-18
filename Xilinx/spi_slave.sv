@@ -5,9 +5,9 @@ module spi_slave (
     input  logic        rst_n,
     
     // SPI Bus (Asynchronous from ARM)
-    // Capture uses 3-stage synchronizers on clk. Max SPI_SCLK is roughly
-    // clk/4. 49.152 MHz clk -> ~12 MHz SPI; 200 MHz clk -> ~50 MHz SPI.
-    // If 125 MHz SPI bus is required, a DDR or ISERDES capture path is needed.
+    // Capture uses 3-stage synchronizers on clk. Standard-timed operation
+    // through the control isolator is specified to 12.5 MHz; faster operation
+    // needs a host with delayed MISO sampling and board-level timing qualification.
     input  logic        spi_sclk,
     input  logic        spi_cs_n,
     input  logic        spi_mosi,
@@ -54,6 +54,15 @@ module spi_slave (
     assign cs_n_rise   = (cs_n_sync[2:1] == 2'b01);
     assign cs_n_active = ~cs_n_sync[1]; 
     assign mosi_val    = mosi_sync[1];
+
+    // Let a final SCLK edge settle through its synchronizer before closing the
+    // frame. CS and SCLK are independent asynchronous inputs and can resolve
+    // one clk apart even when their package transitions are nearly coincident.
+    logic [2:0] cs_close_pipe;
+    always_ff @(posedge clk) begin
+        if (!rst_n) cs_close_pipe <= '0;
+        else        cs_close_pipe <= {cs_close_pipe[1:0], cs_n_rise};
+    end
 
     // =========================================================
     // 3. Shift Register, Counter, and CRC-8
@@ -107,7 +116,7 @@ module spi_slave (
                 calc_crc <= 8'h00; // Reset CRC engine
                 // Pre-load data to send with valid CRC-8 over the 32-bit payload.
                 shift_reg <= {tx_data_in, tx_crc};
-            end else if (cs_n_active) begin
+            end else if (cs_n_active || cs_n_rise || (|cs_close_pipe[1:0])) begin
                 if (sclk_rise) begin
                     shift_reg <= {shift_reg[38:0], mosi_val};
                     // Saturate: a 64+40-clock overrun must not alias to a
@@ -127,7 +136,7 @@ module spi_slave (
                         calc_crc[0] <= inv;
                     end
                 end
-            end else if (cs_n_rise) begin
+            end else if (cs_close_pipe[2]) begin
                 if (bit_cnt == 40) begin
                     // Validate CRC byte (bits 7:0 of shift register)
                     if (calc_crc == shift_reg[7:0]) begin

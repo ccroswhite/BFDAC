@@ -110,10 +110,13 @@ module tb_dac_ctrl_plane;
             spi_mosi = tx[i];
             #50 spi_sclk = 1;   // rising edge: DUT samples
             rx = {rx[38:0], spi_miso};
-            #50 spi_sclk = 0;   // falling edge: DUT shifts out
+            if (i == 0) begin
+                #1 spi_cs_n = 1; // exercise CS rising before the final SCLK fall
+                #49 spi_sclk = 0;
+            end else begin
+                #50 spi_sclk = 0;   // falling edge: DUT shifts out
+            end
         end
-        #100;
-        spi_cs_n = 1;
         #200;                    // allow cs_n_rise processing
         miso_data = rx[39:8];
     endtask

@@ -64,7 +64,7 @@ try {
         @{Top="tb_tpdf_dither_gen"; Name="stereo_tpdf_range"; Generic=@()},
         @{Top="tb_qspi_subsys"; Name="qspi_boot_backpressure"; Generic=@()},
         @{Top="tb_dpd_deadline_monitor"; Name="dpd_deadline"; Generic=@()},
-        @{Top="tb_dpd_engine"; Name="dpd_49cy"; Generic=@("-generic_top",'"EN_PERIOD=49"')},
+        @{Top="tb_dpd_engine"; Name="dpd_49cy"; Generic=@()},
         @{Top="tb_dpd_engine"; Name="dpd_50cy"; Generic=@("-generic_top",'"EN_PERIOD=50"')},
         @{Top="tb_dpd_engine"; Name="dpd_56cy"; Generic=@("-generic_top",'"EN_PERIOD=56"')},
         @{Top="tb_coef_bank_loader"; Name="filter_rate"; Generic=@()},

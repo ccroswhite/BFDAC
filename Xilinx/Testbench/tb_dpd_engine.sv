@@ -13,7 +13,7 @@
 // the older 56-cycle unit-test cadence.
 // =============================================================================
 module tb_dpd_engine #(
-    parameter int EN_PERIOD = 56
+    parameter int EN_PERIOD = 49
 );
 
     localparam int N = 2000;
