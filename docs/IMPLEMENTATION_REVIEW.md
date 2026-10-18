@@ -32,17 +32,21 @@ transitions rather than every non-PLAYING state. Dither now uses separate L/R
 seeds and a full 42-bit uniform difference carried in a signed 43-bit value.
 The coefficient loader waits a cycle before its first FIFO pop, rejects AXI
 RRESP errors without activating the partial bank, and resets the FIFO epoch
-before retry.
+before retry. QSPI boot staging now uses a correct Gray-pointer FIFO full
+comparison and earlier read backpressure, rejects record addresses outside its
+30-bit DDR aperture, and runs SoM flash targets at 25 MHz pending exact MPN
+confirmation.
 
-The expanded 23-job suite passed after these changes, including DPD golden runs
+The expanded 24-job suite passed after these changes, including DPD golden runs
 at periods 49 and 50, the independent/full-range TPDF check, the AXI-response
-failure/retry test, deadline-boundary scenarios, RTZ inter-capture checks,
-calibration race/reset cases and top-level elaboration/simulation. The DPD
-period tests exercise the pipeline, not a routed XCVU13P implementation; real
-MMCM jitter, feedback-path timing, FIR-bank behavior in the actual URAM/MAC
-implementation, STA/CDC, real-MIG behavior and hardware remain open. Previous
-noise/performance studies used the half-range dither and must be rerun against
-the current full-range configuration before citing those results as current.
+failure/retry test, QSPI boot/readback/backpressure/bounds checks,
+deadline-boundary scenarios, RTZ inter-capture checks, calibration race/reset
+cases and top-level elaboration/simulation. The DPD period tests exercise the
+pipeline, not a routed XCVU13P implementation; real MMCM jitter, feedback-path
+timing, FIR-bank behavior in the actual URAM/MAC implementation, STA/CDC,
+real-MIG behavior and hardware remain open. Previous noise/performance studies
+used the half-range dither and must be rerun against the current full-range
+configuration before citing those results as current.
 
 **Revision:** 0.2 — review draft with clock/rate ownership locked 2026-10-16, not release approval
 

@@ -10,6 +10,7 @@ $repoDir = Split-Path $rtlDir -Parent
 if (-not $LogDir) { $LogDir = Join-Path $repoDir "logs\stream_rates" }
 New-Item -ItemType Directory -Force $LogDir | Out-Null
 $summary = Join-Path $LogDir "summary.log"
+$runTag = [System.IO.Path]::GetFileName((Resolve-Path $LogDir).Path) -replace '[^A-Za-z0-9_]', '_'
 $results = [System.Collections.Generic.List[object]]::new()
 $env:PATH = "$VivadoBin;" + $env:PATH
 Set-Location $tbDir
@@ -75,7 +76,7 @@ try {
         @{Top="tb_vu13p_top"; Name="top"; Generic=@()}
     )
     foreach ($job in $jobs) {
-        $snapshot = "rates_$($job.Name)"
+        $snapshot = "rates_${runTag}_$($job.Name)"
         Stage "$($job.Name)_elaborate" "xelab.bat" `
             (@($job.Top, "glbl", "-L", "unisims_ver", "-s", $snapshot) + $job.Generic) | Out-Null
         $result = "ELABORATED"
