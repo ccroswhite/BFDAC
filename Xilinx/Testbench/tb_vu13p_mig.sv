@@ -454,7 +454,7 @@ module tb_vu13p_mig;
         check("T2 crc_fail",       u_dut.boot_crc_fail, 0);
         check("T2 axi_fail",       u_dut.boot_axi_fail, 0);
         check("T2 record_count",   u_dut.boot_record_count, 2);
-        check("T2 AXI write bursts", axi_wr_bursts, 1 + int'(BANK_SIZE) / 256);  // 64 B dir + 4 KB bank, 256 B/burst
+        check("T2 AXI write bursts", axi_wr_bursts, 1 + int'(BANK_SIZE) / 256);  // 64 B dir + 16 KB bank, 256 B/burst
         spi_read(7'h1A, rd);
         $display("[%0t] BOOT_STATUS 0x1A = %h", $time, rd);
         check("T2 0x1A boot_ok",   rd[2], 1);
