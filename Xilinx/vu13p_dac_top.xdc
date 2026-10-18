@@ -52,8 +52,8 @@ set_property IOSTANDARD LVCMOS18 [get_ports i2s_bclk]
 #    explicit declarations improve reporting clarity)
 # -----------------------------------------------------------------------------
 
-# dsp_clk derived from the single mclk input via the MMCM (no internal BUFGMUX;
-# clock selection is external on the LMK00304). At CLKOUT0_DIVIDE_F=3.250:
+# dsp_clk derived from the buffered XOCLK copy on mclk via the MMCM (no internal
+# BUFGMUX; clk_sel controls the dual oscillator-enable network). At divide 3.25:
 #   44.1k family: 903.168/3.25 = 277.898 MHz  (3.599 ns)
 #   48k   family: 983.04 /3.25 = 302.474 MHz  (3.306 ns)
 # clk_mclk is constrained at the faster (48k) rate, so dsp_clk timing covers both.
@@ -76,13 +76,41 @@ create_generated_clock -name cell_clk [get_pins u_clk_gen/u_mmcm/CLKOUT1]
 # Vivado must not attempt multi-cycle or single-cycle timing across these.
 # -----------------------------------------------------------------------------
 
-# clk_200m (SPI control plane) -> dsp_clk
-# Signals: spi_unmute, base_rate_sel, level_switch_req, level_target, outsel_switch_req, outsel_target
-set_false_path -from [get_clocks clk_200m] -to [get_clocks dsp_clk]
+# clk_200m (SPI control plane) -> dsp_clk single-bit synchronizer first stages.
+# Do not blanket-false-path this clock pair: held multi-bit buses use explicit
+# datapath-only max delays below and must remain constrained.
+set_false_path -to [get_pins {
+    unmute_sync_chain_reg[0]/D rate_sel_sync_chain_reg[0]/D
+    level_req_sync_chain_reg[0]/D
+    outsel_req_sync_chain_reg[0]/D outsel_target_sync_chain_reg[0]/D
+    vol_tog_sync_reg[0]/D
+}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/level_target_reg[*]}] \
+    -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {sys_volume_q_reg[*]}] \
+    -to   [get_cells {sys_volume_dsp_reg[*]}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/i2s_rx_trim_reg[*]}] \
+    -to   [get_cells {u_i2s_ingress/trim_meta_reg[*]}]
 
-# dsp_clk -> clk_200m
-# Signals: i2s_err, switch_busy, line_mute_status, hp_mute_status (synchronised in dac_ctrl_plane)
-set_false_path -from [get_clocks dsp_clk] -to [get_clocks clk_200m]
+# The applied interpolation/rate-shift bus changes only while the MMCM path
+# reset is asserted, and remains static until the DSP and cell domains relock.
+set_false_path \
+    -from [get_cells {u_stream_rate/applied_rate_reg[1] u_stream_rate/applied_rate_reg[2]}] \
+    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/* && IS_SEQUENTIAL}]
+set_false_path \
+    -from [get_cells {u_stream_rate/applied_rate_reg[1] u_stream_rate/applied_rate_reg[2]}] \
+    -to   [get_cells -hierarchical -filter {NAME =~ u_i2s_ingress/* && IS_SEQUENTIAL}]
+
+# dsp_clk -> clk_200m single-bit status synchronizer first stages.
+set_false_path -to [get_pins {
+    u_ctrl_plane/i2s_err_sync[0]/D
+    u_ctrl_plane/switch_busy_sync[0]/D
+    u_ctrl_plane/line_mute_sync[0]/D
+    u_ctrl_plane/hp_mute_sync[0]/D
+}]
 
 # Serial DATA synchronizer and tagged launch-event crossing.
 set_false_path -from [get_ports i2s_data] -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
@@ -188,13 +216,13 @@ set_false_path -to [get_ports {relay_line_mute relay_hp_mute relay_hp_rails rela
 # DATA into the external MC100EP52 differential LVPECL reclock FFs (resistive
 # 3.6k/1k shift into each FF D input vs external ~2.1 V threshold rail;
 # the EP52 has no V_BB pin - Round 30 finding, bom.md 1.2). The FF resamples on the
-# OCXO-derived LMK tree clock and its Q/~Q pair drives the DMMT5551 steering
+# OCXO-derived XOCLK fanout clock and its Q/~Q pair drives the DMMT5551 steering
 # cell bases through 100R/165R networks. No CMOS translator.
 #
 # Timing (todo #13, closed Round 29; hold fix 2026-08-14):
 #   - IOB FFs are clocked by cell_clk (MMCM CLKOUT1 = mclk rate, CLKOUT1_PHASE
-#     = 90 deg -> launch edge 5.09 ns after the mclk/ff_clk edge; same LMK00304
-#     source). The 90 deg shift exists because at 0 deg the MMCM-compensated
+#     = 90 deg -> launch edge 5.09 ns after the mclk/ff_clk edge; same selected
+#     XOCLK through the LMK1C1108 fanout). The 90 deg shift exists because at 0 deg the MMCM-compensated
 #     launch was coincident with the ff_clk edge and violated the budgeted
 #     hold pad by -1.74 ns (f9wb route). See sys_clock_gen.sv.
 #   - ff_clk below is a VIRTUAL clock representing the MC100EP52 clock pin.
@@ -202,13 +230,12 @@ set_false_path -to [get_ports {relay_line_mute relay_hp_mute relay_hp_rails rela
 #     (t = 20.345 ns): 15.26 ns setup budget, 5.09 ns of real hold margin
 #     against edge N.
 #   - Output delay numbers DATASHEET-VERIFIED (Round 30, bom.md 1.4):
-#     MC10EP52/D rev 7: setup 50 ps min, hold 0 ps min; LMK tree skew actual
-#     ~0.35 ns (LMK00304 50 ps + LMK1C1108 part-to-part 280 ps + trace 10 ps).
-#     Constraints below kept CONSERVATIVE (budgeted setup 0.2 / hold 0.2 /
-#     skew 1.0) - real margin is only better; do not relax without need:
+#     MC10EP52/D rev 7: setup 50 ps min, hold 0 ps min. Exact oscillator/
+#     fanout/board skew still needs physical verification. Constraints below
+#     retain a conservative 1.0 ns skew budget; do not relax without routed evidence:
 #       max = board flight 1.0 + shift network 0.1 + EP52 setup 0.2
-#             + LMK tree skew margin 1.0                    = 2.3  -> 2.5 pad
-#       min = -(EP52 hold 0.2 + LMK tree skew margin 1.0)   = -1.2 -> -1.5 pad
+#             + fanout skew margin 1.0                      = 2.3  -> 2.5 pad
+#       min = -(EP52 hold 0.2 + fanout skew margin 1.0)     = -1.2 -> -1.5 pad
 #   - dsp_clk -> cell_clk crossing uses a toggle-handshake CDC in
 #     dac_dsp_core (staging bus stable ~8 cell_clk per 6.144 MHz DEM update);
 #     constrain datapath-only so Vivado does not chase the 89 ps related-clock
@@ -229,8 +256,8 @@ set_max_delay -datapath_only 3.5 \
 set_false_path -to [get_pins -hierarchical -filter {NAME =~ *cell_rst_sync_reg*/CLR}]
 
 # Virtual clock: external MC100EP52 clock pin (same rate/phase as mclk; the
-# LMK tree skew between the FPGA mclk input and the FF CLK pins is inside the
-# +-1.0 ns margin folded into the output delay values above).
+# XOCLK fanout/board skew between the FPGA copy and FF CLK pins is budgeted in
+# the +-1.0 ns output-delay values above).
 create_clock -name ff_clk -period 20.345
 
 set_output_delay -clock ff_clk -max  2.500 [get_ports {cascode_l[*] cascode_r[*]}]
@@ -619,7 +646,7 @@ set_max_delay -datapath_only 5.0 \
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_cal_store/rd_data_dsp_reg[*]}] \
     -to   [get_cells {u_cal_store/rd_data_reg[*]}]
-set_false_path -to [get_pins {u_cal_store/active_sync_ctrl_reg[0]/D u_cal_store/pending_sync_ctrl_reg[0]/D}]
+set_false_path -to [get_pins {u_cal_store/active_sync_ctrl_reg[0]/D u_cal_store/pending_sync_ctrl_reg[0]/D u_cal_store/cal_valid_sync_ctrl_reg[0]/D}]
 
 # --- clk_200m <-> ui_clk CDC (qspi_boot_loader, 2026-08-22) -------------------
 # Async FIFO gray pointers (2-FF ASYNC_REG chains each way)

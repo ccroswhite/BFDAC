@@ -360,7 +360,7 @@ The pacer therefore presents an approximately 45/46-cycle cadence. Do not use th
 
 The generated circuit uses two Crystek CCHD-957 oscillators, enabled one at a time, with outputs connected through separate 33-ohm resistors to `XOCLK`. Each channel has an LMK1C1108 root and eight leaf fanouts. One dedicated shared `V33CLK` LT3045 rail powers both channel trees and the oscillator circuitry.
 
-A buffered/divided copy of `XOCLK` goes to SoM J6-C30/AW28 as **single-ended LVCMOS18**. In contrast, RTL still instantiates `IBUFDS` and XDC assigns LVDS to AW28/AY28. The clock-select polarity also disagrees with the register convention. These are unresolved interfaces, not acceptable timing margins (R02/R03).
+A buffered/divided copy of `XOCLK` goes to SoM J6-C30/AW28 as **single-ended LVCMOS18**. The current top-level RTL instantiates `IBUF` and XDC assigns LVCMOS18; this resolves the audited IBUFDS/LVDS mismatch. Current clock-select polarity also matches the dual-oscillator enable mapping. These RTL/XDC corrections do not replace electrical level, startup, I/O DRC or SI/timing qualification (R02/R03).
 
 The current quarter-period FPGA launch offset was justified for an older external EP52 path. The actual carrier path is FPGA -> AXC8T245 -> LVC1G74, with LMK1C1108 clock trees. Recalculate setup/hold over PVT, oscillator/fanout skew, FPGA Tco, translator delay, loading and board flight time. Retiming removes some launch uncertainty only if the external FF captures correctly; it does not eliminate its own aperture error or fanout jitter.
 
@@ -678,13 +678,26 @@ Real MIG testing has separate IP/model-generation requirements; see [run_tb_mig.
 
 **Action/closure:** choose and verify a compatible electrical interface, including bank supply, threshold/noise margin, resistor-divider loading, edge rate and inactive-power behavior. Make schematic, primitive and XDC agree; re-run I/O DRC and SI/timing analysis.
 
-### R03 — P0: Clock-family polarity, enable levels and timing model disagree
+**Current RTL follow-up:** the top explicitly buffers the single-ended `mclk_p`
+copy with `IBUF`, and XDC uses LVCMOS18 with the unused `mclk_n` reserved.
+The old IBUFDS/LVDS discrepancy is closed in RTL/XDC. Physical bank voltage,
+divider loading, I/O DRC and SI margins remain to be verified.
+
+### R03 - P0: Clock-family polarity, enable levels and timing model disagree
 
 **Evidence:** register/RTL convention is 0=44.1k family, 1=48k family. Generator selects Y301=49.152 MHz with CLK_SEL low and Y302=45.1584 MHz high. Filter-container metadata also uses 0=48k, unlike the register convention. A 1.8 V `clk_sel` drives 3.3 V clock-domain logic/XO enable circuitry without a verified level-translation contract. XDC/RTL comments still describe LMK00304/EP52 rather than the actual oscillator-enable/AXC/LVC1G74 path.
 
 **Consequence:** even assuming enables work electrically, physical frequency can disagree with rate metadata and DDS tuning. For example, a 5.6448 MHz-assumed DDS clocked at 6.144 MHz produces approximately 1.0884 kHz for a requested 1 kHz.
 
 **Action/closure:** define one explicit truth table (including reset), with deliberate translation between file metadata and register encoding. Verify enable VIH/VIL over PVT, break-before-make/startup timing and the actual reclock setup/hold budget. Test both families and every switching/failure transition.
+
+**Current RTL follow-up:** `clk_sel = ~applied_rate[0]` and the carrier
+enable convention are 0=49.152 MHz / 1=45.1584 MHz; the top comment now
+matches. The metadata polarity has an explicit loader translation and the
+multirate regressions pass. `CLKOUT0_DIVIDE_F=3.25` intentionally provides
+49.23 DSP clocks per conversion for DPD; changing to 3.5 would revert a tested
+deadline fix. Physical enable levels, oscillator break-before-make/startup and
+reclock setup/hold still require electrical/P&R evidence.
 
 ### R04 — P0: Audio-rate contract and watchdog are inconsistent
 
@@ -754,9 +767,26 @@ clock-pipeline margin still need qualification.
 
 ### R11 — P1: CDC/reset sign-off and historical timing assumptions
 
-**Evidence:** clock-wide false paths coexist with held-bus max-delay constraints; reset deassertion and source/destination reset epochs differ among blocks. The DSP reset is derived directly from lock; volume and calibration use toggles with independently reset destinations. Current board interfaces differ from the historically routed timing model.
+**Evidence:** the audited baseline used clock-wide false paths alongside
+held-bus max-delay constraints; reset deassertion and source/destination reset
+epochs differ among blocks. The DSP reset is derived directly from lock;
+volume and calibration use toggles with independently reset destinations.
+Current board interfaces differ from the historically routed timing model.
 
 **Action/closure:** review effective exceptions and constraint matches, CDC protocols and MTBF, reset recovery with unchanged source words, stopped clocks and lost/replayed events. Produce fresh timing/CDC reports on the exact build, including diagnostics and current I/O budgets, with no unexplained unconstrained paths.
+
+**Current constraint follow-up:** the blanket clk_200m<->dsp_clk false paths
+have been narrowed to synchronizer first-stage pins. The volume and
+level-target held buses now have 5 ns datapath-only limits; calibration,
+cell-test and bench-command buses retain their existing limits. Rate-shift
+configuration is cut only to DSP/ingress state that is held reset during rate
+changes. This corrects the static exception scope, but matched endpoints and
+effective timing still require Vivado implementation reports.
+
+**Calibration-bus follow-up:** the control plane holds `cal_wr_addr/data`
+until the next accepted SPI frame, and XDC already applies a 5.0 ns datapath-only
+max-delay constraint to the write bus (stricter than the suggested 7 ns).
+Effective endpoint matching and routed CDC/STA evidence remain open.
 
 ### R12 - P1: L/R dither correlation and amplitude contract
 

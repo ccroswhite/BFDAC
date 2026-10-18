@@ -21,9 +21,10 @@
 //
 // Target: XCVU13P-2FHGB2104I, 278/302 MHz DSP clock, 1024 MACs, 1M taps
 //
-// Clock architecture (external mux, Round 24):
-//   Two OCXOs feed an on-board LMK00304 2:1 mux/fanout. One LMK output drives
-//   the FPGA mclk_p/n GC pair; the others drive the LMK1C1108 trees that
+// Clock architecture (dual oscillator enables, Round 30):
+//   Two CCHD-957 oscillators feed the shared XOCLK network through their
+//   separate enable pins (U301 inverter / direct enable). U312 buffers the
+//   selected XOCLK copy to the FPGA mclk_p pin; the LMK1C1108 trees
 //   clock the external reclock FF stage: 128x MC100EP52 differential LVPECL
 //   D-FFs (Round 29, Fig. 1b). Each FF resamples one LVCMOS18 cascode data
 //   pin (resistive shift to its differential D input) and its Q/~Q outputs
@@ -31,12 +32,12 @@
 //   The cascode IOBs launch on cell_clk (mclk-rate MMCM output, phase-aligned
 //   to the reclock-FF clock), giving the FF D inputs ~13-16 ns of setup
 //   (bom.md 1.4).
-//   clk_sel (FPGA output) selects the OCXO on the LMK00304:
-//     clk_sel = 0 -> 45.1584 MHz (44.1 kHz family)
-//     clk_sel = 1 -> 49.152  MHz (48 kHz family)
+//   clk_sel (FPGA output) selects the active oscillator enable:
+//     clk_sel = 0 -> 49.152  MHz (48 kHz family)
+//     clk_sel = 1 -> 45.1584 MHz (44.1 kHz family)
 //   ONE SPI register (0x03 base_rate_sel) drives BOTH the DSP family select
-//   and the OCXO mux (clk_source_sel is an alias in dac_ctrl_plane) - they
-//   can never disagree. The LMK mux is NOT glitch-free, so the switch
+//   and the oscillator family (clk_source_sel is an alias in dac_ctrl_plane) -
+//   they can never disagree. XOCLK can be disturbed during enable changes, so
 //   sequencer below enforces the safe order in hardware: the register change
 //   first reaches the automute FSM (rate_changed -> ST_MUTED, relay drive
 //   drops, force_zero), then after MUTE_DELAY_CYCLES (physical relay release)

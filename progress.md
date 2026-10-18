@@ -4192,3 +4192,19 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       testbench-scope warnings remain (`n_before`, `lo`). No synthesis,
       place-and-route, routed timing/CDC, physical flash timing or hardware
       qualification is claimed.
+
+    - 2026-10-17 CONTROL/CDC/CLOCK AUDIT DISPOSITION:
+      R07 is already corrected in RTL: `switch_busy` is low in stable mute and
+      play, and only high through relay-transition states; SPI cell-test checks
+      also require both mute drives inactive. Calibration writes use the
+      documented held-bus/toggle protocol, a 5.0 ns XDC max-delay constraint,
+      and one accepted value per complete SPI frame; pointer wrap is rejected.
+      These constraints still need routed endpoint/CDC sign-off. The
+      STREAM_STATUS concatenation is exactly 32 bits. Clock RTL has an explicit
+      top-level IBUF for the single-ended mclk copy, active-high MMCM reset,
+      and BUFG feedback. The 3.25 divider is intentional (49.23 DSP clocks per
+      conversion, tested at 49/50); reverting to 3.5 would invalidate the DPD
+      deadline fix. Updated stale LMK00304 mux comments to the actual
+      dual-CCHD-957 enable/shared-XOCLK topology. Physical enable VIH/VIL,
+      oscillator switching/reclock timing, routed timing/CDC and hardware
+      qualification remain open.

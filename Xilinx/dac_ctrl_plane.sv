@@ -41,8 +41,7 @@ module dac_ctrl_plane (
     output logic [31:0] sys_volume,
     output logic        base_rate_sel,    // 0 = 44.1k family, 1 = 48k family (reg 0x03)
     output logic        clk_source_sel,   // ALIAS of base_rate_sel: one register drives
-                                          // both the DSP family select and the LMK00304
-                                          // OCXO mux (they can never disagree)
+                                          // both DSP family select and carrier XO enables
     output logic [3:0]  coef_bank_id,
     output logic        coef_load_start,  // Single-cycle pulse
 
