@@ -41,7 +41,7 @@ try {
     $tests = @("tb_stream_rate_controller", "tb_i2s_master_rates", "tb_stream_pipeline",
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
                "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
-               "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
+               "tb_fir_polyphase_stereo", "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
                "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute", "tb_tpdf_dither_gen",
                "tb_qspi_subsys")
     $testSources = $tests | ForEach-Object { '"' + (Join-Path $tbDir "$_.sv") + '"' }
@@ -56,6 +56,7 @@ try {
         @{Top="tb_fir_window"; Name="fir_x8"; Generic=@("-generic_top",'"RATE_SHIFT=1"')},
         @{Top="tb_fir_window"; Name="fir_x4"; Generic=@("-generic_top",'"RATE_SHIFT=2"')},
         @{Top="tb_fir_window"; Name="fir_x2"; Generic=@("-generic_top",'"RATE_SHIFT=3"')},
+        @{Top="tb_fir_polyphase_stereo"; Name="fir_polyphase_stereo"; Generic=@()},
         @{Top="tb_stream_pipeline"; Name="stream_pipeline"; Generic=@()},
         @{Top="tb_coef_bank_manager"; Name="coef_bank_boundary"; Generic=@()},
         @{Top="tb_halfband_x2"; Name="halfband_precision_alignment"; Generic=@()},

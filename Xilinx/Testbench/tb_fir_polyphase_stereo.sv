@@ -73,6 +73,7 @@ module tb_fir_polyphase_stereo;
     logic                             interpolated_l_valid;
     logic signed [ACC_WIDTH-1:0]      interpolated_r;
     logic                             interpolated_r_valid;
+    logic                             input_overrun, input_frame_done;
 
     logic                             coef_we;
     logic [$clog2(COEF_DEPTH)-1:0]    coef_waddr;
@@ -100,6 +101,8 @@ module tb_fir_polyphase_stereo;
         .interpolated_l_valid   (interpolated_l_valid),
         .interpolated_r         (interpolated_r),
         .interpolated_r_valid   (interpolated_r_valid),
+        .input_overrun          (input_overrun),
+        .input_frame_done       (input_frame_done),
         .coef_we                (coef_we),
         .coef_waddr             (coef_waddr),
         .coef_wdata             (coef_wdata),
@@ -139,6 +142,7 @@ module tb_fir_polyphase_stereo;
         repeat(8) @(posedge clk);
         @(negedge clk); rst_n = 1'b1;
         @(posedge clk);
+        repeat(TAPS_PER_PHASE + 1) @(posedge clk); // let the history RAM clear
     endtask
 
     // Write coef C to every address of every MAC in bank_load_target
@@ -197,6 +201,7 @@ module tb_fir_polyphase_stereo;
     //  MAIN
     // -------------------------------------------------------------------------
     int n_got;
+    int frame_count;
     int i;
     // Wide intermediates for expected-value computation (avoid 32-bit overflow)
     logic signed [ACC_WIDTH-1:0] exp_coef;
@@ -445,30 +450,43 @@ module tb_fir_polyphase_stereo;
         end
 
         // =====================================================================
-        // TEST 7: Re-trigger guard — new_sample_valid during sweep must not
-        //         corrupt outputs (FSM returns to PRELOAD, skips rest of sweep)
+        // TEST 7: Overrun guard - a sample during an active sweep is rejected,
+        //         but the current frame must finish intact before recovery.
         // =====================================================================
-        $display("--- TEST 7: Re-trigger guard ---");
+        $display("--- TEST 7: Sweep-overrun guard ---");
         do_reset;
         write_all_coefs(18'sh00100, 1'b0);
         bank_select = 1'b0;
 
-        // Send first sample, then mid-sweep send second before sweep completes
+        // Send first sample, then overrun it after two phases have arrived.
         send_sample(24'sh100000, 24'sh100000);
 
-        // Wait for preload to finish (~NUM_MACS+2 cycles) then re-trigger mid-sweep
-        repeat(NUM_MACS + 3) @(posedge clk);
+        n_got = 0;
+        wdog = 0;
+        frame_count = 0;
+        while (n_got < 2 && wdog < MAX_WAIT_CYCLES) begin
+            @(posedge clk); #0.1;
+            wdog = wdog + 1;
+            if (interpolated_l_valid) n_got = n_got + 1;
+        end
         send_sample(24'sh100000, 24'sh100000);
 
-        // Collect — after second sample we should still get NUM_PHASES valid outputs
-        collect_outputs(NUM_PHASES, n_got);
+        // Count through the original frame boundary. The rejected input must
+        // not reset phase accounting or truncate the active sweep.
+        while (frame_count == 0 && wdog < MAX_WAIT_CYCLES) begin
+            @(posedge clk); #0.1;
+            wdog = wdog + 1;
+            if (interpolated_l_valid) n_got = n_got + 1;
+            if (input_frame_done) frame_count = frame_count + 1;
+        end
 
-        if (n_got !== NUM_PHASES) begin
-            $display("  FAIL: expected %0d valid pulses after re-trigger, got %0d",
-                     NUM_PHASES, n_got);
+        if (n_got !== NUM_PHASES || frame_count !== 1 || !input_overrun) begin
+            $display("  FAIL: overrun frame count=%0d frame_done=%0d overrun=%0b",
+                     n_got, frame_count, input_overrun);
             fail_count = fail_count + 1;
         end else begin
-            $display("  PASS: %0d valid pulses produced after re-trigger", NUM_PHASES);
+            $display("  PASS: active frame completed (%0d phases); overrun was reported",
+                     NUM_PHASES);
             pass_count = pass_count + 1;
         end
 

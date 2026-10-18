@@ -82,6 +82,7 @@ module fir_polyphase_interpolator #(
     localparam int COEF_DEPTH = NUM_PHASES * TAPS_PER_PHASE;
     localparam int PHASE_COUNT_WIDTH = $clog2(NUM_PHASES + 1);
     logic [PHASE_COUNT_WIDTH-1:0] output_phase_count;
+    logic sample_accept;
 
     // One native input sample emits NUM_PHASES >> rate_shift outputs.
     // Report completion only after the final phase has been captured.
@@ -91,7 +92,7 @@ module fir_polyphase_interpolator #(
             input_frame_done <= 1'b0;
         end else begin
             input_frame_done <= 1'b0;
-            if (new_sample_valid)
+            if (sample_accept)
                 output_phase_count <= '0;
             else if (interpolated_valid) begin
                 if (output_phase_count == PHASE_COUNT_WIDTH'((NUM_PHASES >> rate_shift) - 1)) begin
@@ -166,6 +167,9 @@ module fir_polyphase_interpolator #(
 
     typedef enum logic [1:0] { ST_IDLE, ST_SHIFT, ST_SWEEP } state_t;
     state_t state;
+    assign sample_accept = new_sample_valid && !history_clear &&
+                           ((state == ST_IDLE) ||
+                            (state == ST_SWEEP && input_frame_done));
 
     // Sweep counters — declared here (referenced by the window read mux),
     // driven by the sweep FSM in section 3.
@@ -186,7 +190,7 @@ module fir_polyphase_interpolator #(
     assign win_wr_addr = hp + WIN_AW'(1);   // slot vacated by the departing oldest sample
 
     // Global read address: oldest slot during handoff, tap-indexed during sweep
-    assign win_rd_addr = (new_sample_valid || state == ST_SHIFT)
+    assign win_rd_addr = (sample_accept || state == ST_SHIFT)
                          ? (hp + WIN_AW'(1))
                          : (hp - tap_counter);   // both WIN_AW bits, natural mod-TPP wrap
 
@@ -267,7 +271,7 @@ module fir_polyphase_interpolator #(
         end else begin
             case (state)
                 ST_IDLE: begin
-                    if (new_sample_valid && !history_clear) begin
+                    if (sample_accept) begin
                         ns_reg    <= new_sample_data;
                         shift_cnt <= '0;
                         state     <= ST_SHIFT;
@@ -283,11 +287,12 @@ module fir_polyphase_interpolator #(
                 end
 
                 ST_SWEEP: begin
-                    if (new_sample_valid && !history_clear) begin
+                    if (sample_accept) begin
                         ns_reg    <= new_sample_data;
                         shift_cnt <= '0;
                         state     <= ST_SHIFT;
-                    end
+                    end else if (input_frame_done)
+                        state <= ST_IDLE;
                 end
 
                 default: state <= ST_IDLE;
@@ -342,7 +347,7 @@ module fir_polyphase_interpolator #(
     logic        sweep_first;    // suppresses shadow capture on sweep-start phase_sync
     always_ff @(posedge clk) begin
         if (!rst_n) input_overrun <= 0;
-        else if (new_sample_valid && (history_clear || sweep_active)) input_overrun <= 1;
+        else if (new_sample_valid && !sample_accept) input_overrun <= 1;
     end
 
     always_ff @(posedge clk) begin
@@ -356,7 +361,7 @@ module fir_polyphase_interpolator #(
         end else begin
             phase_sync <= 1'b0;
 
-            if (new_sample_valid && !history_clear) begin
+            if (sample_accept) begin
                 master_coef_addr <= '0;
                 tap_counter      <= '0;
                 sweep_active     <= 1'b0;
