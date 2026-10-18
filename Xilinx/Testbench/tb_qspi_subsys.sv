@@ -34,7 +34,7 @@ module tb_qspi_subsys;
     logic [7:0]  rd_byte;
     logic        spi_sck, spi_cs_n, spi_mosi, sel_flash0, spi_miso;
     logic [1:0]  sel_target, cf_cs_sel;
-    logic        start = 0, boot_done, boot_ok, crc_fail, axi_fail, boot_src;
+    logic        start = 0, boot_done, boot_ok, crc_fail, axi_fail, format_fail, boot_src;
     logic [7:0]  record_count;
 
     logic [29:0] awaddr;
@@ -70,7 +70,8 @@ module tb_qspi_subsys;
         .rd_active(rd_active), .rd_byte(rd_byte), .rd_byte_valid(rd_byte_valid),
         .rd_done(rd_done),
         .boot_done(boot_done), .boot_ok(boot_ok), .crc_fail(crc_fail),
-        .axi_fail(axi_fail), .record_count(record_count), .boot_src(boot_src),
+        .axi_fail(axi_fail), .format_fail(format_fail),
+        .record_count(record_count), .boot_src(boot_src),
         .ui_clk(ui_clk), .ui_rst(ui_rst),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize),
         .m_axi_awburst(awburst), .m_axi_awvalid(awvalid), .m_axi_awready(awready),
@@ -178,9 +179,10 @@ module tb_qspi_subsys;
     logic [29:0]  a_addr;
     int           a_beats;
     logic         a_active = 0;
+    logic         stall_axi_w = 0;
 
     assign awready = !a_active;
-    assign wready  = a_active;
+    assign wready  = a_active && !stall_axi_w;
 
     always @(posedge ui_clk) begin
         bvalid <= bvalid && !bready ? bvalid : 1'b0;
@@ -239,6 +241,7 @@ module tb_qspi_subsys;
 
     task automatic reset_all;
         rst_n = 0; ui_rst = 1; start = 0;
+        stall_axi_w = 0;
         flash_mem.delete(); axi_mem.delete();
         repeat (10) @(posedge clk);
         rst_n = 1; ui_rst = 0;
@@ -265,6 +268,53 @@ module tb_qspi_subsys;
             axi_mem[(dest >> 4) + widx] !== exp) begin
             if (errors < 5)
                 $display("FAIL: DDR4 word %0d @dest %h mismatch", widx, dest);
+            errors++;
+        end
+    endtask
+
+    task automatic test_fifo_backpressure;
+        int t;
+        $display("--- T7: QSPI stream pauses with an AXI-stalled 16-word FIFO ---");
+        reset_all();
+        build_record(DEV_SOM1, 0, 32'h0000_1000, 2048, 0);
+        stall_axi_w = 1;
+        start = 1;
+        t = 0;
+        while (!rd_stall && t < 100_000) begin
+            @(posedge clk);
+            t++;
+        end
+        if (!rd_stall) begin
+            $display("FAIL T7: rd_stall did not assert before FIFO filled");
+            errors++;
+        end else begin
+            repeat (20) @(posedge clk);
+            if (spi_sck !== 1'b0 || !rd_stall || u_loader.fifo_full) begin
+                $display("FAIL T7: stalled bus did not hold safely (sck=%b stall=%b full=%b)",
+                         spi_sck,rd_stall,u_loader.fifo_full);
+                errors++;
+            end
+        end
+        stall_axi_w = 0;
+        wait_boot(2000);
+        if (!(boot_ok && !crc_fail && !axi_fail && record_count == 1)) begin
+            $display("FAIL T7: boot did not recover after AXI backpressure");
+            errors++;
+        end
+        for (int w = 0; w < 128; w++) check_word(32'h0000_1000,w,0);
+        $display("T7 QSPI FIFO backpressure: %s", errors ? "FAIL" : "PASS");
+    endtask
+
+    task automatic test_bad_record_header(input logic [31:0] dest,
+                                          input int len,
+                                          input string label);
+        reset_all();
+        build_record(DEV_SOM1,0,dest,len,0);
+        wait_boot(2000);
+        if (!(boot_done && format_fail && !boot_ok && !crc_fail && !axi_fail &&
+              record_count == 0 && axi_mem.num() == 0)) begin
+            $display("FAIL T8 %s: done=%b format=%b ok=%b records=%0d",
+                     label,boot_done,format_fail,boot_ok,record_count);
             errors++;
         end
     endtask
@@ -384,6 +434,16 @@ module tb_qspi_subsys;
             end
         end
         $display("T6 carrier chip-1 ARM erase/program/read: %s", errors ? "FAIL" : "PASS");
+
+        // --- T7: a long payload under sustained DDR backpressure ------------
+        test_fifo_backpressure();
+
+        // --- T8: reject addresses/lengths that cannot be staged by this AXI --
+        $display("--- T8: reject unsupported record address/length geometry ---");
+        test_bad_record_header(32'h4000_1000,64,"dest above 1 GiB");
+        test_bad_record_header(32'h3FFF_FFE0,64,"range crosses 1 GiB");
+        test_bad_record_header(32'h0000_1001,64,"unaligned destination");
+        test_bad_record_header(32'h0000_1000,65,"unaligned payload length");
 
         if (errors == 0) $display("ALL TESTS PASS (tb_qspi_subsys)");
         else             $display("TESTS FAILED: %0d errors (tb_qspi_subsys)", errors);

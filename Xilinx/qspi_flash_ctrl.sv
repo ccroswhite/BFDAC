@@ -14,10 +14,10 @@
 //              (the image layout tool guarantees this; records are <= 12 MB).
 //   target 3 = reserved (aliased to 2 so a stray register value cannot hang)
 // SCK for targets 0/1 is the shared CCLK (STARTUPE3.USRCCLKO); the top level
-// forwards spi_sck to the carrier pin only while sel_target == 2. The carrier
-// runs at SCK = clk/8 = 25 MHz (CF_CKDIV_LOG2) for MISO t_CLQV margin over the
-// connector + carrier trace; the SoM targets stay at clk/4 = 50 MHz. Only the
-// selected CS is ever asserted. Pin muxing lives in the top level.
+// forwards spi_sck to the carrier pin only while sel_target == 2. All targets
+// run at 25 MHz: SoM devices are conservatively down-clocked pending an exact
+// Flash-1 MPN/timing confirmation; the carrier divider also yields 25 MHz.
+// Only the selected CS is ever asserted. Pin muxing lives in the top level.
 //
 // Supersedes flash_bridge.sv:
 //   - 4-byte address opcodes (0x13 READ / 0x12 PP / 0xDC ERASE64K) — both
@@ -32,7 +32,7 @@
 //   0x01 = Erase 64 KB sector   (WREN -> 0xDC+A32 -> poll WIP)
 //   0x02 = Program 256 B page   (WREN -> 0x12+A32+page_buffer -> poll WIP)
 //   0x03 = Read 256 B page      (0x13+A32 -> read_buffer)
-// SCK = clk/4 = 50 MHz (mode 0).
+// SCK = clk/8 = 25 MHz (mode 0).
 //
 // Watchdog (2026-08-28): ARM commands are aborted (CS deasserted, busy
 // released, cmd_err pulsed) if not complete within WDT_CYCLES. Default
@@ -106,7 +106,7 @@ module qspi_flash_ctrl #(
         buf_rdata <= read_buffer[buf_raddr];
 
     // ------------------------------------------------------------------------
-    // Bit engine: mode-0 SPI, SCK = clk/4. One "op" = CS low, shift tx_bits
+    // Bit engine: mode-0 SPI, SCK = clk/8. One "op" = CS low, shift tx_bits
     // header bits (MSB first), then either shift page bytes out (program) or
     // clock rx_bytes in (read), then CS high. WIP polling handled by the FSM
     // as separate short ops.
@@ -136,8 +136,7 @@ module qspi_flash_ctrl #(
                                   // (guards rx: the last header rising edge
                                   // must not be sampled as data)
 
-    // SCK enable: SoM targets advance the engine every 2 clks (half SCK period
-    // = 10 ns, SCK 50 MHz); the carrier target every 2^(CF_CKDIV_LOG2-1) clks.
+    // SCK edge enable: both SoM and carrier targets run at 25 MHz by default.
     logic tick;
     logic [CF_CKDIV_LOG2-2:0] cf_div;
     always_ff @(posedge clk) begin
@@ -149,7 +148,7 @@ module qspi_flash_ctrl #(
             cf_div <= cf_div + 1'b1;
         end
     end
-    assign tick = (sel_target == TGT_CARRIER) ? (&cf_div) : ckdiv[0];
+    assign tick = (sel_target == TGT_CARRIER) ? (&cf_div) : (&ckdiv);
 
     // Pause the stream (hold SCK low between bytes) on consumer back-pressure
     logic pause;
@@ -246,7 +245,9 @@ module qspi_flash_ctrl #(
                         op_busy  <= 1'b0;
                     end
                 end else begin
-                    // SCK high phase: sample MISO, advance counters
+                    // Sample during the stable high phase. sck_int's falling
+                    // transition is nonblocking and reaches the pin after this
+                    // clock edge, so this samples before the flash shifts MISO.
                     sck_int <= 1'b0;
                     if (data_phase && data_bytes != 0) begin
                         rx_sr <= {rx_sr[6:0], spi_miso};

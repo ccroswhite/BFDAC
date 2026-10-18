@@ -52,6 +52,7 @@ module qspi_boot_loader #(
     output logic        boot_ok,        // all records staged, CRCs pass
     output logic        crc_fail,
     output logic        axi_fail,
+    output logic        format_fail,    // rejected address/length outside AXI contract
     output logic [7:0]  record_count,
     output logic        boot_src,       // device the chain was read from (== rd_target)
 
@@ -101,7 +102,10 @@ module qspi_boot_loader #(
     logic fifo_we;
     logic [127:0] fifo_wdata;
 
-    assign fifo_full = (bin2gray(wptr_bin + 5'd1) == rptr_gray_c2);
+    // FIFO depth is 16 words; invert the two Gray MSBs to detect a full ring.
+    wire [4:0] full_cmp_gray =
+        {~rptr_gray_c2[4:3], rptr_gray_c2[2:0]};
+    assign fifo_full = (wptr_gray == full_cmp_gray);
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -131,18 +135,14 @@ module qspi_boot_loader #(
         {wptr_gray_ui2, wptr_gray_ui1} <= {wptr_gray_ui1, wptr_gray};
     end
 
-    // Stall the flash stream when the FIFO is nearly full (2-word headroom
-    // for the byte->word packer in flight). REGISTERED (2026-08-23, f12 WNS
-    // path): gray2bin + subtract + compare was combinational from the
-    // rptr_gray_c2 sync FFs into the flash_ctrl byte FSM (5 LUT levels,
-    // route-dominated, -74 ps). One clk of stall latency is harmless: stall
-    // acts at byte boundaries (~16 clk/byte from flash) and the >=13
-    // threshold keeps 3 words of headroom vs the 2 required.
+    // Stall early enough to cover the current flash byte plus packer latency.
+    // The synchronized read pointer is conservative (it can only overstate
+    // occupancy while reads are in flight).
     logic [4:0] wlevel;
     assign wlevel = wptr_bin - gray2bin(rptr_gray_c2);
     always_ff @(posedge clk) begin
         if (!rst_n) rd_stall <= 1'b0;
-        else        rd_stall <= (wlevel >= 5'd13);
+        else        rd_stall <= (wlevel >= 5'd10);
     end
 
     // =========================================================================
@@ -183,6 +183,12 @@ module qspi_boot_loader #(
     logic [127:0] hdr_acc;          // 16 header bytes
     logic [4:0]  hdr_cnt;
     logic [31:0] rec_dest, rec_len, rec_crc;
+    wire [32:0] rec_end_addr = {1'b0, hdr_acc[63:32]} +
+                               {1'b0, hdr_acc[95:64]};
+    wire record_header_supported =
+        (hdr_acc[63:62] == 2'b00) && (hdr_acc[35:32] == 4'b0000) &&
+        (hdr_acc[95:88] == 8'b0) && (hdr_acc[67:64] == 4'b0000) &&
+        (hdr_acc[95:64] != 0) && (rec_end_addr <= 33'h040000000);
     logic [31:0] crc;
     logic [3:0]  pack_cnt;
     logic [127:0] pack_sr;
@@ -221,6 +227,7 @@ module qspi_boot_loader #(
             boot_ok      <= 1'b0;
             crc_fail     <= 1'b0;
             axi_fail     <= 1'b0;
+            format_fail  <= 1'b0;
             record_count <= '0;
             rec_dest     <= '0;
             rec_len      <= '0;
@@ -261,16 +268,23 @@ module qspi_boot_loader #(
                     // carrier device -> floating MISO in sim) falls into the
                     // fallback / end-of-chain branch rather than parsing.
                     if (hdr_acc[31:0] == MAGIC) begin
-                        rec_dest <= hdr_acc[63:32];
-                        rec_len  <= hdr_acc[95:64];
-                        rec_crc  <= hdr_acc[127:96];
-                        crc      <= 32'hFFFFFFFF;
-                        pack_cnt <= '0;
-                        // Launch the ui_clk write job for this record
-                        job_addr   <= hdr_acc[61:32];              // byte addr, 30-bit
-                        job_words  <= hdr_acc[95:68];              // len/16 words
-                        job_toggle <= ~job_toggle;
-                        fst        <= F_PAY_REQ;
+                        if (!record_header_supported) begin
+                            format_fail <= 1'b1;
+                            boot_done   <= 1'b1;
+                            boot_ok     <= 1'b0;
+                            fst         <= F_DONE;
+                        end else begin
+                            rec_dest <= hdr_acc[63:32];
+                            rec_len  <= hdr_acc[95:64];
+                            rec_crc  <= hdr_acc[127:96];
+                            crc      <= 32'hFFFFFFFF;
+                            pack_cnt <= '0;
+                            // The supported DDR4 byte aperture is 1 GiB.
+                            job_addr   <= hdr_acc[61:32];
+                            job_words  <= hdr_acc[95:68];      // len/16 words
+                            job_toggle <= ~job_toggle;
+                            fst        <= F_PAY_REQ;
+                        end
                     end else if (rd_target && record_count == 8'd0 && !fallback_done) begin
                         // Carrier flash has no chain: retry once from SoM Flash 1
                         fallback_done <= 1'b1;
@@ -279,7 +293,8 @@ module qspi_boot_loader #(
                         fst           <= F_HDR_REQ;
                     end else begin
                         // End of chain (erased flash or any non-magic)
-                        boot_ok   <= !crc_fail && !axi_fail && (record_count != 0);
+                        boot_ok   <= !crc_fail && !axi_fail && !format_fail &&
+                                     (record_count != 0);
                         boot_done <= 1'b1;
                         fst       <= F_DONE;
                     end

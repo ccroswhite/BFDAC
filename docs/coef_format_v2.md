@@ -92,6 +92,17 @@ the active bank is not swapped. Untagged legacy slot loads are rejected in this
 mode. The standalone loader defaults this input low for existing test fixtures;
 that default is not the production top-level policy.
 
+## QSPI Boot Record Staging
+
+The boot-record header stores a 32-bit destination byte address and payload
+length, but the implemented DDR4 AXI write aperture is 30-bit (1 GiB) and the
+flash read interface carries a 24-bit length. The boot loader therefore accepts
+only nonzero, 16-byte-aligned lengths up to `0x00FFFFF0`, 16-byte-aligned
+destinations whose complete `[dest, dest+length)` range is below `0x40000000`.
+Unsupported records set `format_fail`, are rejected before the payload read,
+and are folded into the top-level boot error status. Payload byte order is
+preserved as little-endian AXI byte lanes.
+
 ## DDR4 Filter Directory (built at staging, consumed by RTL)
 Placed at a fixed DDR4 base address (`coef_bank_loader` parameter
 `DIR_BASE_ADDR`, default `0x3FFF_0000` = top 64 KB of the 1 GB AXI

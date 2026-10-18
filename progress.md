@@ -4168,3 +4168,22 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       place-and-route, STA/CDC closure, real DDR4 MIG, or hardware/analog
       qualification was run. Noise studies using the previous half-range
       dither profile need requalification.
+
+    - 2026-10-17 QSPI BOOT / BACKPRESSURE FOLLOW-UP (full regression pending):
+      Confirmed the existing payload packer places the first stream byte in
+      AXI lane 0; the prior byte-reversal trace was reversed. The SPI model
+      checks DDR readback byte-for-byte. MISO is sampled during the SCK-high
+      phase before the nonblocking falling-edge update reaches the pin; the
+      mode-0 readback tests pass. Added conservative 25 MHz SoM SCK while the
+      exact SoM Flash 1 MPN remains unverified.
+      Fixed the async FIFO full comparator to use the inverted Gray MSBs and
+      lowered the registered read-stall threshold to ten words. Added a
+      sustained AXI backpressure test. The 30-bit DDR AXI aperture and 24-bit
+      flash read length are now enforced against record headers; malformed or
+      out-of-range headers set format_fail and do not launch a write job.
+      Targeted QSPI simulation in `logs/qspi_findings_v1b/xsim_console.txt`
+      passed T1-T8, including byte order, stalled-FIFO recovery and invalid
+      address/alignment/length rejection. Full regression process 27524 is
+      still running; results are pending at
+      `logs/qspi_audit_v2/summary.log`. No synthesis, place-and-route, routed
+      timing/CDC, physical flash timing or hardware qualification is claimed.

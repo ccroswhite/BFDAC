@@ -391,7 +391,7 @@ module vu13p_dac_top #(
     logic        qspi_sck, qspi_cs_n, qspi_mosi, qspi_sel_flash0, qspi_miso;
     logic        startup_eos;
     logic        boot_start;
-    logic        boot_done, boot_ok, boot_crc_fail, boot_axi_fail;
+    logic        boot_done, boot_ok, boot_crc_fail, boot_axi_fail, boot_format_fail;
     logic [7:0]  boot_record_count;
     logic [29:0] axi_awaddr;
     logic [7:0]  axi_awlen;
@@ -523,6 +523,7 @@ module vu13p_dac_top #(
         .boot_ok        (boot_ok),
         .crc_fail       (boot_crc_fail),
         .axi_fail       (boot_axi_fail),
+        .format_fail    (boot_format_fail),
         .record_count   (boot_record_count),
         .boot_src       (boot_src),
         .ui_clk         (ddr4_ui_clk),
@@ -756,7 +757,7 @@ module vu13p_dac_top #(
         .boot_done              (boot_done),
         .boot_ok                (boot_ok),
         .boot_crc_fail          (boot_crc_fail),
-        .boot_axi_fail          (boot_axi_fail),
+        .boot_axi_fail          (boot_axi_fail || boot_format_fail),
         .boot_record_count      (boot_record_count),
         .boot_src               (boot_src),
         .dpd_enable             (dpd_enable),

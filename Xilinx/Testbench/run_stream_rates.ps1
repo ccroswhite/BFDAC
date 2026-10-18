@@ -41,7 +41,8 @@ try {
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
                "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
                "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
-               "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute", "tb_tpdf_dither_gen")
+               "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute", "tb_tpdf_dither_gen",
+               "tb_qspi_subsys")
     $testSources = $tests | ForEach-Object { '"' + (Join-Path $tbDir "$_.sv") + '"' }
     $glbl = Join-Path (Split-Path $VivadoBin -Parent) "data\verilog\src\glbl.v"
     Stage "compile" "xvlog.bat" (@("-sv", "-i", "`"$rtlDir`"", "-d", "SIM") +
@@ -59,6 +60,7 @@ try {
         @{Top="tb_halfband_x2"; Name="halfband_precision_alignment"; Generic=@()},
         @{Top="tb_automute"; Name="automute_timers_mute_busy"; Generic=@()},
         @{Top="tb_tpdf_dither_gen"; Name="stereo_tpdf_range"; Generic=@()},
+        @{Top="tb_qspi_subsys"; Name="qspi_boot_backpressure"; Generic=@()},
         @{Top="tb_dpd_deadline_monitor"; Name="dpd_deadline"; Generic=@()},
         @{Top="tb_dpd_engine"; Name="dpd_49cy"; Generic=@("-generic_top",'"EN_PERIOD=49"')},
         @{Top="tb_dpd_engine"; Name="dpd_50cy"; Generic=@("-generic_top",'"EN_PERIOD=50"')},
