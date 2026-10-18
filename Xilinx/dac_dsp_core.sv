@@ -54,7 +54,7 @@ module dac_dsp_core #(
     input  logic        bank_select,
     input  logic        bank_load_target,
 
-    // Volume control (from dac_ctrl_plane, registered into dsp_clk domain)
+    // Volume gain in Q16.16 NS code units (from dac_ctrl_plane)
     input  logic [31:0] sys_volume,
 
     // Boot envelope gain (from dac_coef_subsys, dsp_clk domain)
@@ -221,8 +221,8 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 5. Volume multiplier — shared combined_volume, stereo paths
-    //    effective_volume = (sys_volume * boot_envelope_gain) >> 16
+    // 5. Volume multiplier - shared combined_volume, stereo paths
+    //    sys_volume is Q16.16 code gain; boot/level envelope is Q0.16.
     //    DSP48 pipeline: AREG(1) + MREG(1) + PREG(1) + output reg = 4 cycles
     // =========================================================================
     // Registered (f9wd route review 2026-08-15): as always_comb this 32x16
@@ -230,8 +230,13 @@ module dac_dsp_core #(
     // into the vol_b_r1 capture (-0.16 ns). Both inputs are slow controls
     // (volume pot / boot ramp), so one extra cycle of gain latency is free.
     (* use_dsp = "yes" *) logic [31:0] combined_volume;
-    always_ff @(posedge dsp_clk)
-        combined_volume <= (sys_volume * {16'h0, boot_envelope_gain}) >> 16;
+    logic [47:0] combined_volume_product;
+    assign combined_volume_product =
+        48'(sys_volume) * 48'(boot_envelope_gain);
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) combined_volume <= '0;
+        else            combined_volume <= combined_volume_product[47:16];
+    end
 
     // Left volume pipeline
     logic signed [47:0] vol_a_l_r1;
@@ -277,14 +282,11 @@ module dac_dsp_core #(
     //    draining spans the whole sample period -> peak occupancy ~110; a
     //    256-deep FIFO (LUTRAM) absorbs it; the pop tick is cell_clk/8
     //    (= exactly 6.144 MHz, same MMCM family as the input rate, so the
-    //    Scaling fix (Round 30, found by the e2e sine FFT): with unity-DC
-    //    production coefficients the FIR output occupies the 48-bit FS
-    //    (2^47) and the volume stage (x0.5 inherent) leaves full scale at
-    //    volumed bit 46. The old feed took volumed[63:16] (top 48 bits),
-    //    delivering the NS only 2^-17 of its input range (-102 dB — the
-    //    converter would have produced shaped idle noise with a buried
-    //    signal). Correct feed: volumed[46:0] << 1, saturating (headroom:
-    //    modulator uses +-28 of +-32 levels; NS also clamps internally).
+    //    Gain ledger for unity-DC filters: Q1.17 coefficients and the MAC's
+    //    intentional 2x pre-adder produce 2^41 at 24-bit full scale. The
+    //    three halfbands have unity DC gain. SPI volume maps unity to 28.0
+    //    Q16.16 code units; ns_feed's x2 then produces 28 * 2^42, leaving
+    //    four code units of headroom around the NS center code 32.
     //    long-term rates match exactly). Pop skips silently on empty
     //    (startup fill). Overflow DROPS the newest write (state stays
     //    consistent) and warns once in simulation — accelerated testbenches

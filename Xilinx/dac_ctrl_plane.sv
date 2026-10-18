@@ -38,7 +38,7 @@ module dac_ctrl_plane (
     input  logic        hp_mute_status,     // dsp_clk domain, will be synchronised
 
     // Control outputs
-    output logic [31:0] sys_volume,
+    output logic [31:0] sys_volume,       // Internal Q16.16 gain in NS code units
     output logic        base_rate_sel,    // 0 = 44.1k family, 1 = 48k family (reg 0x03)
     output logic        clk_source_sel,   // ALIAS of base_rate_sel: one register drives
                                           // both DSP family select and carrier XO enables
@@ -266,6 +266,15 @@ module dac_ctrl_plane (
     assign flash_op_valid = (ctrl_bus_data[7:0] == 8'h01) ||
                             (ctrl_bus_data[7:0] == 8'h02) ||
                             (ctrl_bus_data[7:0] == 8'h03);
+
+    // Map the AP's normalized Q0.24 volume to the internal Q16.16 scale:
+    // unity input maps to 28 NS code units (the full-scale headroom target).
+    function automatic logic [31:0] volume_q24_to_gain_q16(input logic [23:0] volume_q24);
+        logic [28:0] scaled;
+        // 28 code units * Q0.24 volume, converted to Q16.16.
+        scaled = 29'(volume_q24) * 29'd28;
+        return 32'((scaled + 29'd128) >> 8);
+    endfunction
 
     logic       wr_rejected;
     logic [3:0] wr_rej_reason;
@@ -564,11 +573,9 @@ module dac_ctrl_plane (
                 if (ctrl_bus_data[31] == 1'b0) begin
                     // WRITE
                     case (ctrl_bus_data[30:24])
-                        // 24-bit SPI word LEFT-justified into the 32-bit multiplier operand:
-                        // 0xFFFFFF -> 0xFFFFFF00 = unity (the value every DSP sim / golden
-                        // model used). Right-justified it capped at 0x00FFFFFF = -48 dB
-                        // (bug found 2026-10-09).
-                        `SPI_W_VOLUME: sys_volume    <= {ctrl_bus_data[23:0], 8'h00};
+                        // AP Q0.24 normalized amplitude -> internal Q16.16
+                        // NS code gain; 0xFFFFFF maps to 28.0 code units.
+                        `SPI_W_VOLUME: sys_volume <= volume_q24_to_gain_q16(ctrl_bus_data[23:0]);
                         `SPI_W_LEVEL:  cmd_level     <= ctrl_bus_data[2:0]; // digital level cap, applied by the sequencer while muted
                         `SPI_W_RATE, `SPI_W_STREAM_RATE: if (!wr_rejected) begin
                             base_rate_sel <= ctrl_bus_data[0];

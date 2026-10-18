@@ -15,7 +15,7 @@
 
 // ---- Write registers ---------------------------------------------------------
 `define SPI_W_NOP              7'h00  // explicit NOP (clock out a read response)
-`define SPI_W_VOLUME           7'h01  // [23:0] sys_volume
+`define SPI_W_VOLUME           7'h01  // [23:0] normalized Q0.24 volume; 0xFFFFFF = full scale
 `define SPI_W_LEVEL            7'h02  // [2:0]  output level cap (DIGITAL gain, no relays - bom 7 2026-10-07):
                                       //        000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied by the
                                       //        automute sequencer while muted (click-free); reset = 2 V

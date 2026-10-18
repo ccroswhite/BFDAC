@@ -292,8 +292,8 @@ module tb_spi_ctrl_plane;
         //    Verifies SPI write path + CRC acceptance + register latch
         spi_write(7'h01, 24'h00_1234);
         #(CLK_PERIOD_NS * 20);
-        if (sys_volume !== 32'h0012_3400)
-            $display("FAIL: [1] volume write  addr=0x01 got=0x%08X exp=0x00123400 (24-bit word left-justified)", sys_volume);
+        if (sys_volume !== 32'h0000_01FE)
+            $display("FAIL: [1] volume write addr=0x01 got=0x%08X exp=0x000001FE (Q0.24 to Q16.16 code gain)", sys_volume);
         else
             $display("PASS: [1] volume write  addr=0x01 sys_volume=0x%08X", sys_volume);
 

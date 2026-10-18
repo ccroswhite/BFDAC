@@ -148,6 +148,13 @@ module tb_dac_ctrl_plane;
         ext_rst_n = 1;
         repeat (10) @(posedge clk);
 
+        spi_write(7'h01, 24'h000000);
+        check("volume silence maps to zero code gain", sys_volume, 0);
+        spi_write(7'h01, 24'h800000);
+        check("half-scale volume maps to 14 code units", sys_volume, 32'h000E0000);
+        spi_write(7'h01, 24'hFFFFFF);
+        check("full-scale volume maps to 28 code units", sys_volume, 32'h001C0000);
+
         // T1: empty-list select must not fire a load
         spi_write(7'h0A, 24'h010000);   // advance on empty list
         check("T1 no load on empty list", load_req_count, 0);

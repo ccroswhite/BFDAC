@@ -75,7 +75,8 @@ def gen_prototype(N, L, beta=7.0):
         arg  = beta * math.sqrt(max(0.0, 1.0 - ((n - mid) / mid) ** 2))
         win  = besseli0(arg) / i0b
         h.append(sinc * win * cutoff)
-    # Normalize so sum = L (each phase has unity DC gain)
+    # Normalize so sum = L (each phase sums to unity before the RTL's
+    # intentional 2x MAC pre-adder; the volume ledger compensates that gain).
     s = sum(h)
     h = [v * L / s for v in h]
     return h

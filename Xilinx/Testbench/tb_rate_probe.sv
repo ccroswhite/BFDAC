@@ -25,7 +25,7 @@ module tb_rate_probe;
     logic signed [17:0] coef_wdata = 0;
     logic [1:0] coef_wmac = 0;
     logic bank_select = 0, bank_load_target = 0;
-    logic [31:0] sys_volume = 32'hFFFFFFFF;
+    logic [31:0] sys_volume = 32'h001C0000;  // internal Q16.16 gain = 28 NS code units
     logic [15:0] boot_envelope_gain = 16'hFFFF;
     wire sample_768k_tick;
     wire [63:0] cascode_l, cascode_r;

@@ -22,7 +22,7 @@ module tb_stream_pipeline;
         .rate_shift(shift), .stream_fault(stream_fault),
         .fir_frame_done(fir_frame_done),
         .coef_we(1'b0), .coef_waddr(8'd0), .coef_wdata(18'd0), .coef_wmac(2'd0),
-        .bank_select(1'b0), .bank_load_target(1'b0), .sys_volume(32'hffffffff),
+        .bank_select(1'b0), .bank_load_target(1'b0), .sys_volume(32'h001c0000),
         .boot_envelope_gain(16'hffff), .dpd_enable(1'b0), .dpd_cal_data('0),
         .cell_test_cfg('0), .cell_test_req(2'd0), .cell_test_safe(1'b0),
         .bench_req(1'b0), .bench_cmd(11'd0), .cascode_l(cascode_l), .cascode_r(cascode_r)

@@ -66,7 +66,7 @@ module tb_dac_dsp_core;
     logic        bank_select        = 0;
     logic        bank_load_target   = 0;
 
-    logic [31:0] sys_volume         = 32'hFFFFFFFF;  // full volume default
+    logic [31:0] sys_volume         = 32'h001C0000;  // Q16.16 gain = 28 NS code units
     logic [15:0] boot_envelope_gain = 16'hFFFF;       // full gain default
 
     wire         sample_768k_tick;
@@ -126,7 +126,7 @@ module tb_dac_dsp_core;
         @(negedge dsp_clk);
         sys_rst_n = 0; audio_l = 0; audio_r = 0; new_sample = 0;
         coef_we = 0; bank_select = 0; bank_load_target = 0;
-        sys_volume = 32'hFFFFFFFF; boot_envelope_gain = 16'hFFFF;
+        sys_volume = 32'h001C0000; boot_envelope_gain = 16'hFFFF;
         repeat(32) @(posedge dsp_clk);
         @(negedge dsp_clk); sys_rst_n = 1;
         repeat(4) @(posedge dsp_clk);
@@ -232,6 +232,14 @@ module tb_dac_dsp_core;
         // ==================================================================
         $display("\n--- TEST 2: Zero path (zero coefs + zero audio) ---");
         do_reset;
+        if (u_dut.combined_volume !== 32'h001BFFE4) begin
+            $display("  FAIL: full-scale gain product=0x%08h exp=0x001BFFE4",
+                     u_dut.combined_volume);
+            fail_count++;
+        end else begin
+            $display("  PASS: full-scale Q16.16 gain through envelope multiply");
+            pass_count++;
+        end
         // Warm up: send enough samples for NS to reach steady state
         repeat(NUM_MACS + 4) begin
             send_sample(24'h0, 24'h0);
@@ -456,5 +464,3 @@ module tb_dac_dsp_core;
     end
 
 endmodule
-
-

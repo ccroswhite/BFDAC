@@ -263,6 +263,23 @@ unmute it can be raised to the requested level. The primary output-range
 selection is 2/4/6 Vrms at full scale. The control map also contains 0.6/0.2 Vrms
 gain caps. These are digital scaling choices around one fixed analog I/V gain.
 
+### 3.5 Fixed-point gain ledger
+
+The `VOLUME` SPI payload is normalized unsigned Q0.24 (`0xFFFFFF` is unity).
+The control plane maps it to an internal Q16.16 gain in noise-shaper code units:
+unity maps to 28.0. For a unity-DC polyphase coefficient set, the Q1.17
+coefficients contribute `2^17` and the legacy MAC pre-adder contributes `2x`,
+so 24-bit full scale (`2^23`) reaches `2^41` at the FIR output. Each halfband
+has unity DC gain. The Q16.16 volume multiplication preserves that scale; the
+noise-shaper feed's `x2` maps 28.0 to `28 * 2^42`, i.e. 28 codes around the
+EF3 center of 32, leaving four codes of nominal headroom. The boot envelope
+and output-level cap are Q0.16 multipliers applied before the volume DSP stage.
+
+This contract assumes each loaded filter is normalized to unity per-phase DC
+gain. The filter builder must check that property and the full signal chain
+must be tested at full-scale, -1 dBFS and low-level inputs. RTL arithmetic
+and simulation are not analog output-level or distortion qualification.
+
 Keeping the analog gain fixed maintains one analog feedback configuration.
 Reducing the digital level also reduces signal-to-fixed-analog-noise ratio;
 the principal noise acceptance reference is therefore the 6 Vrms range.

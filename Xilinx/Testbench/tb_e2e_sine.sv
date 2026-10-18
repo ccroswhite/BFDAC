@@ -15,8 +15,8 @@
 //  256-deep boxcar attenuates bin 11 by ~25 dB (first null 187.5 Hz), so the
 //  measured SNDR ceiling drops accordingly — designed coefficients are the
 //  planned upgrade for a full-quality gate.)
-//  (original R30 note: with the Round 30 ns_feed scaling this drives
-//  the NS to ~+-21 of +-32 levels; boxcar is LTI so spectrum purity holds).
+//  This direct-core fixture uses an internal Q16.16 gain of one code unit;
+//  it is a spectral/NTF regression, not the Q0.24 AP full-scale mapping.
 //
 //  Output files (all captured from reset, N_SKIP=0, for state-aligned python
 //  replay): e2e_dem_l.txt (hex DEM words), e2e_paced_l.txt (NS inputs),
@@ -46,7 +46,7 @@ module tb_e2e_sine;
     logic [9:0] coef_waddr = 0;
     logic signed [17:0] coef_wdata = 0;
     logic [1:0] coef_wmac = 0;
-    logic [31:0] sys_volume = 32'hFFFFFFFF;
+    logic [31:0] sys_volume = 32'h00010000;  // internal Q16.16 gain = 1 code unit
     logic [15:0] boot_envelope_gain = 16'hFFFF;
     wire sample_768k_tick;
     wire [63:0] cascode_l, cascode_r;

@@ -41,7 +41,7 @@ try {
     $tests = @("tb_stream_rate_controller", "tb_i2s_master_rates", "tb_stream_pipeline",
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
                "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
-               "tb_fir_polyphase_stereo", "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
+               "tb_fir_polyphase_stereo", "tb_dac_dsp_core", "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
                "tb_coef_bank_manager", "tb_halfband_x2", "tb_automute", "tb_tpdf_dither_gen",
                "tb_qspi_subsys")
     $testSources = $tests | ForEach-Object { '"' + (Join-Path $tbDir "$_.sv") + '"' }
@@ -74,6 +74,7 @@ try {
         @{Top="tb_bench_stimulus"; Name="bench_stimulus"; Generic=@()},
         @{Top="tb_cell_measurement"; Name="cell_measurement"; Generic=@()},
         @{Top="tb_cal_coef_store"; Name="cal_store"; Generic=@()},
+        @{Top="tb_dac_dsp_core"; Name="dsp_core_gain"; Generic=@()},
         @{Top="tb_vu13p_top"; Name="top"; Generic=@()}
     )
     foreach ($job in $jobs) {
