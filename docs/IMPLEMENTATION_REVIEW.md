@@ -561,7 +561,30 @@ The top-level now receives PG_ALL on N29 for diagnostic safety, but normal autom
 - Place reclock FFs, translator interfaces, clock terminations and local bypasses according to a recomputed timing/SI budget.
 - Keep summing nodes compact, guarded from clocks/digital routing, and avoid uncontrolled probe or connector stubs.
 - Provide Kelvin sensing where regulator/reference design requires it; shared reference routing must not carry unrelated load current.
-- Establish stackup, reference planes, via transitions, impedance and return continuity before routing. A split ground plane is not automatically beneficial.
+- Establish the stackup, reference planes, via transitions, impedance and
+  return continuity before routing. A split ground plane is not automatically
+  beneficial.
+- Use a **10-layer JLCPCB build as the placement/routing baseline**; consider
+  8 layers only after a real routing study proves it can preserve the analog
+  return paths, clock/data matching, power distribution and thermal copper.
+  Six layers is not a current stackup decision and should not be assumed
+  sufficient for this carrier.
+- Apply JLCPCB's current multilayer design floor of 0.09 mm (3.5 mil) trace and
+  space for 0.5/1 oz copper; use wider rules for heavier copper. The
+  SN74LVC1G74DQER footprint has 0.175 mm pads on 0.35 mm pitch, leaving
+  0.175 mm pad-to-pad clearance; keep fanout escapes outward rather than
+  relying on inter-pad routing. Preserve the TI paste aperture geometry for
+  this pitch and confirm it with the assembly service.
+- JLCPCB advertises resin-filled/copper-capped via-in-pad for multilayer
+  boards, including 8/10 layers. Confirm the actual stackup, copper weights,
+  minimum drill, fill/cap option and quote in its current order/stackup tools.
+  Thermal vias under exposed pads must follow the selected IC's datasheet,
+  including fill/plug/tent requirements, and connect to the correct rail.
+  Reference: JLCPCB
+  [design capabilities](https://jlcpcb.com/resources/pcb-design),
+  [impedance stackups](https://jlcpcb.com/impedance),
+  [via-in-pad process](https://jlcpcb.com/help/article/via-in-pad-pofv-guide),
+  [stencil guidance](https://jlcpcb.com/help/article/opening-process-standard-of-stencil).
 - Review enclosure coupling/heatsinks, SoM cooling, reference thermal isolation, relay ambient limit, mounting holes and assembly access.
 - Carrier policy is 0603 R/C minimum except documented 0402 exceptions; assembly feasibility and chosen precision-footprint options need BOM/placement review.
 
@@ -954,6 +977,120 @@ There is no ARM host-driver implementation in this repository.
   `PACKAGE_PIN`/`IOSTANDARD` assignments, the Alinx pin-assignment CSV and the
   KiCad SoM/carrier connector sheets. The existing `kicad_xcheck.py` checks
   analog-reference connectivity, not FPGA XDC pin parity.
+- [ ] Review package options for every non-passive IC. Prefer the smallest
+  orderable package with a manufacturer-verified land pattern that the assembly
+  house can place and inspect. Treat rework as recovery from assembly defects,
+  not as evidence that a different device can substitute on the same footprint.
+  Record why any larger package is retained for analog performance, thermal
+  handling, availability or practical service. Do not shrink footprints solely
+  by package name or library alias.
+
+**KiCad assignment audit (generated netlist, 2026-10-18):** 2,839 component
+instances have footprint properties; none is blank. Of 49 unique footprint
+IDs, 47 resolve in the project or installed KiCad libraries. Two IDs use the
+unregistered `BFDAC_Footprints` namespace: J506 FX18 and J507/J508 REDCUBE.
+J603/J604 have a standard 2x4 header footprint assigned, but their actual
+stacker MPN/height remains a placeholder. The only non-testpoint MPN
+placeholders are J507/J508 and J603/J604.
+
+The current IC package assignments include 128 SN74LVC1G74DQER in the local
+TI DQE X2SON-8 footprint,
+18 LMK1C1108PWR in TSSOP-16, 16 SN74AXC8T245RHLR in the local RGY-named VQFN-24
+footprint, three MAX22445/MAX22444 isolators in the local WSOIC-16 footprint,
+10 OPA1612AIDRGR in DRG WSON-8, four BUF634AIDDAR in DDA HSOIC-8 PowerPAD,
+four OPA1656 in SOIC-8, one ISO1640 in SOIC-8, two UCD90120A in QFN-64, four
+TMP117 in WSON-6, and four MT25QU02G in the local BGA-24 footprint. This is an
+assignment snapshot, not proof that every land pattern matches its exact
+order code. In particular, resolve the RHL-versus-RGY translator land-pattern
+mapping and verify the Micron BGA ball/land pattern against the exact package
+drawing.
+
+**Thermal-first analog package decision (2026-10-18):** Use
+`OPA1612AIDRGR` in TI's DRG WSON-8 package (3 x 3 mm) and
+`BUF634AIDDAR` in TI's DDA HSOIC-8 PowerPAD package. The OPA1612 exposed pad
+and BUF634A PowerPAD connect to V-; the local footprints map the exposed pad
+to duplicate footprint pad 4 so it follows the schematic V- pin. The OPA1612
+DRG data sheet gives a package-specific input-bias maximum of 300 nA versus
+250 nA for the SOIC option (60 nA typical); include that difference in the
+DC-offset/servo review.
+
+For BUF634A, TI lists RθJA of 41.3 °C/W for DDA, 51 °C/W for DRB VSON and
+122.9 °C/W for SOIC on its characterization board; DDA bottom RθJC is
+5.3 °C/W. The DDA footprint includes TI Figure 11-1's 13 x 0.254 mm thermal
+via pattern; route it to the V- plane with solid connections and confirm
+via-in-pad fill/cap capability with the assembler. The OPA1612 DRG footprint
+includes TI's four optional 0.20 mm thermal vias. Connect both packages'
+thermal copper to the respective local negative analog rail, not to ground.
+Treat the underside PowerPAD/via-to-plane path as the primary heat path:
+BUF634A DDA's TI RθJC(top) is 57.1 °C/W versus 5.3 °C/W at the bottom pad.
+A top-side tub may provide supplemental cooling through the molded package
+surface, but do not count it toward the thermal budget until contact pressure,
+electrical insulation and measured temperatures are established.
+**Current board/tub arrangement (user clarification):** FPGA/SoM and the
+level shifters are on the main carrier's underside; translator outputs cross
+vias to top-side FFs. Clock fanout, converter cells and I/V/V stages are also
+on this same carrier's top side. Tub 1 (bottom) houses power conversion,
+pre-regulation and the FPGA switch-mode supply. The current rail plan is
+mains -> R-core transformer(s) -> rectifier/reservoir -> first-stage
+precision LDOs in Tub 1 -> dedicated rail/return connectors -> final
+load-local LDOs on the main carrier. First-stage voltage is rail-specific
+(nominally about 1 V above final), based on the final LDO's PSRR headroom,
+dropout, load and connector drop. Tub 2 (middle) supports the MuMetal sheet
+and sinks heat from underside electronics, especially the FPGA. Tub 3 (top)
+is the main-circuit sink for top-side parts; it is inverted so its underside
+forms the enclosure top. Overall enclosure dimensions are deferred until the
+completed board is placed and routed.
+
+For the current BUF634A DDA and OPA1612 DRG packages, retain **two distinct
+thermal paths** in the layout: exposed-pad copper/vias into inner/lower board
+layers can conduct toward Tub 2, while top-side component surfaces can couple
+to Tub 3. TI's θJC figures favor the BUF634A bottom pad inside the package
+(5.3 °C/W versus 57.1 °C/W at the top), but do not by themselves establish
+which tub receives more heat; board copper, interface materials, contact
+pressure and tub temperatures determine the system path. Do not assume that
+all analog heat should go only to Tub 3 or that all exposed-pad heat should go
+to Tub 2.
+
+The L/R negative rails are independent. The thermal copper islands must stay
+on their local V- nets and electrically isolated from each other and from any
+shared metal tub/chassis; do not directly bond the tubs to the V- vias. TI's
+TO-263 option is for the older BUF634, not BUF634A, and is not a package
+substitute for this design.
+
+**Thermal closure actions before layout freeze:**
+1. Verify the per-rail first-stage LDO setpoints against final-LDO
+   headroom/dropout, source tolerance and connector drop; review mains fusing,
+   isolation, protective-earth bonding and creepage/clearance.
+2. After board placement/routing establishes the outline, define the Tub 2
+   and Tub 3 contact areas, gaps, interface materials and mechanical stops.
+3. Calculate worst-case OPA1612/BUF634A dissipation from the real rail,
+   bandwidth and output-load conditions; budget junction and tub temperatures.
+4. Route each exposed pad/via array to its local negative-rail copper while
+   preserving L/R isolation; define how that copper couples to Tub 2 and/or
+   Tub 3 through electrically insulating interfaces. Confirm JLCPCB via-in-pad
+   fill/cap and assembly capability for the DDA 13-via pattern.
+5. Validate the assembled current board at maximum output/load with
+   temperature measurements at the IC cases, both PCB spreaders and both tubs;
+   do not claim thermal closure from package θ values alone.
+
+For the cell FFs, TI lists the DQE X2SON-8 as an active -40 to 125 C orderable
+package, with the same pin map as DCU in datasheet Figure 5-2. It is smaller
+than the former DCU VSSOP-8 (about 70% less nominal package body area; about
+410 mm2 across 128 devices); RSE UQFN is limited to 85 C. The project-local DQE
+footprint follows TI's recommended 0.50 x 0.175 mm lands, 0.35 mm row pitch,
+and 0.90 mm column spacing. The 0.35 mm pitch is a contract-assembly capability
+gate; confirm the assembler can place and inspect it. Rework, if needed, means
+repair or replacement with the same DQER part, not a drop-in alternate. If
+electrical validation rejects this FF, treat it as a design change/respin; no
+alternate FF has been qualified for this footprint.
+
+The local TMP117 datasheet also lists a smaller 1.53 x 1.00 mm DSBGA option
+(`TMP117AIYBGR`) alongside the selected 2 x 2 mm WSON (`TMP117AIDRVR`). With
+four sensors, the nominal body-area reduction is under 10 mm2 total; DSBGA
+would be harder to rework and its thermal response must be checked for these
+measurement locations. Keep WSON for the first article unless the assembly
+house confirms DSBGA rework and a thermal comparison justifies the change.
+
 - [ ] Resolve `mclk_p` AW28 and the XDC-assigned `mclk_n` AY28 against the
   carrier no-connect intent. Explicitly reserve/terminate the unused pin or
   remove its top-level port and XDC assignment consistently. Verify `clk_sel`

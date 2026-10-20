@@ -523,6 +523,107 @@ def write_local_footprints():
     N.append(')')
     with open(os.path.join(d, "Neutrik_NC3MD-H.kicad_mod"), "w", encoding="utf-8") as f:
         f.write("\n".join(N) + "\n")
+    # TI SN74LVC1G74 DQE0008A X2SON-8, from datasheet Rev. G land-pattern
+    # example (8 pads, 0.50 x 0.175 mm, 0.35 mm row pitch, 0.90 mm column pitch).
+    D = ['(footprint "TI_DQE_X2SON-8_1.4x1.0mm_P0.35mm" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")',
+         '  (descr "TI SN74LVC1G74 DQE0008A X2SON-8, 1.4x1.0 mm; TI datasheet Rev G recommended land pattern")',
+         '  (tags "TI SN74LVC1G74 DQE X2SON-8 0.35mm")',
+         '  (attr smd)',
+         '  (property "Reference" "REF**" (at 0 -1.1 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 0.7 0.7) (thickness 0.11))))' % U(),
+         '  (property "Value" "SN74LVC1G74DQER" (at 0 1.1 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.65 0.65) (thickness 0.1))))' % U(),
+         '  (property "Datasheet" "https://www.ti.com/lit/ds/symlink/sn74lvc1g74.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (property "Description" "TI DQE0008A recommended copper land pattern; pin map per datasheet Figure 5-2" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (fp_rect (start -0.525 -0.725) (end 0.525 0.725) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % U(),
+         '  (fp_circle (center -0.78 -0.80) (end -0.73 -0.80) (stroke (width 0.1) (type default)) (fill solid) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_rect (start -0.95 -0.875) (end 0.95 0.875) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % U(),
+         '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U()]
+    dqe_pads = (
+        ("1", -0.45, -0.525), ("2", -0.45, -0.175),
+        ("3", -0.45,  0.175), ("4", -0.45,  0.525),
+        ("5",  0.45,  0.525), ("6",  0.45,  0.175),
+        ("7",  0.45, -0.175), ("8",  0.45, -0.525))
+    for num, x, y in dqe_pads:
+        D.append('  (pad "%s" smd roundrect (at %.3f %.3f) (size 0.500 0.175) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.28) (solder_mask_margin 0.05) (uuid "%s"))'
+                 % (num, x, y, U()))
+    D.append(')')
+    with open(os.path.join(d, "TI_DQE_X2SON-8_1.4x1.0mm_P0.35mm.kicad_mod"), "w", encoding="utf-8") as f:
+        f.write("\n".join(D) + "\n")
+    # TI OPA1612 DRG0008A WSON-8. Pinout is the same as the OPA1612 SOIC-8;
+    # pad 4 and the exposed thermal pad are both V-. TI land pattern: 8 x
+    # 0.70 x 0.25 mm lands, 0.50 mm pitch, 2.70 mm row spacing, 1.20 x 2.00 mm EP.
+    O = ['(footprint "TI_OPA1612_DRG_WSON-8_3x3mm_P0.5mm_EP1.2x2.0mm" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")',
+         '  (descr "TI OPA1612 DRG0008A WSON-8, 3x3 mm; datasheet land pattern; exposed pad tied to V- (pad 4)")',
+         '  (tags "TI OPA1612 DRG WSON-8 0.5mm PowerPAD")',
+         '  (attr smd)',
+         '  (duplicate_pad_numbers_are_jumpers no)',
+         '  (property "Reference" "REF**" (at 0 -2.1 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U(),
+         '  (property "Value" "OPA1612AIDRGR" (at 0 2.1 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.7 0.7) (thickness 0.1))))' % U(),
+         '  (property "Datasheet" "https://www.ti.com/lit/ds/symlink/opa1612.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (property "Description" "TI DRG0008A land pattern; thermal pad and optional vias map to V- (pad 4)" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (fp_rect (start -1.55 -1.55) (end 1.55 1.55) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % U(),
+         '  (fp_circle (center -1.68 -1.68) (end -1.63 -1.68) (stroke (width 0.1) (type default)) (fill solid) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_rect (start -1.8 -1.8) (end 1.8 1.8) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % U(),
+         '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U()]
+    opa_pads = (
+        ("1", -1.35, -0.75), ("2", -1.35, -0.25),
+        ("3", -1.35,  0.25), ("4", -1.35,  0.75),
+        ("5",  1.35,  0.75), ("6",  1.35,  0.25),
+        ("7",  1.35, -0.25), ("8",  1.35, -0.75))
+    for num, x, y in opa_pads:
+        O.append('  (pad "%s" smd roundrect (at %.3f %.3f) (size 0.700 0.250) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) (solder_mask_margin 0.05) (uuid "%s"))'
+                 % (num, x, y, U()))
+    O.append('  (pad "4" smd rect (at 0 0) (size 1.200 2.000) (property pad_prop_heatsink) (layers "F.Cu" "F.Mask") (zone_connect 2) (uuid "%s"))' % U())
+    # Four optional 0.20 mm vias follow TI's DRG land-pattern example.
+    for x, y in ((0, -0.75), (-0.35, 0), (0.35, 0), (0, 0.75)):
+        O.append('  (pad "4" thru_hole circle (at %.3f %.3f) (size 0.400 0.400) (drill 0.200) (property pad_prop_heatsink) (layers "*.Cu" "*.Mask") (remove_unused_layers no) (zone_connect 2) (uuid "%s"))'
+                 % (x, y, U()))
+    # The datasheet's stencil example specifies 84% paste coverage for the EP.
+    for x in (-0.32, 0.32):
+        for y in (-0.50, 0.50):
+            x0, x1, y0, y1 = x - 0.28, x + 0.28, y - 0.45, y + 0.45
+            O.append('  (fp_poly (pts (xy %.3f %.3f) (xy %.3f %.3f) (xy %.3f %.3f) (xy %.3f %.3f)) (layer "F.Paste") (uuid "%s"))'
+                     % (x0, y0, x1, y0, x1, y1, x0, y1, U()))
+    O.append(')')
+    with open(os.path.join(d, "TI_OPA1612_DRG_WSON-8_3x3mm_P0.5mm_EP1.2x2.0mm.kicad_mod"), "w", encoding="utf-8") as f:
+        f.write("\n".join(O) + "\n")
+    # TI BUF634A DDA0008B HSOIC-8. Thermal pad is V-; footprint uses pad 4
+    # for the EP so the current 8-pin schematic symbol carries the V- net.
+    B = ['(footprint "TI_BUF634A_DDA_HSOIC-8_P1.27mm_EP2.95x4.9mm" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")',
+         '  (descr "TI BUF634A DDA0008B HSOIC-8 PowerPAD; TI land pattern; exposed pad tied to V- (pad 4)")',
+         '  (tags "TI BUF634A DDA0008B HSOIC-8 PowerPAD")',
+         '  (attr smd)',
+         '  (duplicate_pad_numbers_are_jumpers no)',
+         '  (property "Reference" "REF**" (at 0 -3.2 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 0.9 0.9) (thickness 0.13))))' % U(),
+         '  (property "Value" "BUF634AIDDAR" (at 0 3.2 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U(),
+         '  (property "Datasheet" "https://www.ti.com/lit/ds/symlink/buf634a.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (property "Description" "TI DDA0008B land pattern; pad 4 duplicate maps the PowerPAD and thermal vias to V- per TI Figure 11-1" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (fp_rect (start -1.95 -2.45) (end 1.95 2.45) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % U(),
+         '  (fp_rect (start -3.75 -2.70) (end 3.75 2.70) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % U(),
+         '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.7 0.7) (thickness 0.1))))' % U()]
+    buf_pads = (
+        ("1", -2.70, -1.905), ("2", -2.70, -0.635),
+        ("3", -2.70,  0.635), ("4", -2.70,  1.905),
+        ("5",  2.70,  1.905), ("6",  2.70,  0.635),
+        ("7",  2.70, -0.635), ("8",  2.70, -1.905))
+    for num, x, y in buf_pads:
+        B.append('  (pad "%s" smd rect (at %.3f %.3f) (size 1.550 0.600) (layers "F.Cu" "F.Mask" "F.Paste") (uuid "%s"))'
+                 % (num, x, y, U()))
+    B.append('  (pad "4" smd rect (at 0 0) (size 2.950 4.900) (property pad_prop_heatsink) (layers "F.Cu") (zone_connect 2) (uuid "%s"))' % U())
+    B.append('  (pad "" smd rect (at 0 0) (size 2.710 3.400) (layers "F.Mask") (uuid "%s"))' % U())
+    B.append('  (pad "" smd rect (at 0 0) (size 2.710 3.400) (layers "F.Paste") (uuid "%s"))' % U())
+    # The TI Figure 11-1 staggered 13-via array; all duplicate pad 4 (V-).
+    buf_thermal_vias = (
+        (-0.889, -1.524), (0.000, -1.524), (0.889, -1.524),
+        (-0.635, -0.762), (0.635, -0.762),
+        (-0.889,  0.000), (0.000,  0.000), (0.889,  0.000),
+        (-0.635,  0.762), (0.635,  0.762),
+        (-0.889,  1.524), (0.000,  1.524), (0.889,  1.524))
+    for x, y in buf_thermal_vias:
+        B.append('  (pad "4" thru_hole circle (at %.3f %.3f) (size 0.660 0.660) (drill 0.254) (property pad_prop_heatsink) (layers "*.Cu" "*.Mask") (remove_unused_layers no) (zone_connect 2) (uuid "%s"))'
+                 % (x, y, U()))
+    B.append(')')
+    with open(os.path.join(d, "TI_BUF634A_DDA_HSOIC-8_P1.27mm_EP2.95x4.9mm.kicad_mod"), "w", encoding="utf-8") as f:
+        f.write("\n".join(B) + "\n")
     # vendor-supplied footprints (user downloads under datasheets/<part>/KiCADv6/footprints.pretty), copied verbatim
     for src, dst in VENDOR_FOOTPRINTS:
         with open(os.path.join(ROOT, "datasheets", src), encoding="utf-8") as f:
@@ -868,7 +969,11 @@ def val(v, params):
 FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_1608Metric",
           C0402="Capacitor_SMD:C_0402_1005Metric", L0603="Inductor_SMD:L_0603_1608Metric",
           SOT23_6="Package_TO_SOT_SMD:SOT-23-6", SOT23_5="Package_TO_SOT_SMD:SOT-23-5", SOT363="Package_TO_SOT_SMD:SOT-363_SC-70-6",
-          VSSOP8="Package_SO:VSSOP-8_2.3x2mm_P0.5mm", SOIC14="Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
+          VSSOP8="Package_SO:VSSOP-8_2.3x2mm_P0.5mm",
+          DQE8="bfdac:TI_DQE_X2SON-8_1.4x1.0mm_P0.35mm",
+          OPA_DRG8="bfdac:TI_OPA1612_DRG_WSON-8_3x3mm_P0.5mm_EP1.2x2.0mm",
+          BUF_DDA8="bfdac:TI_BUF634A_DDA_HSOIC-8_P1.27mm_EP2.95x4.9mm",
+          SOIC14="Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
           SC59="Package_TO_SOT_SMD:SC-59", C0603="Capacitor_SMD:C_0603_1608Metric", C0805="Capacitor_SMD:C_0805_2012Metric",
           R2010="Resistor_SMD:R_2010_5025Metric", CP63="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm",
           CP8="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm", R1206="Resistor_SMD:R_1206_3216Metric",
@@ -918,9 +1023,9 @@ def precision_r(value, code):
 
 # PACKAGE POLICY (user 2026-10-08 23:51): 0603 is the default; 0402 ONLY out of necessity.  The only 0402 positions are the
 # per-cell parts below (128 cells x 7 passives: array area + the FF-pin decoupling / base-stopper loop length).  Revisit
-# once the cell layout is drawn - if the pitch is set by the SOIC-14 / VSSOP-8 anyway, rs/rp can grow to 0603 for free.
+# once the cell layout is drawn - if the pitch is set by the SOIC-14 / DQE X2SON-8 anyway, rs/rp can grow to 0603 for free.
 CELL_PARTS = {   # key: (value, footprint, MPN, description)
-    "ff":   ("SN74LVC1G74", FP["VSSOP8"], "SN74LVC1G74DCUR", "RTZ reclock D-FF, true Q/Qb, one per cell (DCU pinout = 74AUC1G74 symbol); bom 1.2"),
+    "ff":   ("SN74LVC1G74", FP["DQE8"], "SN74LVC1G74DQER", "RTZ reclock D-FF, true Q/Qb, one per cell; DQE X2SON-8 pin map per TI datasheet Fig. 5-2; bom 1.2"),
     "fb":   ("120R@100MHz", FP["L0603"], "BLM18PG121SN1D", "per-FF 3.3 V rail isolation bead (bom 1.2 L/C4xx)"),
     "cff":  ("100n", FP["C0402"], "GRM155R71C104KA88D", "FF local decoupling, X7R 16 V (0402 by necessity: shortest loop at the FF VCC pin, x128)"),
     "rs":   ("1.35k", FP["R0402"], "TNPW04021K35FEEA", "base series rs, thin film 1 % (bom 1.2 R43x) (0402 by necessity: cell array area, x256)"),
@@ -1003,8 +1108,8 @@ OUT_PARTS = {  # output-routing sheet 2026-10-07 (bom 7): K4 mute only - level i
     "xlr":   ("NC3MD-H-B", "bfdac:Neutrik_NC3MD-H", "NC3MD-H-B", "Neutrik NC3MD-H-B 3-pole male XLR receptacle, D-size zinc die-cast shell, BLACK (KTL), gold contacts, horizontal PCB mount, latch lock - LOCKED 2026-10-10 (user: no plastic, black; board perpendicular to the rear panel = horizontal). 1 shield, 2 hot, 3 cold, G shell. Footprint from Neutrik drawing S1-NC3MD-H (datasheets/NC3MD-H-B)"),
 }
 IV_PARTS = {  # IV sheet pass 2026-09-28 (bom 4)
-    "opamp": ("OPA1612", FP["SOIC8"], "OPA1612AIDR", "TIA front amp; dual footprint reserved for NPAR=2 fallback, unit B idle as follower to GND (bom 4)"),
-    "buf":   ("BUF634A", FP["SOIC8"], "BUF634AIDR", "output buffer inside the TIA loop, BW pin to V- (max bandwidth) (bom 4)"),
+    "opamp": ("OPA1612", FP["OPA_DRG8"], "OPA1612AIDRGR", "TIA front amp; DRG WSON-8 with thermal pad tied to V-; dual footprint reserved for NPAR=2 fallback, unit B idle as follower to GND (bom 4)"),
+    "buf":   ("BUF634A", FP["BUF_DDA8"], "BUF634AIDDAR", "output buffer inside the TIA loop; DDA HSOIC-8 PowerPAD and 13-via array tied to V-; BW pin to V- (max bandwidth) (bom 4)"),
     "rf":    ("270", FP["R1206"], "RG3216N-2700-W-T1", "R_f, Susumu RG3216N 0.05 % 10 ppm 1206 1/4 W (RG3216 codes are always 4-digit: 2700, was 271); ~5 Vrms across -> ~95 mW (bom 4)"),
     "cf":    ("1.3n", FP["C0603"], "GRM1885C1H132JA01D", "C_f on the buffer output, C0G 50 V (bom 4)"),
     "roff_p": ("536", FP["R0603"], "RA73F1J536RBTD", "R_off p = 4 x 536 (E96) in parallel = 134.0 (+0.75 %, DC trim); ~83 mA from +15F -> 21 mA / 0.23 W each = 46 % of the TE RA73 0603 AlN-substrate 0.5 W @70C rating (datasheet 1773270-3, user 2026-10-09); 0.1 % 25 ppm thin film. LAYOUT: enlarged copper per the RA73 mounting note; heat zone per bom items 13/14. Fallback 8 x 1.07k = 133.75 at 23 %"),
@@ -1032,7 +1137,7 @@ REFS_PARTS = {  # refs sheet pass 2026-10-06 (bom 9): REF7050 -> RC -> FET buffe
     "crc":    ("10u", FP["FILM5"], "MKS2B051001N00KSSD", "reference RC filter C, WIMA MKS2 10 uF 50 V film (no electrolytic leakage drift, no class-II piezo)  ** VERIFY MPN **"),
     "fetamp": ("OPA1656", FP["SOIC8"], "OPA1656ID", "FET-input dual: A = REF5F buffer (I_b 10 pA vs 4.99k), B = CASB2 servo (bom 9 ruling 2026-10-01, gate 2026-10-02)"),
     "fetamp2": ("OPA1656", FP["SOIC8"], "OPA1656ID", "FET-input dual: PADB current servo (A = Rpad drop diff-amp, B = integrator) - bom 9 derived req. 4"),
-    "opamp":  ("OPA1612", FP["SOIC8"], "OPA1612AIDR", "1.1 nV/rtHz dual: reference buffers / servo error amps (bom 9)"),
+    "opamp":  ("OPA1612", FP["OPA_DRG8"], "OPA1612AIDRGR", "1.1 nV/rtHz dual: reference buffers / servo error amps; DRG WSON-8 thermal pad tied to V- (bom 9)"),
     "ldo":    ("LT3045", FP["MSOP12EP"], "LT3045EMSE#PBF", "500 mA ultra-low-noise LDO; SET = 100 uA x R_SET or driven (VE1); EN/UV->IN, ILIM->GND, PGFB divider MANDATORY (below +0.30 V the SET current jumps to 2 mA - PGFB->GND pegs the output at the rail!), PG open-collector -> PG_ALL"),
     "ldo_n":  ("LT3094", FP["MSOP12EP"], "LT3094EMSE#PBF", "-500 mA negative ultralow-noise LDO; SET = 100 uA x R_SET to GND gives -Vout; PGFB trips at -0.30 V so the SAME OUT->PGFB->GND divider as the positive parts works (442k/10k = -13.6 V trip on -15 V); EN/UV->IN, ILIM->GND, VIOC->GND (unused), PG -> PG_ALL"),
     "rp01":   ("", FP["R0603"], "%s", "precision 0603, MPN chosen per value by precision_r() (Susumu RG1608N 0.05 % / Vishay TNPW 0.1 % / Susumu RG1608P 0.1 %)"),

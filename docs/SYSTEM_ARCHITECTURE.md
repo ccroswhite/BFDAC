@@ -141,11 +141,11 @@ The diagram shows functional partitioning. The final division of the base
 assembly into circuit boards, its connector mechanics and its enclosure
 implementation remain mechanical/electrical design work.
 
-The carrier is intended to place accessible conversion circuitry and test
-points on its upper face, with the SoM and board-to-board interfaces on its
-lower face. This arrangement allows measurements without repeatedly turning
-the board over and supports a thermal path from the SoM to the enclosure.
-Section 8 develops the planned arrangement; it is not an existing PCB layout.
+The current assembly uses one main carrier board: the ACVU13P SoM/FPGA and
+octal level shifters mount on its underside; the level-shifter outputs cross
+through vias to the top-side reclock FFs. The clock fanout, converter cells,
+I/V and V/output stages are also on the top side. This is the current
+placement intent, not a completed PCB layout.
 
 ### 2.2 Subsystem responsibilities
 
@@ -801,30 +801,76 @@ and the constraints that should guide placement and routing.
 
 | Region / face | Intended contents and reason |
 |---|---|
-| Carrier lower face | SoM, coefficient flash and base-assembly connectors; supports the SoM's downward thermal/mechanical connection |
-| Carrier upper face | Reclocking, current cells, analog circuitry, clock distribution, local regulation and probe access |
+| Main carrier, lower face | ACVU13P SoM/FPGA, octal level shifters adjacent to the SoM interfaces, coefficient flash and base-assembly connectors. The level-shifter B-side outputs pass through vias to the top-side FFs. |
+| Main carrier, upper face | Reclock FFs, clock fanout, converter cells, I/V and V/output stages, and accessible probe points. |
 | Left digital region | SoM power entry and AP/control interconnects, physically separated from low-level analog circuitry |
 | Analog/clock region | Short oscillator-to-fanout paths and matched clock/data distribution near the cells they serve |
 | Top-edge connector group | Left-channel pre-regulator distribution and the clock-side supply feed |
 | Bottom-edge connector group | Right-channel pre-regulator distribution and cell-drive/general-digital supply feeds |
 | Output edge | I/V-to-relay-to-XLR paths, with mechanical connector access and relay temperature limits considered |
 
-“Top/bottom edge” in the connector plan denotes plan-view board edges;
-“upper/lower face” denotes the two sides of the PCB. These must remain
+"Top/bottom edge" in the connector plan denotes plan-view board edges;
+"upper/lower face" denotes the two sides of the PCB. These must remain
 distinct in mechanical drawings.
 
-The working board-to-board separation is approximately 30 mm. Separate
-power and signal connector bodies are acceptable. The SoM, its heatsink
-and the base assembly must have compatible clearances; mounting hardware
-must carry mechanical loads rather than relying on connector contacts.
-The 30 mm working target concerns the carrier-to-base connection; the
-SoM-to-carrier mating interface has its own mechanical dimensions.
+### 8.2 Three-tub thermal and power arrangement
+
+The user's current enclosure partition has three cooled tubs:
+
+| Tub | Current role |
+|---|---|
+| Tub 1, bottom | Mains power conversion and pre-regulators, plus the FPGA switch-mode supply. |
+| Tub 2, middle | MuMetal sheet and thermal sink for main-board underside electronics, especially the FPGA/SoM and level shifters. |
+| Tub 3, top | Main-circuit tub and heat sink for top-side board components. It is inverted so its bottom face forms the enclosure top. |
+
+The main carrier is one board assembly with the SoM/FPGA and level shifters on
+the underside; FF retimers, clock fanout, converter cells and I/V/V stages are
+on the top side. Level-shifter outputs transition through vias to the top-side
+FFs.
+
+The current two-stage low-noise rail path is:
+
+```text
+mains -> R-core transformer(s) -> rectifier/reservoir filtering
+      -> Tub 1 first-stage precision LDO per rail (~1 V above final)
+      -> board-to-board power connector with dedicated return
+      -> main-carrier final LDO at the intended load
+```
+
+The exact first-stage voltage is rail- and LDO-specific, not a fixed 1 V:
+allow for the final LDO's PSRR headroom/dropout, load current, pre-regulator
+tolerance and connector drop. The FPGA switch-mode supply is also in Tub 1.
+Mains fusing, isolation, protective-earth/chassis bonding, inrush and
+primary-to-secondary creepage/clearance require a separate safety review.
+
+Keep the two thermal paths distinct: Tub 2 serves underside electronics,
+especially the FPGA/SoM; Tub 3 removes heat from top-side circuitry. For
+BUF634A DDA, the exposed PowerPAD solders to the top face of the main board and
+its via array can spread heat into inner/lower copper toward Tub 2. Heat from
+the molded package top can transfer to Tub 3 as a separate, less efficient
+path. Model both paths using the routed copper and the actual contact stack;
+the intended tub assignments do not imply that either path is already
+implemented or thermally closed.
+
+Overall enclosure dimensions are intentionally **not set yet**. The enclosure
+will be designed around the completed board outline, placement, routing,
+connector stack heights and thermal contacts. The earlier approximately
+30 mm carrier-to-base figure is a provisional connector/stack-height target,
+not an external enclosure dimension. Mechanical dimensions are to be fixed
+after board placement and routing.
+
+### 8.3 Board-to-board interfaces
+
+Separate power and signal connector bodies are acceptable. Mounting hardware
+must carry mechanical loads rather than relying on connector contacts. The
+SoM-to-carrier mating interface and carrier-to-base connector stack have
+separate height/clearance budgets.
 
 Both analog entry groups carry the shared upstream rails. Local placement
 and return routing must implement the intended channel distribution;
 duplicated connectors on the same nets do not create independent supplies.
 
-### 8.2 Layout requirements
+### 8.4 Layout requirements
 
 Placement and routing shall preserve:
 
@@ -845,7 +891,7 @@ capacitance budgets must be established before routing. The carrier
 assembly policy favors 0603 passives, with documented 0402 exceptions where
 the local electrical/routing requirements justify them.
 
-### 8.3 Mechanical and assembly deliverables
+### 8.5 Mechanical and assembly deliverables
 
 The hardware handoff must include an approved floorplan, connector mating
 drawings, thermal mounting details, stackup, electrical constraints and
