@@ -52,6 +52,7 @@ module vu13p_dac_top #(
     // is the proven upper bound (f15b P&R closed). Synth scripts may override.
     parameter int NUM_MACS = 256,   // Any multiple of 64, <=2560 (URAM limit); taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int TAPS_PER_PHASE = 256, // Power of 2, <=256; taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int CFLASH_DEVICE_ADDR_BITS = 28, // 28 for four 2-Gb devices; 27 for four 1-Gb devices
     parameter int MUTE_DELAY_CYCLES = 4_000_000  // 20 ms @ 200 MHz: automute relay
                                                  // physical release before the mux
                                                  // flips (shorten in simulation)
@@ -73,6 +74,7 @@ module vu13p_dac_top #(
     output logic        i2s_bclk,
     output logic        i2s_lrclk,
     input  logic        i2s_data,
+    input  logic        i2s_data2,
 
     // ARM SPI Interface (Control Plane)
     input  logic        spi_sclk,
@@ -96,9 +98,10 @@ module vu13p_dac_top #(
     output logic        qspi1_cs_n,
     inout  wire  [3:0]  qspi1_dq,
 
-    // Carrier coefficient flash (bom item 18/18a, 2026-10-05): 1..4 x MT25QU02G
-    // on one x1 bus, bank-70 pins (XDC §11b). cf_cs_n[0] = populated device,
-    // [3:1] reserved sites. SCK is a user-IO forwarded copy of the engine clock.
+    // Carrier coefficient flash (bom item 18b): four Macronix MX66UM NORs
+    // on one x1 SPI bus, bank-70 pins (XDC §11b). All four CS sites are active.
+    // CFLASH_DEVICE_ADDR_BITS selects 2-Gb (28) vs 1-Gb (27) local addressing.
+    // SCK is a user-IO forwarded copy of the engine clock.
     output logic        cf_sck,
     output logic [3:0]  cf_cs_n,
     inout  wire  [3:0]  cf_dq,
@@ -164,6 +167,7 @@ module vu13p_dac_top #(
     logic [2:0] stream_rate_request, applied_stream_rate;
     logic stream_rate_toggle, stream_rate_ack, stream_source_valid;
     logic [4:0] i2s_rx_trim;
+    logic i2s_src_sel;
     logic core_stream_fault, serial_fault;
     logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
     (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
@@ -376,7 +380,7 @@ module vu13p_dac_top #(
     logic        sample_768k_tick;
     logic        fir_frame_done;
 
-    // QSPI flash subsystem (clk_200m domain unless noted — 2026-08-22)
+    // Coefficient/SoM flash subsystem (x1 SPI controller in clk_200m domain)
     logic [7:0]  flash_cmd_opcode, flash_buf_wdata, flash_buf_waddr;
     logic [7:0]  flash_buf_raddr, flash_buf_rdata;
     logic [1:0]  flash_cmd_target;
@@ -461,13 +465,16 @@ module vu13p_dac_top #(
     //   - qspi_flash_ctrl: shared x1-SPI engine, three targets
     //       target 0 = SoM Flash 1 (coefficients, bank-65 pins)
     //       target 1 = SoM Flash 0 (bitstream, via STARTUPE3 — ARM bin updates)
-    //       target 2 = carrier coefficient flash (bank-70 pins, 25 MHz)
+    //       target 2 = carrier coefficient flash (bank-70 pins, 100 MHz)
     //   - qspi_boot_loader: autonomous at EOS+calib — stages coefficient
     //     records QSPI → CRC32 → DDR4; no ARM involvement (user ruling).
     //     Tries the carrier flash first, falls back to SoM Flash 1 (18a).
     //   - ARM update path: ctrl-plane regs 0x10-0x14 / 0x1A-0x1B
     // ==============================================================
-    qspi_flash_ctrl u_flash_ctrl (
+    qspi_flash_ctrl #(
+        .CF_CKDIV_LOG2       (1), // 200 MHz / 2 -> 100 MHz carrier SCK
+        .CF_DEVICE_ADDR_BITS (CFLASH_DEVICE_ADDR_BITS)
+    ) u_flash_ctrl (
         .clk            (clk_200m),
         .rst_n          (ext_rst_n),
         .cmd_opcode     (flash_cmd_opcode),
@@ -507,7 +514,9 @@ module vu13p_dac_top #(
     end
     assign boot_start = calib_sync_boot[1] && eos_sync_boot[1];
 
-    qspi_boot_loader u_boot_loader (
+    qspi_boot_loader #(
+        .CF_DEVICE_ADDR_BITS (CFLASH_DEVICE_ADDR_BITS)
+    ) u_boot_loader (
         .clk            (clk_200m),
         .rst_n          (ext_rst_n),
         .start          (boot_start),
@@ -580,12 +589,12 @@ module vu13p_dac_top #(
     assign qspi1_dq[2] = 1'b1;
     assign qspi1_dq[3] = 1'b1;
 
-    // Carrier coefficient flash — bank-70 pins, x1 mode (bom 18a). All outputs
+    // Carrier coefficient flash - bank-70 pins, x1 SPI (bom 18a). All outputs
     // re-registered on clk_200m so SCK / CS / MOSI leave the IOBs together
     // (one clk of common latency; the engine's SCK-low MOSI setup is unchanged).
-    // MISO is taken combinationally: at 25 MHz the engine samples 20 ns after
-    // the falling edge it launched; flash t_CLQV (<= 7 ns) + IOB latency +
-    // trace fit inside that. Reserved sites cf_cs_n[3:1] follow cf_cs_sel.
+    // Carrier fast reads skip the first returned bit to allow tCLQV settling;
+    // 100-MHz timing still needs sign-off against the routed return path.
+    // All four CS lines are supported/populated; no reserved CS sites.
     (* IOB = "TRUE" *) logic       cf_sck_q;
     (* IOB = "TRUE" *) logic [3:0] cf_cs_n_q;
     (* IOB = "TRUE" *) logic       cf_mosi_q;
@@ -600,8 +609,8 @@ module vu13p_dac_top #(
     assign cf_cs_n  = cf_cs_n_q;
     assign cf_dq[0] = cf_mosi_q;
     assign cf_dq[1] = 1'bz;                      // MISO input
-    assign cf_dq[2] = 1'b1;                      // WP#
-    assign cf_dq[3] = 1'b1;                      // HOLD# / RESET#
+    assign cf_dq[2] = 1'b1;                      // unused SIO2 in x1 mode
+    assign cf_dq[3] = 1'b1;                      // unused SIO3 in x1 mode
 
     always_comb begin
         case (qspi_sel_target)
@@ -772,6 +781,7 @@ module vu13p_dac_top #(
         .stream_rate_toggle     (stream_rate_toggle),
         .stream_source_valid    (stream_source_valid),
         .i2s_rx_trim            (i2s_rx_trim),
+        .i2s_src_sel            (i2s_src_sel),
         .stream_busy            (stream_busy),
         .stream_clocks_ready    (stream_clock_ready),
         .stream_applied_rate    (applied_stream_rate),
@@ -818,7 +828,7 @@ module vu13p_dac_top #(
         .rx_trim                (i2s_rx_trim),
         .i2s_bclk               (i2s_bclk),
         .i2s_lrclk              (i2s_lrclk),
-        .i2s_data               (i2s_data),
+        .i2s_data               (i2s_src_sel ? i2s_data2 : i2s_data),
         .audio_l                (audio_l),
         .audio_r                (audio_r),
         .new_sample             (new_sample),

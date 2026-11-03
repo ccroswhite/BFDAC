@@ -408,11 +408,83 @@ FIR bank swaps are currently not qualified by the FIR sweep boundary; `sample_ti
 
 ### 6.2 Flash protocol versus filter-file format
 
-[qspi_flash_ctrl](../Xilinx/qspi_flash_ctrl.sv) is currently an **x1 SPI engine**, despite QSPI-capable parts and signal names. SoM targets use nominal 50 MHz SCK; carrier flash uses 25 MHz. The carrier supports chip selection by address bits for up to four 256 MiB devices; initial population and total capacity must match the assembly variant.
+[qspi_flash_ctrl](../Xilinx/qspi_flash_ctrl.sv) is an **x1 SPI engine**, despite historical QSPI names. SoM targets remain at 25 MHz; the selected carrier Macronix devices use a 100-MHz x1 target. Four chip selects are retained, with density-specific local-address decoding.
+
+**Rejected carrier migration:** Kingston
+`EMMC04G-CT32-02DB0` was proposed as a lower-cost, higher-capacity option. It is
+4 GB (32 Gb; datasheet user area 3,827,957,760 bytes), not 4 Gb, and is managed
+eMMC 5.1 in a 153-ball FBGA, with VCC=3.3 V and VCCQ=1.8 V or 3.3 V. It is
+**not** a drop-in for the current x1 NOR interface: eMMC uses bidirectional
+CMD and DAT lines, clocked block commands, initialization and CRCs rather than
+NOR byte-address opcodes, page-program and sector-erase commands. The user
+selected the compatible Macronix serial-NOR family instead, avoiding this
+eMMC host migration.
+
+If eMMC is selected, do not change the schematic/BOM MPN alone. The preferred
+migration would be a direct FPGA-hosted 4-bit eMMC SDR interface on repurposed
+Bank 70 pins, retaining the SoM QSPI targets and fallback. Closure would
+require a verified Kingston ball-map footprint, VCC/VCCQ/Vddi decoupling,
+pin/XDC and bidirectional-I/O changes, an eMMC host/controller, block-to-byte
+adaptation for the existing coefficient-record stream, replacement of the
+NOR-specific AP maintenance commands/provisioning flow, and protocol/boot-
+loader tests. The device supports up to 52 MHz in standard high-speed mode;
+avoid HS200/HS400 until an implementation is validated.
 
 The boot copier consumes a **16-byte record header** with numeric magic `0x42464443`, DDR destination, payload length and payload CRC. Its little-endian packing expects initial magic bytes `43 44 46 42` in hexadecimal; do not infer byte order from the source comment's ASCII label. This is not the same header as the documented **256-byte BFC2 filter container**. A production image builder must translate/pack the required records and directory. Do not feed a raw BFC2 file to the boot copier and assume compatibility. An end-to-end production builder was not located in the inspected `utils` sources; establish its location, ownership and golden-image tests.
 
-The current carrier x1 data-rate ceiling is approximately 25 Mbit/s before overhead, not 25/50 MB/s quad throughput. Provisioning and boot-time requirements must be budgeted accordingly. Review record bounds, directory collisions, device-boundary crossing, address narrowing, header integrity and watchdog coverage; host flash commands have a watchdog, but boot streaming does not have equivalent complete timeout coverage.
+**Current carrier decision:** four Macronix `MX66UM2G45GXRI00` devices are
+selected, retaining the four existing chip selects and the 1.8-V carrier rail.
+This is an x1 SPI implementation, not x4 QSPI: the family supports x1 SPI and
+x8 Octa I/O, and the carrier uses x1 FAST READ4B (`0x0C`) with eight dummy
+clocks. The primary 2-Gb orderable MPN is the user's specified DigiKey part;
+the prior Micron MPN, Micron ball map and Micron footprint are superseded.
+
+The Macronix 1-Gb alternate is `MX66UM1G45GXDI00`. Its 24-ball pin map and
+6 x 8 mm, 5 x 5 / 1.0-mm land pattern match the 2-Gb device, so a density swap
+does not change board pins or chip selects. The FPGA density parameter changes
+the local address width: 28 bits/device for 2 Gb, 27 bits/device for 1 Gb.
+The 1-Gb population deliberately supports fewer coefficients rather than
+adding devices or a decoder.
+
+**Coefficient-flash throughput:** the existing x1/25-MHz setting transfers at
+most 3.125 MB/s, or about 242 s for a 755-MB library before overhead. The
+selected 100-MHz x1 target uses the Macronix fast-read opcode and provides
+12.5 MB/s ideal, about 60 s for that library and about 1 s for a 12-MB filter.
+At the device's 133-MHz fast-read ceiling, x1 would be 16.6 MB/s ideal; 100 MHz
+is the chosen margin target, not a claim of routed timing closure. Dummy clocks,
+record headers, `rd_stall`, DDR4 writes and physical return-path timing reduce
+the ideal rate. x8 OPI is not implemented.
+
+RTL now uses the carrier divider for 100 MHz, `0x0C` plus eight dummy clocks,
+density-dependent address/CS decoding, and a first-sample skip for the carrier
+read path. `tb_qspi_subsys` models the IOB clock latency and an 8-ns MISO
+output/return delay; its carrier boot, chip-1, backpressure and boundary tests
+pass. This is functional simulation evidence, not a routed timing report or
+board-level signal-integrity sign-off.
+
+Capacity must respect the fixed four-chip map and record boundaries. With the
+current 18-bit mirrored 10M-tap format, each full-size record occupies
+11,862,016 bytes including its header/padding. A record may not cross a chip
+boundary: four 2-Gb devices therefore fit 22 records/device (88 total), while
+four 1-Gb devices fit 11/device (44 total). The boot loader now rejects carrier
+records that exceed the density-specific address space or cross a device
+boundary; ARM carrier commands also reject addresses beyond the configured
+density. The production image builder was not located in the inspected
+`utils` sources; it must enforce the same map and reject/report a library that
+does not fit.
+
+This is **coefficient staging after FPGA configuration**, not bitstream boot:
+the current `qspi_boot_loader` copies all records from flash into DDR4 before
+`coef_ready`. During playback, the active FIR reads its coefficients from URAM.
+A filter change loads the inactive bank from DDR4 while audio continues; the
+coefficient flash is not read for each sample or directly by the FIR. The
+RTL cycle estimate for a 5.24M-tap DDR4-to-URAM bank load is roughly 22 ms;
+that is separate from the QSPI-to-DDR staging time.
+
+Earlier user-supplied Winbond/Infineon 1-Gb alternatives remain unselected;
+they are not mechanically compatible with the carrier's 1.8-V Macronix
+population. The density fallback is the same Macronix family, with four chips
+and the 44-record limit above. This does not add chip-select pins.
 
 ### 6.3 Register control and AP electrical interface
 
@@ -590,15 +662,38 @@ The top-level now receives PG_ALL on N29 for diagnostic safety, but normal autom
 
 These are review constraints, not proof that a routed implementation exists. [som_seed.kicad_pcb](../hw/kicad/som_seed.kicad_pcb) is a connector/mechanical seed, not a completed routed carrier.
 
-### 9.3 Board-to-board interfaces are provisional
+### 9.3 Board-to-board connector integration
 
-Working geometry is approximately 30 mm board separation, with separate signal and power connectors acceptable:
+The user clarified two principal PCB assemblies: one pre-regulator board
+(rectification, filtering and first-stage LDOs) and one main circuit board
+(final load-local regulation). The three enclosure tubs are not three PCBs.
 
-- Left digital entry J506: FX18 family candidate; exact mating pair/height, MF contacts, pin numbering and footprint are unclosed.
-- Left V12SOM/return J507/J508: REDCUBE concept; actual parts and complete 30 mm conductive/mechanical assembly are unclosed.
-- Top/bottom pre-regulator entries J603/J604: same shared rail nets; exact stacking-header pair, current derating, height/tolerances and harness/baseboard routing are unclosed.
+The three main-board mezzanine sites are:
 
-The generator still contains `746xxxxx`, `TW-04-xxx-L-D` and missing custom connector footprint links. They are **not orderable manufacturing selections**. Both entry connectors tied to the same nets do not by themselves enforce independent channel current paths. Multiple simultaneously mated connectors need tolerance/alignment analysis and standoffs that do not introduce unwanted ground bonds.
+- Conn1/J506: AP digital interface, west edge closest to the FPGA, B.Cu.
+- Conn2/J603: pre-regulator rail entry, north-center, B.Cu.
+- Conn3/J604: pre-regulator rail entry, south-center, B.Cu.
+
+The board-side MPN is Samtec `SEAF-40-05.0-L-06-2-A-K-TR`; use three
+`SEAR-40-30.0-06-85` interposers, one per site. They are BOM-only and are not
+represented by PCB footprints or in the chassis 3MF. The target board
+separation is 40 mm. The supplied drawing drives a 40-column x 6-row,
+1.27-mm-pitch footprint with 240 SMT pads, and the local schematic symbol has
+six 40-pin row units with matching row-major pad numbers.
+
+Conn1/J506 carries the AP row-A interface, 30 `V12SOM` contacts with a
+`GND` perimeter, and a separate `V33_IF_IN` group with carrier-`GND` guard.
+`VAP_IO/GND_AP` remain the isolated AP-side power domain. The separate
+J507/J508 terminals are removed from the active design. Conn2/J603 and
+Conn3/J604 use row-A pads 1-8 for the existing pre-regulator rail/return map;
+their other contacts are not assigned yet. The pin table is in
+`docs/SEAF_PIN_ASSIGNMENTS.md`.
+
+The carrier PCB has not been placed or routed, and the pre-regulator board is
+not represented by a separate KiCad PCB. Contact-current/return derating,
+bottom-side keepouts, three-site tolerance/alignment, standoffs and 40-mm stack
+verification remain before fabrication. The local 1.8-V LDO part/output
+circuit and `SOM_PG` isolation path also remain open.
 
 ### 9.4 Single-channel first article
 
@@ -834,11 +929,11 @@ using the smaller dither range are not evidence for the current implementation.
 
 **Action/closure:** datasheet-review every regulator/supervisor/telemetry pin, PG threshold and startup condition; include inactive-domain clamp/back-power currents. Close reference source/sink and loop-stability budgets, unpowered PG behavior, current limits, inrush and worst-case temperature. Check shared REF5F dependency on L-side power and isolation of load currents from reference returns.
 
-### R14 — P0: Connector/footprint selections are not release-ready
+### R14 - P0: Connector mechanical integration and remaining connector selections
 
-**Evidence:** FX18 mating pair and special contacts unresolved; REDCUBE `746xxxxx`; stacker `TW-04-xxx-L-D`; three missing footprint links. Translator MPN uses SN74AXC8T245RHLR while the imported footprint/source naming uses RGY; equivalence has not been established by this audit.
+**Evidence:** J506/J603/J604 use the user-selected SEAF-40-05.0-L-06-2-A-K-TR footprint and the project-local 240-contact symbol. Conn1/J506 has the AP row-A map, a 30-contact `V12SOM` bank with `GND` perimeter, and a separate `V33_IF_IN` group with carrier-ground guard. J507/J508 are removed from the active design. The SEAR-40-30.0-06-85 interposers remain BOM-only. There is no routed carrier or pre-regulator PCB in this project. Contact-current/return derating, the unassigned spare contacts on J603/J604, the local 1.8-V LDO implementation and the `SOM_PG` isolation path remain open. The SN74AXC8T245 RHLR-to-RGY land-pattern equivalence remains a separate review item.
 
-**Action/closure:** verify every orderable MPN against package drawing/pin numbering/land pattern. Select complete 30 mm mating assemblies, power AND return capacity/derating, alignment, clearances and assembly tooling. Correct BOM and symbols before board routing relies on them.
+**Action/closure:** verify the Conn1 map against the mating pre-regulator/AP assemblies, qualify contact current/return sharing, confirm 40-mm stack tolerances, edge clearances, underside keepouts and mechanical standoffs. Assign the spare Conn2/Conn3 contacts and close the LDO and `SOM_PG` isolation details before routing or release.
 
 ### R15 — P1: Single-channel population and shared dependencies
 
@@ -985,13 +1080,11 @@ There is no ARM host-driver implementation in this repository.
   handling, availability or practical service. Do not shrink footprints solely
   by package name or library alias.
 
-**KiCad assignment audit (generated netlist, 2026-10-18):** 2,839 component
-instances have footprint properties; none is blank. Of 49 unique footprint
-IDs, 47 resolve in the project or installed KiCad libraries. Two IDs use the
-unregistered `BFDAC_Footprints` namespace: J506 FX18 and J507/J508 REDCUBE.
-J603/J604 have a standard 2x4 header footprint assigned, but their actual
-stacker MPN/height remains a placeholder. The only non-testpoint MPN
-placeholders are J507/J508 and J603/J604.
+**KiCad assignment audit (2026-10-18):** the counts and unresolved connector
+list below predate the SEAF symbol/footprint work and are superseded. Re-run
+the full footprint-library and MPN audit after the connector pin map is
+validated. J802 still has a generic 2x7, 2.00 mm header footprint and MPN
+`87832-1420`; its MPN/mating-part check remains open in the BOM.
 
 The current IC package assignments include 128 SN74LVC1G74DQER in the local
 TI DQE X2SON-8 footprint,
@@ -999,11 +1092,13 @@ TI DQE X2SON-8 footprint,
 footprint, three MAX22445/MAX22444 isolators in the local WSOIC-16 footprint,
 10 OPA1612AIDRGR in DRG WSON-8, four BUF634AIDDAR in DDA HSOIC-8 PowerPAD,
 four OPA1656 in SOIC-8, one ISO1640 in SOIC-8, two UCD90120A in QFN-64, four
-TMP117 in WSON-6, and four MT25QU02G in the local BGA-24 footprint. This is an
+TMP117 in WSON-6, and four Macronix MX66UM2G45G in the local 24-ball BGA
+footprint. This is an
 assignment snapshot, not proof that every land pattern matches its exact
 order code. In particular, resolve the RHL-versus-RGY translator land-pattern
-mapping and verify the Micron BGA ball/land pattern against the exact package
-drawing.
+mapping. The generator records the Micron BGA ball map only for the superseded
+part; the Macronix symbol/footprint use its own ball map. Retain exact
+MPN-to-drawing evidence for both density variants before release.
 
 **Thermal-first analog package decision (2026-10-18):** Use
 `OPA1612AIDRGR` in TI's DRG WSON-8 package (3 x 3 mm) and

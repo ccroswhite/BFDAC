@@ -7,14 +7,15 @@
 //   T2: bad-CRC record — crc_fail asserted, boot_ok = 0 (separate reset run)
 //   T3: ARM page program + read back (erase, program, read, verify 256 B)
 //   T4: target select — Flash 0 ops assert sel_flash0
-//   T5: carrier boot (2026-10-05, bom 18a) — chain on carrier chip 0 boots
+//   T5: Macronix carrier boot (bom 18b) - chain on carrier chip 0 boots
 //       with boot_src = 1; T1/T2 implicitly cover the fallback (empty carrier
 //       -> SoM Flash 1, boot_src = 0)
 //   T6: ARM program/read on carrier chip 1 (addr 0x1000_0000 -> cf_cs_sel 1,
-//       device sees 0x0000_0000) at the 25 MHz carrier rate
-// Flash model: mode-0 SPI slave, 4-byte-address command set (13/12/DC/06/05),
+//       device sees 0x0000_0000) at the 100 MHz carrier rate
+// Flash model: mode-0 SPI slave, 4-byte-address commands (0C/13/12/DC/06/05),
 // one sparse memory keyed by {device, address}; device = sel_target for the
-// SoM parts, 4 + cf_cs_sel for the carrier chips.
+// SoM parts, 4 + cf_cs_sel for the carrier chips. Carrier reads use 0Ch plus
+// eight dummy clocks; SoM reads retain 13h.
 // =============================================================================
 module tb_qspi_subsys;
 
@@ -26,7 +27,7 @@ module tb_qspi_subsys;
     // DUT wires
     logic [7:0]  cmd_opcode = '0, buf_wdata = '0, buf_waddr = '0, buf_raddr = '0, buf_rdata;
     logic [1:0]  cmd_target = '0;
-    logic        cmd_trigger = 0, cmd_busy, buf_we = 0;
+    logic        cmd_trigger = 0, cmd_busy, cmd_err, buf_we = 0;
     logic [31:0] cmd_addr = '0;
     logic        rd_req, rd_target, rd_active, rd_byte_valid, rd_done, rd_stall;
     logic [31:0] rd_addr;
@@ -51,7 +52,7 @@ module tb_qspi_subsys;
     qspi_flash_ctrl u_ctrl (
         .clk(clk), .rst_n(rst_n),
         .cmd_opcode(cmd_opcode), .cmd_target(cmd_target), .cmd_addr(cmd_addr),
-        .cmd_trigger(cmd_trigger), .cmd_busy(cmd_busy),
+        .cmd_trigger(cmd_trigger), .cmd_busy(cmd_busy), .cmd_err(cmd_err),
         .buf_wdata(buf_wdata), .buf_we(buf_we), .buf_waddr(buf_waddr),
         .buf_raddr(buf_raddr), .buf_rdata(buf_rdata),
         .rd_req(rd_req), .rd_target(rd_target), .rd_addr(rd_addr), .rd_len(rd_len),
@@ -61,6 +62,19 @@ module tb_qspi_subsys;
         .spi_sck(spi_sck), .spi_cs_n(spi_cs_n), .spi_mosi(spi_mosi),
         .sel_target(sel_target), .sel_flash0(sel_flash0), .cf_cs_sel(cf_cs_sel),
         .spi_miso(spi_miso)
+    );
+
+    qspi_flash_ctrl #(.CF_DEVICE_ADDR_BITS(27)) u_ctrl_1g_addr (
+        .clk(clk), .rst_n(rst_n),
+        .cmd_opcode(8'd0), .cmd_target(2'd0), .cmd_addr(32'd0),
+        .cmd_trigger(1'b0), .cmd_busy(), .cmd_err(),
+        .buf_wdata(8'd0), .buf_we(1'b0), .buf_waddr(8'd0),
+        .buf_raddr(8'd0), .buf_rdata(),
+        .rd_req(1'b0), .rd_target(1'b0), .rd_addr(32'd0),
+        .rd_len(24'd0), .rd_stall(1'b0), .rd_active(),
+        .rd_byte(), .rd_byte_valid(), .rd_done(),
+        .spi_sck(), .spi_cs_n(), .spi_mosi(), .sel_target(),
+        .sel_flash0(), .cf_cs_sel(), .spi_miso(1'b1)
     );
 
     qspi_boot_loader u_loader (
@@ -80,6 +94,35 @@ module tb_qspi_subsys;
         .m_axi_bresp(bresp), .m_axi_bvalid(bvalid), .m_axi_bready(bready)
     );
 
+    qspi_boot_loader #(.CF_DEVICE_ADDR_BITS(27)) u_loader_1g (
+        .clk(clk), .rst_n(rst_n), .start(1'b0),
+        .rd_req(), .rd_target(), .rd_addr(), .rd_len(), .rd_stall(),
+        .rd_active(1'b0), .rd_byte(8'd0), .rd_byte_valid(1'b0), .rd_done(1'b0),
+        .boot_done(), .boot_ok(), .crc_fail(), .axi_fail(), .format_fail(),
+        .record_count(), .boot_src(),
+        .ui_clk(ui_clk), .ui_rst(ui_rst),
+        .m_axi_awaddr(), .m_axi_awlen(), .m_axi_awsize(), .m_axi_awburst(),
+        .m_axi_awvalid(), .m_axi_awready(1'b0),
+        .m_axi_wdata(), .m_axi_wstrb(), .m_axi_wlast(), .m_axi_wvalid(),
+        .m_axi_wready(1'b0), .m_axi_bresp(2'b00), .m_axi_bvalid(1'b0),
+        .m_axi_bready()
+    );
+
+    // Carrier pins use the same common IOB-register latency as vu13p_dac_top.
+    logic carrier_sck_iob = 1'b0, carrier_mosi_iob = 1'b0;
+    logic [3:0] carrier_cs_n_iob = 4'hF;
+    always_ff @(posedge clk) begin
+        carrier_sck_iob  <= (sel_target == 2'd2) ? spi_sck : 1'b0;
+        carrier_mosi_iob <= spi_mosi;
+        for (int i = 0; i < 4; i++)
+            carrier_cs_n_iob[i] <= !((sel_target == 2'd2) && !spi_cs_n &&
+                                      (cf_cs_sel == 2'(i)));
+    end
+
+    wire flash_sck   = (sel_target == 2'd2) ? carrier_sck_iob : spi_sck;
+    wire flash_cs_n  = (sel_target == 2'd2) ? carrier_cs_n_iob[cf_cs_sel] : spi_cs_n;
+    wire flash_mosi  = (sel_target == 2'd2) ? carrier_mosi_iob : spi_mosi;
+
     // =========================================================================
     // Behavioral SPI flash model (mode 0, 4-byte addresses), device-indexed
     // =========================================================================
@@ -98,8 +141,9 @@ module tb_qspi_subsys;
     int          f_bitcnt;
     logic [7:0]  f_opcode;
     logic [31:0] f_addr;
-    int          f_phase;      // 0=opcode 1=addr 2=data
+    int          f_phase;      // 0=opcode 1=addr 2=data 3=fast-read dummy clocks
     int          f_addr_bytes;
+    int          f_dummy_clocks;
     logic [7:0]  f_out_byte;
     int          f_out_bit;
     logic        f_wip = 0;
@@ -111,21 +155,41 @@ module tb_qspi_subsys;
     logic miso_r = 0;
     assign spi_miso = miso_r;
 
-    always @(negedge spi_cs_n) begin
-        f_bitcnt = 0; f_phase = 0; f_out_bit = 7; f_dev = cur_dev();
+    time last_cf_rise = 0;
+    int cf_sck_period_errors = 0;
+    always @(posedge flash_sck) begin
+        if (sel_target == 2'd2 && !flash_cs_n) begin
+            if (last_cf_rise != 0 && ($time - last_cf_rise) != 10)
+                cf_sck_period_errors++;
+            last_cf_rise = $time;
+        end
+    end
+    always @(posedge flash_cs_n)
+        if (sel_target == 2'd2) last_cf_rise = 0;
+
+    always @(negedge flash_cs_n) begin
+        f_bitcnt = 0; f_phase = 0; f_out_bit = 7; f_dummy_clocks = 0; f_dev = cur_dev();
     end
 
-    always @(posedge spi_sck) begin
-        if (!spi_cs_n) begin
-            f_shift  = {f_shift[6:0], spi_mosi};
+    always @(posedge flash_sck) begin
+        if (!flash_cs_n) begin
             f_bitcnt = f_bitcnt + 1;
-            if (f_bitcnt % 8 == 0) begin
+            if (f_phase == 3) begin
+                f_dummy_clocks = f_dummy_clocks - 1;
+                if (f_dummy_clocks == 0) begin
+                    f_phase = 2;
+                    f_out_bit = 7;
+                end
+            end else begin
+                f_shift = {f_shift[6:0], flash_mosi};
+            end
+            if (f_phase != 3 && f_bitcnt % 8 == 0) begin
                 case (f_phase)
                     0: begin
                         f_opcode = f_shift;
                         f_addr   = 0;
                         case (f_opcode)
-                            8'h13, 8'h12, 8'hDC: begin f_phase = 1; f_addr_bytes = 4; end
+                            8'h13, 8'h0C, 8'h12, 8'hDC: begin f_phase = 1; f_addr_bytes = 4; end
                             8'h05:               begin f_phase = 2; end
                             8'h06:               ; // WREN — no payload
                             default:             f_phase = 2;
@@ -135,7 +199,12 @@ module tb_qspi_subsys;
                         f_addr = {f_addr[23:0], f_shift};
                         f_addr_bytes = f_addr_bytes - 1;
                         if (f_addr_bytes == 0) begin
-                            f_phase = 2;
+                            if (f_opcode == 8'h0C) begin
+                                f_phase = 3;
+                                f_dummy_clocks = 8;
+                            end else begin
+                                f_phase = 2;
+                            end
                             if (f_opcode == 8'hDC) begin
                                 for (int unsigned i = 0; i < 65536; i++)
                                     flash_mem[mkey(f_dev, {f_addr[31:16], 16'h0} + i)] = 8'hFF;
@@ -158,16 +227,16 @@ module tb_qspi_subsys;
     end
 
     // Output path: on falling SCK edge present next bit of the current byte
-    always @(negedge spi_sck) begin
-        if (!spi_cs_n && f_phase == 2 && f_opcode != 8'h12) begin
+    always @(negedge flash_sck) begin
+        if (!flash_cs_n && f_phase == 2 && f_opcode != 8'h12) begin
             if (f_out_bit == 7) begin
                 if (f_opcode == 8'h05)      f_out_byte = f_status;
-                else if (f_opcode == 8'h13) begin
+                else if (f_opcode == 8'h13 || f_opcode == 8'h0C) begin
                     f_out_byte = flash_mem.exists(mkey(f_dev, f_addr)) ? flash_mem[mkey(f_dev, f_addr)] : 8'hFF;
                     f_addr     = f_addr + 1;
                 end else f_out_byte = 8'hFF;
             end
-            miso_r    = f_out_byte[f_out_bit];
+            #8.0 miso_r = f_out_byte[f_out_bit]; // tCLQV max + estimated return-trace delay
             f_out_bit = (f_out_bit == 0) ? 7 : f_out_bit - 1;
         end
     end
@@ -242,6 +311,8 @@ module tb_qspi_subsys;
     task automatic reset_all;
         rst_n = 0; ui_rst = 1; start = 0;
         stall_axi_w = 0;
+        last_cf_rise = 0;
+        cf_sck_period_errors = 0;
         flash_mem.delete(); axi_mem.delete();
         repeat (10) @(posedge clk);
         rst_n = 1; ui_rst = 0;
@@ -388,10 +459,14 @@ module tb_qspi_subsys;
         reset_all();
         build_record(DEV_CF0, 0,   32'h0000_3000, 128, 0);
         build_record(DEV_CF0, 144, 32'h0004_0000, 32,  0);   // 144 = 16+128
-        wait_boot(4000);                                     // 25 MHz carrier rate
+        wait_boot(4000);                                     // 100 MHz x1 carrier FAST READ
         if (!(boot_ok && !crc_fail && !axi_fail && record_count == 2 && boot_src == 1'b1)) begin
             $display("FAIL T5: ok=%b crc=%b axi=%b cnt=%0d src=%b",
                      boot_ok, crc_fail, axi_fail, record_count, boot_src);
+            errors++;
+        end
+        if (cf_sck_period_errors != 0) begin
+            $display("FAIL T5: carrier SCK had %0d non-10ns periods", cf_sck_period_errors);
             errors++;
         end
         for (int w = 0; w < 8; w++) check_word(32'h0000_3000, w, 0);
@@ -444,6 +519,45 @@ module tb_qspi_subsys;
         test_bad_record_header(32'h3FFF_FFE0,64,"range crosses 1 GiB");
         test_bad_record_header(32'h0000_1001,64,"unaligned destination");
         test_bad_record_header(32'h0000_1000,65,"unaligned payload length");
+
+        // --- T9: four-device capacity and no-record-crossing rules ----------
+        $display("--- T9: coefficient record device-boundary checks (2-Gb / 1-Gb) ---");
+        if (u_ctrl.carrier_cs_index(32'h1000_0000) != 2'd1 ||
+            u_ctrl.dev_addr(2'd2,32'h1000_0123) != 32'h0000_0123 ||
+            !u_ctrl.carrier_addr_valid(32'h3FFF_FFFF) ||
+            u_ctrl.carrier_addr_valid(32'h4000_0000) ||
+            u_ctrl_1g_addr.carrier_cs_index(32'h0800_0000) != 2'd1 ||
+            u_ctrl_1g_addr.dev_addr(2'd2,32'h0800_0123) != 32'h0000_0123 ||
+            !u_ctrl_1g_addr.carrier_addr_valid(32'h1FFF_FFFF) ||
+            u_ctrl_1g_addr.carrier_addr_valid(32'h2000_0000) ||
+            !u_loader.cflash_record_fits(32'h0FFF_FFE0,32'd16) ||
+            u_loader.cflash_record_fits(32'h0FFF_FFF0,32'd64) ||
+            !u_loader_1g.cflash_record_fits(32'h07FF_FFE0,32'd16) ||
+            u_loader_1g.cflash_record_fits(32'h07FF_FFF0,32'd64) ||
+            u_loader_1g.cflash_record_fits(32'h2000_0000,32'd16)) begin
+            $display("FAIL T9: density-specific capacity/boundary predicate");
+            errors++;
+        end else begin
+            $display("T9 2-Gb/1-Gb per-chip record bounds: PASS");
+        end
+
+        // --- T10: reject a carrier command outside the selected density -----
+        reset_all();
+        @(posedge clk); cmd_target <= 2'd2; cmd_addr <= 32'h4000_0000;
+        cmd_opcode <= 8'h03; cmd_trigger <= 1'b1;
+        @(posedge clk); cmd_trigger <= 1'b0;
+        #1;
+        if (cmd_err !== 1'b1 || cmd_busy !== 1'b0 || spi_cs_n !== 1'b1) begin
+            $display("FAIL T10: out-of-range carrier command was not rejected");
+            errors++;
+        end
+        @(posedge clk); #1;
+        if (cmd_err !== 1'b0) begin
+            $display("FAIL T10: cmd_err was not a one-cycle pulse");
+            errors++;
+        end else begin
+            $display("T10 out-of-range carrier command rejection: PASS");
+        end
 
         if (errors == 0) $display("ALL TESTS PASS (tb_qspi_subsys)");
         else             $display("TESTS FAILED: %0d errors (tb_qspi_subsys)", errors);

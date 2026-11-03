@@ -167,12 +167,15 @@ set_property PACKAGE_PIN R27     [get_ports ext_rst_n]
 # -----------------------------------------------------------------------------
 # 6. FPGA-master I2S with asynchronously returning serial DATA
 # -----------------------------------------------------------------------------
-set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data}]
+set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data i2s_data2}]
 # J1 bank 71. BCLK/LRCLK are outputs; DATA is sampled with a qualified delay.
 # R27 (B71_L2_N, J1-A1) = ext_rst_n (5b).
+# H28 (B71_L11_N, J1-B16) = i2s_data2: second AP-domain source (host app
+# processor) via U503 ch2; selected by i2s_src_sel (SPI reg 0x1C bit 5).
 set_property PACKAGE_PIN H27     [get_ports i2s_bclk]
 set_property PACKAGE_PIN T27     [get_ports i2s_lrclk]
 set_property PACKAGE_PIN N28     [get_ports i2s_data]
+set_property PACKAGE_PIN H28     [get_ports i2s_data2]
 set_property DRIVE 4 [get_ports {i2s_bclk i2s_lrclk}]
 set_property SLEW SLOW [get_ports {i2s_bclk i2s_lrclk}]
 set_property IOB TRUE [get_cells {u_i2s_ingress/i2s_bclk_reg u_i2s_ingress/i2s_lrclk_reg}]
@@ -743,15 +746,16 @@ set_property PACKAGE_PIN AM25    [get_ports {qspi1_dq[3]}]
 # QSPI1 clock is shared CCLK via STARTUPE3 (no dedicated pin assignment needed)
 
 # -----------------------------------------------------------------------------
-# 11b. Carrier coefficient flash (bom item 18/18a, 2026-10-05)
-#      1..4 x Micron MT25QU02G on one x1 bus, bank 70 (J1, VCCIO_70 = V18;
-#      bank was 51/51 free, no cascode or clock neighbours). All four CS
-#      populated (4 x 2 Gb = 8 Gb = 90 filters at 10M taps; need 60+ = 30
-#      designs x {44.1k, 48k}; ruled 2026-10-05). SCK is a
+# 11b. Carrier coefficient flash (bom item 18b, Macronix selection)
+#      Four MX66UM2G45GXRI00 2-Gb devices on one x1 SPI bus, bank 70 (J1,
+#      VCCIO_70 = V18). All four CS populated. The 1-Gb MX66UM1G45GXDI00 uses
+#      the same land pattern/pin map; set CFLASH_DEVICE_ADDR_BITS=27 and limit
+#      the library to 44 full-size records. SCK is a
 #      user-IO forwarded copy of the engine clock, driven from an IOB
 #      register together with CS/MOSI (vu13p_dac_top cf_*_q).
-#      Engine rate for this target: clk_200m/8 = 25 MHz (qspi_flash_ctrl
-#      CF_CKDIV_LOG2 = 3). Series 33 R on CF_CLK, 10k pull-ups on CS_n/DQ2/DQ3.
+#      Engine rate for this target: clk_200m/2 = 100 MHz x1 SPI (qspi_flash_ctrl
+#      CF_CKDIV_LOG2 = 1). Reads use Macronix FAST READ4B (0Ch) + 8 dummy clocks.
+#      Series 33 R on CF_CLK, 10k pull-ups on CS_n and unused x8 SIO2/SIO3.
 # -----------------------------------------------------------------------------
 set_property IOSTANDARD LVCMOS18 [get_ports {cf_sck cf_cs_n[*] cf_dq[*]}]
 set_property DRIVE       8       [get_ports {cf_sck cf_cs_n[*] cf_dq[*]}]
@@ -764,33 +768,29 @@ set_property PACKAGE_PIN H38     [get_ports {cf_cs_n[2]}]   ;# B70_L1_N  J1-A25
 set_property PACKAGE_PIN G37     [get_ports {cf_cs_n[3]}]   ;# B70_L2_P  J1-B29
 set_property PACKAGE_PIN H36     [get_ports {cf_dq[0]}]     ;# B70_L4_P  J1-A23  MOSI
 set_property PACKAGE_PIN G36     [get_ports {cf_dq[1]}]     ;# B70_L4_N  J1-A22  MISO
-set_property PACKAGE_PIN H34     [get_ports {cf_dq[2]}]     ;# B70_L5_P  J1-B20  WP#
-set_property PACKAGE_PIN G34     [get_ports {cf_dq[3]}]     ;# B70_L5_N  J1-B19  HOLD#/RESET#
+set_property PACKAGE_PIN H34     [get_ports {cf_dq[2]}]     ;# B70_L5_P  J1-B20  SIO2 (unused in x1)
+set_property PACKAGE_PIN G34     [get_ports {cf_dq[3]}]     ;# B70_L5_N  J1-B19  SIO3 (unused in x1)
 
-# Timing: the forwarded SCK is an ordinary registered output (not a clock
-# in the STA sense). Outputs leave the same IOB register set on clk_200m, so
-# the SCK/MOSI/CS relationship is fixed by the engine (MOSI changes on the
-# SCK-low half, 20 ns before the rising edge). MISO is sampled by the engine
-# 20 ns after the SCK falling edge it launched; budget = 20 ns - t_CLQV(7 ns)
-# - clk-to-out(~4 ns) - 2x connector/trace(~2 ns) - IBUF+route(~4 ns) ≈ 3 ns
-# slack at 25 MHz. Constrain the MISO input as a system-synchronous path to
-# clk_200m with the external delay accounted for (max = tco + tCLQV + trace).
+# Timing: SCK/CS/MOSI are registered outputs on clk_200m. The carrier x1
+# engine samples MISO once per SCK period (two clk_200m cycles at 100 MHz).
+# Keep the conservative 13 ns external MISO delay; the resulting path and
+# board return delay must be checked after placement/routing before release.
 set_input_delay  -clock [get_clocks clk_200m] \
     -max 13.0 [get_ports {cf_dq[1]}]
 set_input_delay  -clock [get_clocks clk_200m] \
     -min  1.0 [get_ports {cf_dq[1]}]
-# The engine samples MISO on a 25 MHz tick: 4 clk_200m cycles after the
-# launching register edge -> multicycle 4 (setup) / 3 (hold) on this path.
-set_multicycle_path 4 -setup -from [get_ports {cf_dq[1]}] \
+# Carrier SCK is 100 MHz (10 ns period = 2 clk_200m cycles). The SoM targets
+# retain their own STARTUPE3 timing and are not constrained by this carrier path.
+set_multicycle_path 2 -setup -from [get_ports {cf_dq[1]}] \
     -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*]}]
-set_multicycle_path 3 -hold  -from [get_ports {cf_dq[1]}] \
+set_multicycle_path 1 -hold  -from [get_ports {cf_dq[1]}] \
     -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*]}]
-# Outputs: quasi-static relationship to the flash is set by the engine's
-# 20 ns half-period, not by clk_200m; only require they stay in the IOB.
+# Outputs: SCK has a 10 ns carrier period; keep SCK/CS/MOSI registered in IOBs.
 set_output_delay -clock [get_clocks clk_200m] \
     -max 2.0 [get_ports {cf_sck cf_cs_n[*] cf_dq[0]}]
 set_output_delay -clock [get_clocks clk_200m] \
     -min 0.0 [get_ports {cf_sck cf_cs_n[*] cf_dq[0]}]
+# SIO2/SIO3 are static-high unused data lanes in x1 mode.
 set_false_path -to [get_ports {cf_dq[2] cf_dq[3]}]
 
 # -----------------------------------------------------------------------------

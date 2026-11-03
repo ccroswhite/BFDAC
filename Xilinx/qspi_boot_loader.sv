@@ -8,12 +8,14 @@
 // stages every record into DDR4, CRC-checked. No ARM involvement;
 // coef_ready gates the FIR coefficient loader (dac_coef_subsys filter loads).
 //
-// Boot source (2026-10-05, bom item 18a): with BOOT_FROM_CARRIER = 1 the chain
-// is read from the carrier coefficient flash first (rd_target = 1). If the
-// very first header there carries no magic (device absent, erased or
+// Boot source (Macronix carrier selection, bom item 18b): with
+// BOOT_FROM_CARRIER = 1 the chain is read from carrier x1 SPI first
+// (rd_target = 1). If the very first header there carries no magic (device absent, erased or
 // unprogrammed) the loader restarts once from SoM Flash 1 (rd_target = 0).
 // boot_src reports which device the chain came from. A magic mismatch AFTER
 // at least one record is the normal end-of-chain on either device.
+// Carrier records must fit within one device and within the density-selected
+// four-chip address space; CF_DEVICE_ADDR_BITS is 28 for 2-Gb or 27 for 1-Gb.
 //
 // Flash record format (16-byte header, little-endian fields, packed records):
 //   [0]  magic     32'h42464443 ("BFDC")  — 32'hFFFFFFFF (erased) = end chain
@@ -29,7 +31,8 @@
 // =============================================================================
 module qspi_boot_loader #(
     parameter logic [31:0] MAGIC             = 32'h42464443,
-    parameter bit          BOOT_FROM_CARRIER = 1'b1
+    parameter bit          BOOT_FROM_CARRIER = 1'b1,
+    parameter int unsigned CF_DEVICE_ADDR_BITS = 28
 ) (
     // --- clk (ctrl, 200 MHz) domain -------------------------------------------
     input  logic        clk,
@@ -52,7 +55,7 @@ module qspi_boot_loader #(
     output logic        boot_ok,        // all records staged, CRCs pass
     output logic        crc_fail,
     output logic        axi_fail,
-    output logic        format_fail,    // rejected address/length outside AXI contract
+    output logic        format_fail,    // rejected DDR geometry or carrier-flash boundary/capacity
     output logic [7:0]  record_count,
     output logic        boot_src,       // device the chain was read from (== rd_target)
 
@@ -185,6 +188,22 @@ module qspi_boot_loader #(
     logic [31:0] rec_dest, rec_len, rec_crc;
     wire [32:0] rec_end_addr = {1'b0, hdr_acc[63:32]} +
                                {1'b0, hdr_acc[95:64]};
+    localparam logic [32:0] CFLASH_CAPACITY_BYTES =
+        33'd1 << (CF_DEVICE_ADDR_BITS + 2);
+    function automatic logic cflash_record_fits(input logic [31:0] start_addr,
+                                                 input logic [31:0] payload_len);
+        logic [32:0] end_exclusive;
+        logic [31:0] last_addr;
+        begin
+            end_exclusive = {1'b0, start_addr} + 33'd16 + {1'b0, payload_len};
+            last_addr = end_exclusive[31:0] - 32'd1;
+            return end_exclusive <= CFLASH_CAPACITY_BYTES &&
+                   (start_addr >> CF_DEVICE_ADDR_BITS) ==
+                   (last_addr >> CF_DEVICE_ADDR_BITS);
+        end
+    endfunction
+    wire carrier_record_supported =
+        !rd_target || cflash_record_fits(cur_addr, hdr_acc[95:64]);
     wire record_header_supported =
         (hdr_acc[63:62] == 2'b00) && (hdr_acc[35:32] == 4'b0000) &&
         (hdr_acc[95:88] == 8'b0) && (hdr_acc[67:64] == 4'b0000) &&
@@ -244,11 +263,20 @@ module qspi_boot_loader #(
                 end
 
                 F_HDR_REQ: begin
-                    rd_addr <= cur_addr;
-                    rd_len  <= 24'd16;
-                    rd_req  <= 1'b1;
-                    hdr_cnt <= '0;
-                    if (rd_active) fst <= F_HDR_RX;
+                    if (rd_target &&
+                        ({1'b0, cur_addr} >= CFLASH_CAPACITY_BYTES ||
+                         !cflash_record_fits(cur_addr, 32'd0))) begin
+                        format_fail <= 1'b1;
+                        boot_done   <= 1'b1;
+                        boot_ok     <= 1'b0;
+                        fst         <= F_DONE;
+                    end else begin
+                        rd_addr <= cur_addr;
+                        rd_len  <= 24'd16;
+                        rd_req  <= 1'b1;
+                        hdr_cnt <= '0;
+                        if (rd_active) fst <= F_HDR_RX;
+                    end
                 end
 
                 F_HDR_RX: begin
@@ -268,7 +296,7 @@ module qspi_boot_loader #(
                     // carrier device -> floating MISO in sim) falls into the
                     // fallback / end-of-chain branch rather than parsing.
                     if (hdr_acc[31:0] == MAGIC) begin
-                        if (!record_header_supported) begin
+                        if (!record_header_supported || !carrier_record_supported) begin
                             format_fail <= 1'b1;
                             boot_done   <= 1'b1;
                             boot_ok     <= 1'b0;

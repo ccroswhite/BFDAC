@@ -4208,3 +4208,699 @@ User: "both" - DCOFF gates + offline DC-free breaker scan.
       dual-CCHD-957 enable/shared-XOCLK topology. Physical enable VIH/VIL,
       oscillator switching/reclock timing, routed timing/CDC and hardware
       qualification remain open.
+
+2026-10-26: Tub-1 AC entry + auto 115/230 VAC select drawn (bom 17p,
+ACENTRY sheet, on_board=no): IEC/switch/fuse/MOVx3/CM choke/X2+Y2 chain,
+22R/10W series soft-start + K900 timed bypass (~1.65 s TLC555 arm),
+single G2RL DPDT select relay with series/230 V fail-safe default,
+LM393+TLV431 secondary-side sense on the 9 VAC aux rail, D817 latch,
+R||C coil economizers. Transformers now THT on the Tub-1 PCB - J701/J702
+deleted, 8 per-diode 100n+22R snubbers added on PREREG. All MPNs
+PROPOSED pending user validation; transformer pinout/footprint TBD at
+part receipt. Regenerated; pinmap + xcheck PASS.
+
+2026-10-26 - ACENTRY geometry rebuilt + root-cause fixes (bom 17p follow-up):
+* Found the 'annotation errors' root cause: Samtec_SEAF40 emitted (text)
+  elements inside library symbol units -> the ENTIRE bfdac.kicad_sym failed
+  to parse silently (KiCad reported all 158 bfdac uses as lib_symbol_issues
+  and behaved as if everything was unannotated). Fixed: dropped the text
+  elements; lib now parses (sym upgrade passes, ERC lib issues gone).
+* Rebuilt ACENTRY on reach rules: vertical discretes >=17 mm pitch,
+  horizontal D >=20 mm, box symbols >=45 mm. Fixed transformer 30 mm
+  pitch (stub overlap), 13 mm diode pitch, 10 mm MOV/Y-cap stacks, and the
+  U810/R816 + D818/D819 label collisions. Post-check: union-find shows
+  zero merged nets, zero floating labels; AC9_1 super-net resolved.
+* Generator now emits (no_connect) on unmapped pins: 832 pre-existing
+  pin_not_connected errors on J603/J604 + J7703/J7704 SEAF pass-through
+  connectors cleared.
+* Fixed: Y2 fp alias (_MKS4 suffix), relay fp aliases to real library
+  names, snubber-R local labels on global AC6 nets (same_local_global),
+  5x bad PWR_FLAGs on LDO-driven V4P3_x (pin_to_pin), prereg refs
+  renumbered +7000 (real duplicate refs vs refs sheet).
+* ERC final: 0 errors, 7 warnings - 4x AC18_* isolated labels (18VAC ->
+  +-16.2/8.3 V Tub-1 section never drawn; documented OPEN item j),
+  2x CASB2_M/P doc ties, 1x GND/SNS_V33FF_L label - all pre-existing.
+* Relay shortlist for user review logged in bom 17p item (k):
+  K901 = G2RL-24-DC5 (drawn) vs RT424005 vs JW2SN-DC5V;
+  K900 = G5LE-14-DC5 (drawn) vs RT114005-class.
+
+* Relay pin maps VERIFIED against manufacturer figures (bom 17p item (d)
+  CLOSED). G5LE-14-DC5: coil 2/5, COM 1, NO 3, NC 4 (user-supplied
+  internal-connections figure). G2RL-24-DC5: coil datasheet 1/8 =
+  footprint A1/A2; datasheet COM 3/6 = 11/21, NC 2/7 = 12/22,
+  NO 4/5 = 14/24 (IEC pad names cross-checked vs pad positions).
+* Replaced custom bfdac:RLY_SPDT/RLY_DPDT box symbols (wrong pin map:
+  coil 1/2, sequential contacts) with stock Relay:G5LE-1 / Relay:G2RL-2;
+  rewired place() net maps to physical pin numbers. Regen clean,
+  ERC 0 errors / 6 known warnings, xcheck + SEAF pinmap PASS.
+* RELAY SELECTION LOCKED (user 2026-10-27, 'go with the Omron devices'):
+  K900 = G5LE-14-DC5 SPDT 10 A, K901 = G2RL-24-DC5 DPDT 8 A, both 5 V
+  coil, both THT on Tub-1. bom 17p item (k) closed; TE/Schrack
+  RT424005 / RT114005 kept on record as alternates only.
+
+2026-10-27 - CM choke L900 selected + schematic pin-pair bug fixed (bom 17p item (e) CLOSED):
+* Evaluated mains CM chokes for the ~140 VA @ 115 V (~1.3 A RMS) load:
+  Schaffner RN212-2-02-1M8 (2 A/1.8 mH toroid, ~5.3k DigiKey stock),
+  Wurth WE-CMB 744822222 (2 A @ 70 degC / 2.2 mH - rejected, 33-wk
+  factory LT), TDK/EPCOS B82733V2192B001 (15 mH frame-core - rejected:
+  OPEN FRAME construction, not potted/enclosed; also backordered to
+  2027) and B82733F2232B001 (best availability/inductance but same
+  open-frame objection + horizontal mount).
+* LOCKED (user): Schaffner RN222-2-02-6M8 - 2 A / 6.8 mH / 156 mOhm,
+  300 VAC, 1500 VAC w-w / 4000 VAC w-case, ENEC+UL+VDE, fully potted
+  UL94V-0 housing, THT vertical (31 x 18 x 29.6 mm). ~3.8x the CM
+  inductance of the RN212 baseline; self-shielding toroid = safe next
+  to the R-core transformers. ~2.1k DigiKey stock (817-2206-ND).
+  Second source on record: RN212-2-02-1M8 (10 x 15 mm grid, different fp).
+* PIN-PAIR BUG found during datasheet verification: the drawn
+  bfdac:CM_CHOKE symbol paired L through pins 1/4 and N through 2/3,
+  but the RN-series windings are (1-2) and (3-4) - as soldered each
+  winding would have bridged AC_L to AC_N (dead short at the fuse).
+  Symbol redrawn: winding A pins 1-2 = line, winding B pins 3-4 =
+  neutral; verified on regenerated sheet (1=AC_L_F, 2=AC_L_FILT,
+  3=AC_N_SW, 4=AC_N_FILT; dotted ends 1 & 3 same column = compensated).
+* New footprint bfdac:Common_Mode_Choke_Schaffner_RN222 (15 x 12.5 mm
+  pin grid, 18 x 31 mm body, O1.1 drills); old 4P placeholder deleted.
+* Regen + KiCad 10 normalize; ERC 0 errors / same 6 known warnings;
+  xcheck PASS; SEAF pinmap PASS; ACENTRY union-find zero merged nets.
+
+2026-10-27 - Power-entry module J900 selected; SW900 + board fuse deleted:
+* Evaluated Schurter PEMs (C14 + fuse + switch + filter in one chassis
+  part) vs the drawn 3-part chain (6100.3100 inlet + chassis rocker +
+  F900 on Keystone clips). User found DD12.9111.111 (10 A, 1-pole fuse);
+  review of the full datasheet variant table changed the pick.
+* LOCKED (user confirmed DigiKey stock): DD12.4121.111 (486-1294-ND) -
+  4 A standard filter (2x1.5 mH CM choke + 100n X2 + 2x2.2n Y2 + 1M
+  bleed) + 2-pole fuseholder + 2-pole rocker, screw-on A portrait,
+  6.3 mm QC tabs. Internal order inlet->fuse->switch->filter (fuse
+  first = protects everything; switch kills the whole filter).
+* Variant rulings: 4 A over 10 A (5x the CM inductance - same can,
+  fewer turns per amp - at 3x load margin); 2-pole fuse fuses BOTH
+  legs for Schuko/reversible-plug markets; standard filter over
+  medical M5 (Cy wanted for CM attenuation; total chassis Y ~13.8 nF
+  -> ~0.5 mA leakage @230 V < 3.5 mA Class-I limit). Ground-choke
+  variant 3-102-855 noted, not taken (thin stock, RoHS flags).
+* Accessories to order: 4301.1401 Fingergrip 2-pole drawer (required,
+  module ships without it) + RC320 rear cover + 2x 0001.2509 T2A.
+  Panel: 29.8 x 49.3 mm portrait cutout, 2x M3, ~60 mm depth.
+* Schematic: J900 pins are now the PEM load-side tabs (AC_L_IN/AC_N_IN/
+  AC_PE); MOVs + L900 inputs rewired onto them; SW900/F900 place calls,
+  swm PARTS entry, bfdac:SW_2P symbol and Fuse_ClipPair_5x20mm
+  footprint all deleted. Fuse pins made global-label class to match
+  J900 (same_local_global_label fixed pre-ERC).
+* Regen + KiCad 10 normalize; ERC 0 errors / same 6 known warnings;
+  xcheck PASS; SEAF pinmap PASS; 132 wires / 0 dangling / 0 merged.
+* WIRE ENTRY added (user: solder-direct, 14 AWG): the PEM swap removed
+  the board's only mains landing (the deleted fuse clips) - J910 = 3x
+  O2.3 mm solder pads on 15 mm pitch (fp Mains_SolderPad_14AWG_3P, 10 mm
+  pad-edge clearance) at the AC-zone edge; same AC_L_IN/AC_N_IN/AC_PE
+  nets as J900 (the wires ARE the net). Harness: 14 AWG stranded,
+  insulated FASTON-250 receptacle on the DD12 tab end, soldered into
+  J910 on the board end; wire-tie strain relief within ~25 mm. Regen
+  clean: ERC 0 errors / 6 known warnings; xcheck + pinmap PASS.
+* WIRE ENTRY REVISED (user: Phoenix COMBICON, preferred method): J910
+  solder pads replaced by a rated connector pair - board header =
+  Phoenix MSTBV 2,5/3-GF-5,08 (order 1777086, 3-pos 5.08 mm vertical,
+  threaded screw flange, 12 A / 320 V III/2 / 4 kV surge, UL94 V0) on
+  stock fp ..._ThreadedFlange_MountHole so the flange screws bolt
+  through the board and plug/pull + 14 AWG wire stiffness never loads
+  the solder joints; wire-side plug = MSTB 2,5/3-STF-5,08 (order
+  1777992, screw-clamp tension sleeve 0.2-2.5 mm2 = 24-12 AWG incl.
+  14 AWG, M3 flange screws 0.3 Nm). PEM end unchanged: insulated
+  FASTON-250 receptacles on the DD12 tabs. Custom
+  Mains_SolderPad_14AWG_3P footprint deleted from the generator +
+  bfdac.pretty. Regen + KiCad 10 normalize: ERC 0 errors / 6 known
+  warnings; xcheck PASS; SEAF pinmap PASS; 135 wires / 0 dangling;
+  J910 pins verified 1=AC_L_IN / 2=AC_N_IN / 3=AC_PE.
+* SURGE CLAMPS UPGRADED (user ruling, option A "premium"): 3x S14K275
+  baseline replaced - RV901 (L-N differential) = Littelfuse
+  TMOV14RP275E thermally-protected MOV (275 VAC / 430 V var / 6 kA,
+  2-lead so it drops into the existing 7.5 mm disc fp; internal
+  thermal disconnect = opens safely at end-of-life instead of a hot
+  short). RV902/903 (L-PE, N-PE common-mode) = Bourns ISOM5-275-B-L2
+  IsoMOV hybrid MOV+GDT (275 VAC MCOV, 10 kA Imax, <10 uA leakage @
+  MCOV, ~30 pF - GDT isolates the MOV from small transients so it
+  doesn't age, and blocks ALL steady-state PE leakage; end-of-life
+  blows the line fuse cleanly per Bourns). New fp
+  bfdac:Varistor_IsoM5_D14_P10.0mm - IsoM5 leads are on 10 mm pitch,
+  NOT the 7.5 mm MOV pitch (tape-spec R dimension, verified). TVS
+  ruled out on the primary: wrong energy class for mains surge -
+  secondary-side TVS stays an option. Closes open item (g) MOV-vs-GDT.
+  Regen + KiCad 10: ERC 0 errors / 6 known warnings; RV901=TMOV /
+  RV902+903=IsoM5 verified on sheet.
+* UNIVERSAL-INPUT ARCHITECTURE PARKED (2026-10-28, user): the purchased
+  R-core transformers are believed to have single primaries (no
+  alternate/tapped windings) - the drawn K901 primary-select chain
+  (relay + sense-before-select logic) assumes DUAL 115 V primaries and
+  is therefore PROVISIONAL until the vendor winding spec arrives.
+  Dual-secondary count also unknown until receipt. Decision deferred -
+  new open item (l) in bom.md 17p. Options recorded for the re-review:
+  (1) rewind/reorder with dual 115 V primaries, keep K901 as drawn;
+  (2) move K901 to the secondary side switching series/parallel
+  secondaries (SELV relay - needs dual secondaries per rail);
+  (3) drop the select relay entirely - single 230 V primary with
+  secondaries ratio'd for 115 V operation so first-stage regulation
+  absorbs ~2x input at 230 V (V4P3 OK on TPS7A4501 20 V max; +-18 VAC
+  chain would need a new HV first stage - ~50 V peak; aux rail needs
+  a ~12 V clamp for the TLC555; R900 pulse re-check; transformer VA
+  ~2x at 230 V); (4) 115 V-only product. No schematic change made.
+* SHARED-RAIL PRE-REG STAGES DRAWN (2026-10-28, user ruling: design the
+  +-15 V and 8 V rails for 115/120 VAC mains; stop evaluating 230 V -
+  universal input stays parked under bom 17p(l)). Closes 17p open item
+  (j); new bom item 17q. PREREG bottom strip: T902 2x18 VAC series-aided
+  18-0-18 -> 4x STPS10L60D (2 per polarity) + RC snubbers -> +-24 V raw
+  (2x 10 mF/50 V per rail + film + bleeder) -> U7801 LM317 = P16A
+  +16.24 V / U7802 LM337 = N16A -16.24 V (Susumu 240/2.87k, 10 uF/50 V
+  in/out caps, 1.5k min-load bleeders, ~4 W each -> tub heatsink).
+  T903 9 VAC -> 4x STPS10L60D bridge + snubbers -> ~12 V raw (2x 10
+  mF/25 V) -> U7901 TPS7A4501 = V8P3 8.35 V (59k/10k). Outputs on the
+  pre-allocated shared SEAF pads of both J7703/J7704. Plain LM317/337
+  over the HV variants / cap-multipliers: ~8 V in-out at 115 V basis,
+  the carrier LT3045/LT3094 POLs own the noise budget.
+  Debug trail: (1) first pass shorted N16A to GND - output bypass cap
+  and bleeder were on a 12.7 mm vertical pitch and their 6.35 mm pin
+  stubs met at one coordinate; spread all three rails' cap/bleeder
+  pairs to 15-16 mm. (2) REFS_L rails-table PWR_FLAGs on P16A/N16A/V8P3
+  became pin_to_pin errors against the new regulator OUT pins - removed
+  (same rule as V4P3_x), names kept as text. (3) CT tie was first done
+  by stacking GND + AC18_2 + AC18_3 labels on PREREG; KiCad then named
+  the merged ground net "AC18_2" and xcheck failed 33 checks (every
+  GND-referenced BRINGUP/COL check) - moved the tie to T902's S2/S3 pins
+  on ACENTRY so GND stays GND; VERIFY winding dots at receipt (reversed
+  pair => tie S2+S4). Final: ERC 0 errors / 2 warnings (CASB2 doc ties
+  only; the 4 AC18 isolated-label warnings are gone), xcheck PASS, SEAF
+  pin-map PASS, PREREG union-find clean.
+
+* ACENTRY REWIRED FOR TAPPED-PRIMARY TRANSFORMERS (2026-10-30).
+  Original transformer order slipped to next year; replacement set
+  procured from Alibaba R-core listings and LOCKED AS FINAL (user
+  ruling - no alternate-part fallback; receipt checks are wiring
+  confirmation only) - all tapped 0/115/230 V
+  primaries + SCN electrostatic screen: T900/T901 = 2x RN-20 2x6 V/2.5 A
+  (parallel both windings, dot-ends together; T900 ~42% duty at ~2.1 A
+  RMS, T901 ~38%), T902 = 1x RN-35 4x18 V/0.7 A (parallel pairs then
+  series-aided -> 18-0-18 CT ~57%/winding), T903 = 1x RN-10 2x9 V/0.83 A
+  (winding 1 -> V8P3, winding 2 -> dedicated aux on new AC9A_1/AC9A_2
+  nets feeding VSEL_AUX - galvanic split from V8P3, improvement over the
+  shared-winding plan). bom 17n transformer-set sentence revised, 17q
+  basis note updated.
+  UNIVERSAL INPUT UN-PARKED - bom 17p(l) resolved by a fifth option not
+  in the parked list: K901 no longer crosses two primaries (series/
+  parallel); it picks which TAP gets the line feed - COM = AC_L_SS,
+  NC = TAP230 bus (de-energized = safe 230 V, unchanged fail-safe),
+  NO = TAP115 bus (energized on low-line detect). Both G2RL-2 poles
+  paralleled for contact margin. P0 -> AC_N_FILT on all four; SCN ->
+  AC_PE. Sense-before-select chain unchanged (aux charges on the safe
+  tap, LM393 samples the 200k/36.5k divider, D817 latches).
+  Chassis-mounted transformer leads land on Phoenix wire-to-board
+  connectors LOCKED 2026-10-30 (user): Phoenix MSTBV 2,5/4-GF-5,08 =
+  1777099 for all positions (4-pos 5.08 mm vertical, threaded flange,
+  12 A / 320 V; mate MSTB 2,5/4-STF-5,08, 14-24 AWG):
+  J920/22/24/26 = 4-pos primary (0V/115tap/230end/SCN->PE), J921/23/27 =
+  4-pos secondary, J925+J928 = 2x 4-pos secondary (T902 quad). Winding parallels
+  and the T902 CT tie are done in board copper at the connector - every
+  winding gets its own pins; GND tie still lives at the transformer
+  side, not label-stacked. New symbols XFMR_TP4S (8p) / XFMR_TP8S (12p);
+  footprints still TBD placeholders pending vendor mechanicals.
+  Note drawn on sheet: the idle tap stays live (~115 V on TAP115 at
+  230 V mains, ~230 V on TAP230 at 115 V mains) - both buses are
+  mains-domain for creepage. Open: dot/lead-color verify at receipt,
+  connector MPNs + tap-bus creepage, fuse re-check at 230 V, threshold
+  re-derivation vs measured regulation. Verify: regen, ERC 0 errors /
+  2 known warnings, xcheck PASS, SEAF pin-map PASS.
+
+* V12SOM SOURCE DRAWN - Mean Well LRS-200-12 (2026-10-30, user ruling;
+  un-parks the 17(d) 12 V switcher). PS900 = enclosed chassis SMPS,
+  200 W / 12 V / 17 A, universal 90-264 VAC input - its mains feed
+  taps AC_L_IN/AC_N_IN/AC_PE on new header J930 (1777086, 3-pos)
+  UPSTREAM of the L900 CM choke + CX901 X2: parallel with the linear
+  mains at board entry, so the choke+X2 sit BETWEEN the SMPS and the
+  transformer primaries (SMPS->linear EMI barrier, reciprocal
+  attenuation; SMPS keeps MOV + DD12 + internal filtering toward the
+  cord; own inrush limiting, no tap-select needed). DC side: J931 = 3 x V12SOM + J932 = 3 x GND, both
+  1777086 (3 paralleled 12 A pins per pole = 36 A vs ~15 A planning
+  figure), polarity-marked on-sheet per user ruling: J931 value
+  '+12V' -> Conn1/J506 V12SOM bank (C2-C11/D2-D11/E2-E11, west edge,
+  closest to SoM); J932 value '12V-' -> J506 GND perimeter. Note: the
+  SMPS mains nets stay LOCAL labels per ACENTRY convention (AC_* are
+  sheet-internal); first pass used globals and drew two
+  same_local_global_label warnings - fixed to match. bfdac:PSU_ACDC
+  box symbol added (all-passive pins, chassis doc symbol like the
+  transformers). Still open: tub-side SEAF mate physically carrying
+  V12SOM to carrier J506's 30-contact bank (same gap as V33_IF_IN),
+  LRS-200 mounting/airflow, output trim setting. Verify: regen, ERC
+  0 errors / 2 known warnings, xcheck PASS, SEAF pin-map PASS.
+
+* SMPS EMI topology + harness dress (2026-10-30, after user question on
+  mains-noise bleed): J930 mains tap moved UPSTREAM of L900/X2 so the
+  CM choke sits between the SMPS and the transformer primaries - the
+  conducted barrier is reciprocal at zero cost (SMPS keeps MOV + DD12
+  + internal filter toward the cord). Concern ranking clarified on
+  sheet: the caged LRS-200 is a small point source; the real path is
+  the WIRING - LAYOUT note added: twist J930 L/N, keep clear of J92x
+  secondary bundles (spatial coupling would bypass the copper barrier),
+  twist J931/J932 +- pair, cage bonded to chassis, distance from the
+  R-cores. Verify: regen, ERC 0 errors / 2 known warnings, xcheck PASS,
+  SEAF PASS.
+
+* AP POWER + ARCHITECTURE RULINGS (2026-10-30, user): (1) V12SOM is
+  SoM-EXCLUSIVE - nothing else may load it; the isolated-DC/DC-off-
+  V12SOM option for VAP_IO is REJECTED. (2) VAP_IO = alternate 5 V
+  source, user to select (separate from V12SOM; candidates: second
+  small SMPS off the J930 upstream-mains node - its output is
+  floating by construction which the GND_AP domain needs - or an
+  external 5 V inlet). (3) AP = XMOS alone CANNOT host the
+  phone-app API server (xCORE networking = lib_ethernet MAC + stale
+  xTCP; no credible TLS/HTTP/mDNS path); architecture = XMOS as
+  USB-audio engine (UAC2 endpoint + the FPGA's I2S slave TX) +
+  companion host processor = single SPI master to the FPGA
+  (rate/volume/filter/unmute) + API server + I2C telemetry + cal
+  uploads. XMOS<->host private link (UART/I2C/GPIO) lives entirely
+  inside GND_AP - zero new isolators, zero J506 changes, carrier
+  contract unchanged. No display/UI on the box; control = phone app
+  over network API. VAP_IO budget now ~6-10 W class (XMOS ~2 W +
+  host). Open: host class (MCU vs Linux SoM - decides whether
+  network audio streaming is possible later), network PHY (wired
+  Ethernet vs WiFi), the 5 V source part, whether the UAC
+  descriptor must offer DSD (FPGA contract is PCM-only).
+
+* AP PARTITION REVISED (2026-10-30, user ruling - supersedes the
+  "host = SPI master" line above): XMOS owns ALL FPGA-facing
+  communication - SPI master (every register write incl.
+  rate/valid/unmute), I2C master (telemetry, proxied to host), I2S
+  slave TX, and the source mux. The companion host is a pure
+  source+UI device: WiFi/Ethernet/Bluetooth + API server + decoders;
+  it never touches FPGA registers - all requests go over the
+  XMOS<->host private link (UART/I2C/GPIO, inside GND_AP) and XMOS
+  translates to the SPI contract. AUDIO LINK = FPGA-clock-domain
+  forwarding: the FPGA's BCLK/LRCLK fan out to the host's SAI port,
+  which runs as a SECOND I2S slave TX clocked by the DAC XO - the
+  whole audio path (USB, network, BT) is synchronous to the master
+  clock; NO ASRC, no drift. Single SDATA merge via a 2:1 mux gate
+  (SN74LVC2G157-class, XMOS selects: USB mode = XMOS drives, host
+  mode = host SDATA passes through) - preferred over XMOS
+  passthrough since a 1-bit pipeline offset would trip the FPGA
+  cadence_fault alignment check. Wire cost XMOS<->host: control
+  link + BCLK/LRCLK fwd + host SDATA = all inside GND_AP, zero
+  isolator/J506 impact. Sequencing: host requests rate -> XMOS
+  STREAM_RATE -> clocks_ready -> host starts SAI slave DMA ->
+  XMOS STREAM_VALID -> UNMUTE. Bluetooth-audio requirement forces
+  HOST = Linux SoM (BlueZ/A2DP/LDAC): CM4-class or i.MX8M Nano +
+  radio; VERIFY SoM SAI slave-mode support at BCLK <= ~24.6 MHz.
+
+* SECOND I2S SOURCE REALISED (2026-10-30, user ruling): the host app
+  processor becomes a second I2S slave TX sharing the FPGA's
+  BCLK/LRCLK, with its OWN return wire - no shared-SDATA mux needed.
+  Path: host SAI -> AP domain -> J506 pad 27 (AP_I2S_DATA2; pad
+  stolen from the 14-contact GND_AP field, 13 remain) -> U503
+  MAX22444CAWE+ channel 2 (was a tied-off spare; IN3/IN4 remain
+  spare - natural SOM_PG candidates) -> I2S_DATA2 -> FPGA pin H28
+  (B71_L11_N, J1-B16, the differential partner of I2S_BCLK) ->
+  top-level mux (i2s_src_sel ? i2s_data2 : i2s_data) ->
+  i2s_master_ingress. NEW REGISTER FIELD: SPI 0x1C bit [5] =
+  i2s_src_sel (0=XMOS/USB, 1=host); [4:0] stays rx_trim;
+  muted/source-stopped-only like the rest of that register - the
+  host decides the source, XMOS writes it, FPGA implements.
+  U503 is default-HIGH so R506 10k pull-down on I2S_DATA2 keeps
+  host-absent = silence. HOST PATH RTT ~35-55 ns worst -> clean to
+  192 kHz; 384 kHz on the host path still wants the resp_lag
+  parameter in i2s_master_ingress (open; also derisks the USB path
+  at 384k). AP part-selection criterion added: host must have an
+  SAI/I2S port capable of slave TX (i.MX8M does; CM4 TBD). Verify:
+  regen, ERC 0 errors / 2 known warnings, xcheck PASS, SEAF PASS.
+
+  XMOS DUAL-SPI VALIDATED (2026-10-30): lib_spi (v4, xcore-200 +
+  xcore.ai) = SPI master AND slave components, multiple concurrent
+  instances, 75 Mbps ceiling, all CPOL/CPHA. Ch1 = master to FPGA
+  (4x 1-bit ports + 1 clkblk + thread; mode-0 10-12.5 MHz trivial).
+  Ch2 = slave to host (4x 1-bit ports + 1 clkblk + thread; verified
+  25 Mbps, ~2 us CS-to-first-clock setup + ~2.3 us inter-transaction
+  gap - spidev cs_setup delay at host config). Host = SPI master on
+  the private link; add 1 GPIO IRQ line XMOS->host for async msgs
+  (USB rate change etc.) since a slave can't initiate. Whole-XMOS
+  port budget ~17x 1-bit + ~4 clkblk vs 48+/6-per-tile - fits.
+
+  SPI SPEED RE-RATE (2026-10-30, user: run the bus as fast as it can
+  for FPGA updates): isolator bandwidth is NOT the gate (150 Mbps at
+  1.8 V - a 50 MHz clock passes). The FPGA-side oversampled slave is:
+  SCLK needs ~15 ns half-periods for reliable edge capture at
+  clk_200m -> SPEC FAST MODE = 25 MHz (4 samples/half-period), ~33
+  MHz absolute ceiling, 50 MHz needs an SCLK-clocked slave domain
+  (redesign, not justified). MISO round trip ~60 ns at 1.8 V -> XMOS
+  samples MISO 1-2 cycles late at fast mode (port timing - trivial).
+  bom.md section 21 re-rated.
+
+AP/BASE-BOARD SHEET DRAWN (2026-11-01): ap.kicad_sch - separate PCB
+(on_board=no), ref block 850-899. XMOS XU316-1024-QF60B CONFIRMED
+(user: 3.3 V IO variant to match the committed AP domain; QF60A pin
+map verified, B shares die/package/pinout). USB v1 chain drawn per
+the two-moat model: J852 USB-B (shell->CHASSIS_PE) -> D851 USBLC6-2SC6
+ESD -> L851 CM choke -> U852 ISOUSB211DPR moat (side1 on cable VBUS
+via internal LDOs, side2 on VAP_IO; pin map verified SLLSFC5D Table
+4-1) -> U851 XMOS -> existing U501-504 carrier moat. USB_GND never
+meets GND_AP (ERC-clean). Support: U853 IS25LP016D QSPI boot flash
++ CS pull-up + BOOTSEL pull-down (QSPI-master mode), Y851 24 MHz xtal
++ Rf 1M + load caps (values TBD w/ crystal), L852 600R PLL_AVDD
+ferrite, 4.7k RST_N PU to VAP18 + 100n, J851 JTAG hdr placeholder
+(XTAG TBD), J853 2x10 host-SoM link placeholder (private SPI
+host=master, IRQ doorbell, I2S on FPGA clocks, AP_RST_N OD), TP850/851
+(VAP5, CHASSIS_PE). Power: VAP_IO=3.3V AP rail (regulated on-board
+from VAP5; crosses J506 to isolator supplies), VAP18=1.8V, VAP09=0.9V
+core; regulator tree + VAP5 source still open. New bfdac symbols:
+XU316_QF60 (3 units), ISOUSB211, USB_B, USBLC6, QSPI_FLASH. XMOS pin
+map: FPGA SPI X0D32/33/35/36, I2S X0D37/38+X0D40, I2C X0D41/42,
+AP_IRQ_N X0D43; host SPI slave X0D00/29/39/11 + IRQ X0D30; USB attach
+X1D16; SPDIF reserved X1D22 (NC). All non-XMOS MPNs PROPOSED pending
+user cross-check. Bugs found+fixed during ERC bring-up: PWR_FLAG
+needs snapped coords; passive rows need >= ~13 mm pitch (stub
+overlap shorted VAP09/GND_AP); Crystal_GND24 has stacked pins 2/4
+(case pads, same net = benign); dup refs vs som sheet (moved AP to
+850-899 block); VAP_IO/GND_AP already carry project flags.
+Verified: regen clean, ERC 0 errors / 2 known CASB2 warnings,
+xcheck PASS, SEAF PASS. bom.md item 23.
+
+QSPI FLASH RULED (2026-11-01, user): U853 = IS25LP016D-JBLE -
+ISSI SOIC-8 208mil variant (the stocked one: ~41k at DigiKey vs
+0 for the originally-proposed 150mil -JNLE). Footprint changed to
+Package_SO:SOIC-8_5.3x5.3mm_P1.27mm (std JEDEC 208mil - ISSI
+datasheet section 10.1 is the JEDEC package, no custom land
+pattern needed). Supply check: XMOS boot needs only SFDP-capable
+QSPI NOR (libquadflash self-configures, no fixed device list) at
+~20 MHz boot-ROM read - every 104-133 MHz candidate qualifies.
+Alternates same package: MX25V1635FM2I, W25Q32JVSSIQ; 150mil-only
+parts do not fit. Regen clean, ERC 0 errors / 2 known warnings,
+xcheck PASS.
+
+QSPI FLASH MAP NOTED (2026-11-01, user): U853 identity + memory
+map recorded for a future host-side upgrade path - JEDEC ID (9Fh)
+= 9D 60 15 (VERIFY Table 8.5 on first silicon), 2 MiB, 256 B page,
+4 kB uniform sectors. XMOS boot partition: loader+factory @0,
+CRC-versioned sector-aligned upgrades (loader picks highest valid,
+safe vs partial writes), data partition tail via
+--boot-partition-size. Host model: host AP does NOT share the
+QSPI bus (XMOS owns it for boot); upgrades go host -> XMOS
+SPI-slave -> libquadflash, or lib_xua USB DFU. Noted on the
+ap.kicad_sch sheet text + bom.md item 23. Regen clean.
+
+SOURCE-SELECT CONTROL MODEL RULED (2026-11-01, user): user picks
+the input in the app -> host AP sends SELECT_SOURCE over the
+private SPI link (host=master -> XMOS slave). If USB selected:
+XMOS enables the UAC2 audio interface, measures the negotiated
+stream rate, writes FPGA STREAM_RATE + handshake + src_sel=USB
+(SPI 0x1C bit5). If USB NOT selected: XMOS keeps UAC2 enumerated
+with the audio interface parked at alt-setting 0 (still reachable
+for control/DFU, cannot stream) - NOT a soft-detach - and writes
+src_sel=HOST/SPDIF. FPGA applies the new src_sel only at a mute
+boundary (existing muted-only rule). Symmetric rule: the losing
+source stops driving its I2S_DATA wire (host tri-states
+AP_I2S_DATA2 -> R506 pull-down = silence; XMOS idles I2S_DATA).
+Private-link command set (minimum): SELECT_SOURCE {USB, HOST_SAI,
+SPDIF(future)}, QUERY_STATUS (active src, rate, USB attach),
+optional SET_RATE_REQ; XMOS -> host doorbell on AP_IRQ_N for
+async events (USB attach/detach, rate change, stream fault) then
+host polls QUERY_STATUS. ~ms scale OK - all changes are
+mute-boundary.
+
+NETWORK-SOURCE FORMAT PATH (2026-11-01, user): for WiFi /
+Ethernet / Bluetooth sources the host AP owns stream ingestion
+AND decode - file/codec header parsing (FLAC, MP3, AAC, ALAC,
+LDAC, SBC, aptX, ...) happens entirely on the host; only PCM
+crosses AP_I2S_DATA2. Private-link additions: the host sends the
+selected device AND the decoded PCM format descriptor - extend
+the command set with SET_FORMAT {sample_rate, word_length,
+channels} sent at stream start AND on every track change
+(gapless albums with mixed rates = repeated SET_FORMAT). XMOS
+mirrors each accepted format to the FPGA via STREAM_RATE + the
+existing rate-change handshake (busy/applied/fault - same
+machinery as UAC2 rate changes) at a mute boundary. Ordering:
+host sends SET_FORMAT -> waits for XMOS doorbell/status confirm
+-> then enables SAI output; never starts mid-frame. Codecs that
+don't decode to the PCM rates the FPGA contract supports are
+host-side resampled or rejected at the app layer - the FPGA
+contract stays PCM-only.
+
+ERROR-PATH CLARIFICATION (2026-11-01): PCM-only contract CONFIRMED
+(user) - everything else unsupported. Correction to the "no path
+back" concern: the private SPI link IS the path back - every
+command returns a status word on the response leg (ACK /
+NAK_UNSUPPORTED_FMT / NAK_BUSY) so the host learns synchronously
+when a SET_FORMAT is rejected, and AP_IRQ_N + QUERY_STATUS expose
+the FPGA view (applied_rate, stream_fault, stream_clocks_ready,
+USB attach). Failure attribution: decode/corrupt-file errors are
+host-side (host owns decode, flags "unsupported file" itself);
+DAC-side rejects come back as command NAKs or QUERY_STATUS faults
+("format not supported by DAC"). Two distinct user messages.
+
+ERROR-AGGREGATION MODEL RULED (2026-11-01, user): the XMOS is the
+single error concentrator for the whole DAC. Chain: FPGA raises
+FPGA_IRQ_N (sticky errors, crosses the U50x moat) -> XMOS IRQ
+service reads the FPGA status registers over the control SPI
+(stream_fault, stream_clocks_ready, cal_write_reject_toggle,
+cal_commit_pending, automute events, dpd_deadline, boot status) ->
+XMOS merges them with ITS OWN faults (USB errors, SPDIF lock
+loss, flash-write failure, watchdog) into a unified error surface
+-> raises AP_IRQ_N doorbell -> host polls QUERY_STATUS and maps
+the code to a user notification. The host NEVER reads FPGA
+registers - every error arrives pre-digested through the XMOS.
+Spec implications: (a) the private-link protocol needs a shared
+error-code enum - FPGA status bits get translated to codes, not
+passed through raw; (b) QUERY_STATUS payload = active src + rate
++ error code + fault details; (c) severity classes: FATAL
+(stream stopped - user must act), WARNING (recovered - logged +
+notify), INFO (rate/source change, USB attach); (d) the same
+surface covers command NAKs (synchronous) and async faults
+(doorbell). Error enum to be defined in the firmware protocol doc
+alongside the FPGA status-map in spi_regs.svh.
+
+2026-11-01 (cont): USB VBUS transient protection added - D852 SMBJ5.0A
+(PROPOSED - Littelfuse; alternates same JEDEC DO-214AA/SMB land:
+ST SMBJ5.0A-TR ~37k DigiKey, Bourns/Eaton/YAGEO; smaller alternates
+SMAJ5.0A / PTVS5V0S1UR need a pad change). Ruling context: user
+asked whether reverse-polarity diodes were needed on the USB moat -
+answer NO: the USB-B connector is keyed so reverse VBUS is
+pathological, and a series diode drop would violate the ISOUSB211
+VBUS1 4.25 V minimum at a 4.75 V low-VBUS (a P-FET ideal diode
+would be the correct part if it were ever wanted). The real gap
+was VBUS transients: D851 USBLC6 protects D+/D- only - it uses
+VBUS as its clamp rail and does not clamp VBUS itself. D852 sits
+at J852's VBUS pin (USB_VBUS -> USB_GND, cable-side island),
+5 V standoff / Vbr 6.4-7.0 / Vclamp 9.2 V @ 65.3 A / 600 W -
+kills the fast edge, C851/C852 absorb residue; sustained
+overvoltage is not covered (not a real failure mode on a keyed
+USB-B with no PD negotiation). SMBJ5.0A chosen for the 600 W
+rating + deepest multi-vendor drop-in availability on one
+footprint; no vendor land pattern needed (JEDEC DO-214AA).
+Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
+warnings. Recorded in bom.md item 23.
+
+2026-11-01 (cont): AP power-tree direction settled in discussion
+(implementation still open - the regulator tree is undrawn):
+- XMOS needs THREE external rails, no internal core LDO:
+  VAP_IO 3.3 V (VDDIO + USB_VDD33 + flash + isolator side-2s,
+  ~160-230 mA worst case), VAP18 1.8 V (VDDIOB18 + USB_VDD18 +
+  PLL_AVDD, ~30-50 mA), VAP09 0.9 V core (datasheet all-tiles
+  ceiling ~1-1.5 A; projected real use 0.3-0.6 A).
+- Regulator map: VAP09 = the ONLY buck (synchronous, ~2 A class);
+  VAP18 = LDO from VAP_IO (75 mW at 50 mA - buck would be wrong
+  trade); VAP_IO = the entry rail.
+- Entry-rail candidate PROPOSED by user: Mean Well RS-25-3.3
+  enclosed AC/DC 3.3 V / 6 A (~3 kVAC I/O isolation - dedicated
+  floating brick for the AP island, consistent with the parked
+  LRS-200 idea but right-sized). 6 A is ~24x our need; check RS
+  series is happy at ~4% load and mounting/airflow per layout
+  rules. HELD PENDING host-SoM input voltage (todo): if the SoM
+  wants 5 V, enter at 5 V (RS-25-5 / LRS-35-5) and regulate all
+  three rails on-board instead.
+- Sequencing collapse: if VAP_IO is the entry rail, the XMOS
+  sequence (IO rails -> core -> RST_N) reduces to ONE gated EN
+  on the VAP09 buck + a supervisor releasing RST_N on VAP09 PG -
+  the VAP18 LDO self-sequences off VAP_IO. Sequencer part still
+  open: LM3880-class hardware sequencer (dumb, deterministic)
+  vs AP-domain UCD90120A-class PMBus sequencer on the XMOS local
+  I2C (preferred direction - rail faults then flow into the
+  AP_IRQ_N/QUERY_STATUS error surface like everything else; same
+  part family as the two carrier UCDs).
+
+2026-11-01 (cont): USER RULING - the ENTIRE application island is
+powered by the Mean Well RS-25-3.3 (3.3 V / 6 A enclosed AC/DC,
+~3 kVAC I/O isolation = the island's own floating ground domain).
+Every other island voltage is derived on-board: VAP_IO = brick
+out directly, VAP18 = LDO, VAP09 = buck. The 6 A rating covers
+the WHOLE island not just the XMOS: XMOS ~0.3-0.5 A + host SoM
+~0.5-3 A + WiFi/BT ~0.3-1 A + Ethernet ~0.3-0.8 A + misc -> total
+~2-5 A, margin ~1.2-3x.
+Constraints this ruling bakes in (now binding):
+- Host SoM MUST accept 3.3 V input (or on-module regulators from
+  3.3 V) - 5 V-input-only modules are ruled out. Added to the
+  SoM selection criteria.
+- No 5 V peripherals on the island without a boost (e.g. a
+  future USB-A host port's VBUS would need 3.3->5 V).
+
+2026-11-01 (cont): USB connector RULED = USB-C (user), replacing the
+drawn USB-B. J852 is now a stock Connector:USB_C_Receptacle on
+footprint USB_C_Receptacle_HRO_TYPE-C-31-M-12 (16-pin USB 2.0-only
+receptacle, SMD + THT shield anchors, JLC-stocked std part;
+alternates Amphenol 12401610E4-2A / GCT USB4105 mid-mount).
+Presentation: board edge behind a MILLED face pocket - chassis
+wall 5-8 mm, no panel-mount part required (user ruling).
+Wiring: CC1/CC2 -> R855/R856 5.1k Rd pull-downs to USB_GND
+(advertises UFP device, 5 V default - no PD); A6/B6 D+ and A7/B7
+D- strapped via shared symbol pins; SuperSpeed TX/RX + SBU NC
+(XMOS PHY is USB 2.0 HS 480 Mbps - ~20x the UAC2 384k/32b
+~24.6 Mbps requirement, so USB 3.0 is irrelevant). Shell still
+bonds to CHASSIS_PE, never to USB_GND/GND_AP. Custom bfdac:USB_B
+symbol removed from the emitted library. The earlier "keyed
+connector" arguments carry over unchanged - USB-C is also keyed,
+and a UFP with no PD still only ever sees 5 V on VBUS. Verify:
+regen clean, ERC 0 errors / 2 known CASB2 warnings, xcheck PASS.
+
+2026-11-01 (cont): USB-C connector part picked - J852 = GCT
+USB4085-GF-A (PROPOSED - user cross-check; ~27.7k Newark + more
+incoming, ~40k element14). USER RULING: cage/shell must be
+through-hole for max durability -> went one better: USB4085 is
+the ONLY USB-C receptacle found where BOTH the shell stakes AND
+all 16 signal pins are through-hole (16 active + 8 dummy/retention
+stakes, GCT selection guide: PCB pin type = thru-hole, shell
+stake = thru-hole). Stainless shell, gold flash, 10-20k cycles,
+5A/48V, R/A top-mount. Stock KiCad footprint
+USB_C_Receptacle_GCT_USB4085 uses the same A1-A12/B1-B12/SH pad
+numbering as the stock symbol = drop-in, zero schematic rewiring.
+Trade-off noted: THT leads add ~1-2mm stub inductance vs SMD -
+acceptable at USB-HS 480 Mbps edge rates, mechanical retention
+wins. Hybrid alternates recorded (SMD pins + THT cage): HRO
+TYPE-C-31-M-12 (JLC-stocked, assembly fallback), Wurth
+632723300011, Amphenol 12401610E4-2A. Milling note for chassis:
+pocket must admit the plug BOOT (~12x7mm min, ~14x8 for chunky
+plugs) since the USB-C tongue is only ~6.5mm - it can never reach
+a socket face behind 5-8mm of wall. Verify: regen clean, ERC 0
+errors / 2 known CASB2 warnings; emitted sheet shows the new fp.
+
+2026-11-01 (cont): J852 = GCT USB4085-GF-A confirmed by user ->
+RULED. (Correction to the record: hybrid parts DO also have THT
+shell stakes - but USB4085 is the only full-THT receptacle, pins
+and cage alike, so it is strictly the best answer either way.)
+
+2026-11-01 (cont): AP-island power entry DRAWN - PS901 = Mean Well
+RS-25-3.3 RULED (user): dedicated 3.3 V / 6 A enclosed brick for
+the ENTIRE AP island (XMOS + host SoM + radios + Ethernet ~2-5 A;
+its I/O isolation floats GND_AP).  ACENTRY: J933 = 3-pos Phoenix
+MSTBV 2,5/3-GF-5,08 mains feed tapping AC_L_IN/AC_N_IN/AC_PE
+upstream of the CM choke, same as J930.  AP sheet (the AP section
+of the primary-reg board): J854 = 4-pos Phoenix MSTBV
+2,5/4-GF-5,08 (1777099) DC landing - ** POLARITY ** pins 1-2 =
++3.3 V (VAP_IO), pins 3-4 = -V return (GND_AP), mirroring the
+brick's paired output terminals.  VAP5 STRUCK - the brick feeds
+VAP_IO directly: J853 host-link pin 1 repointed VAP5 -> VAP_IO,
+TP850 now a VAP_IO probe, sheet text rewritten.  Remaining AP
+power-tree work: VAP18 LDO + VAP09 buck + sequencer/RST_N
+supervisor (todo 9).  Verify: regen clean, xcheck PASS, ERC 0
+errors / 2 known CASB2 warnings.
+
+2026-11-01 (cont): XMOS rail budgets pulled from the XU316-1024-QF60B
+datasheet (S14.6 Power Consumption) and the regulator tree settled
+two rulings:
+
+- VAP09 (0.9 V core): I(VDD) max 1.11 A @ 800 MHz grade (0.83 A @
+  600 MHz).  BUCK RULED (user) = TI TPS628502DRLR - 2 A
+  peak-current-mode sync buck, SOT583, ~25 mOhm FETs, +/-1 % VOUT in
+  PWM (0.9 V tolerance is +/-5 %), PG output feeds the RST_N chain,
+  MODE pin -> forced-PWM (no PFM burst smear on the island) +
+  external clock sync 1.8-4 MHz.  ~90-92 % at 3.3->0.9 V/1 A vs
+  ~85-87 % TLV62569 and ~89-91 % TLV62585 - low-side FET RDS(on)
+  dominates at the 27 % duty cycle.
+- VAP18 (1.8 V): total ~55 mA max (USB_VDD18 36 mA max HS +
+  VDDIOB18 ~5-20 mA) -> LDO confirmed correct (a buck would buy
+  ~70 mW for worse noise + double the parts); candidate review in
+  progress.
+- Corrections: PLL_AVDD is a 0.9 V domain (0.855-0.945 V) -> hangs
+  off VAP09 behind the L852 ferrite, NOT VAP18; USB_VDD33 = 1 mA
+  in HS (25 mA only in FS tx) - VAP_IO stays dominated by VDDIO
+  drive + isolators.
+- Sequencing rules captured: rails monotonic + within ~50 ms of
+  each other; VDDIOL/R/T valid before RST_N release (boot straps
+  live on VDDIOL).
+
+2026-11-01 (cont): XMOS POWER TREE DRAWN on the AP sheet - user
+ruling "follow what XMOS has prescribed" = discrete sequencing,
+NOT a PMIC. The AP-domain UCD90120A idea is struck for this job:
+a $15 13-rail PMBus monitor for a 3-rail/1-pin sequence (the two
+carrier UCDs stay - they monitor 26 analog rail taps). Chain:
+
+- U854 TLV74318PDBVR (RULED, SOT-23-5): VAP_IO -> VAP18 fixed
+  1.8 V LDO, 300 mA on a ~55 mA rail, EN->VAP_IO always-on =
+  self-sequences off the entry rail. NOTE: the "P" suffix =
+  active output pulldown, NOT power-good - no PG pin exists
+  (earlier claim corrected). Rail validity is supervised.
+- U856 TPS389001DSET (PROPOSED - same part as carrier U1701/1702):
+  VDD=VAP_IO, SENSE watches VAP18 through R857/R858 39.2k/90.9k
+  (Susumu 0.05 %) = ~1.65 V trip vs the 1.62 V VDDIOB18 min,
+  MR->VDD, C882 CT delay. RESET open-drain + R859 10k pull-up =
+  AP09_EN -> the VAP09 buck cannot start until the 1.8 V IO bank
+  is proven = XMOS IO-before-core ordering for $0.70 total.
+- U855 TPS628502DRLR (RULED): VIN=VAP_IO, EN=AP09_EN, MODE->VIN
+  = forced-PWM, R861 0R COMP/FSET->GND = internal 2.25 MHz,
+  R862/R863 49.9k/100k FB -> 0.899 V + C881 Cff, L853
+  XAL4020-102MEC 1 uH shielded (PROPOSED, ~27 mOhm DCR),
+  C878 10u in / C879+C880 2x10u out. PG open-drain WIRE-ANDs
+  XMOS_RST_N alongside R854 pull-up + C861 delay -> reset
+  releases only when the LAST rail is up = XMOS Fig-27 order
+  VDDIO -> VDDIOB18 -> VDD -> RST_N proven transitively.
+- Key topology detail found while drawing: TPS389001 cannot watch
+  0.9 V (VITN=1.15 V) - it watches VAP18 instead, and the buck's
+  own PG certifies VAP09. One supervisor, zero ambiguity.
+- New bfdac symbols: TLV743P (SOT-23-5), TPS62850 (SOT-583-8);
+  TPS3890 symbol reused. VAP09 keeps a PWR_FLAG (arrives through
+  passive L853); VAP18 flag removed (now driven by U854.OUT).
+- Sheet text updated: POWER block rewritten, DEFERRED list no
+  longer names the regulator tree, XMOS POWER TREE text block at
+  the tree itself.
+Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
+warnings. bom.md item 23 updated.
+
+2026-11-01 (cont): power-tree VERIFY flags reviewed and closed:
+- C882 CT (U856): SBVS227 eq.1 verified - tPD(r) = CCT x 1.23 V /
+  1.15 uA = ~1.07 ms/nF -> 10 nF gives ~11 ms between VAP18-proven
+  and buck-EN release; staggers the core ramp inside XMOS's 50 ms
+  window. Keep 10 nF.
+- C881 Cff: WRONG VALUE FIXED - TPS62850x ds recommended-settings
+  table lists 10 pF for every output-voltage row; was 22 pF, now
+  GRM1885C1H100JA01D 10 pF C0G.
+- L853: specs pulled from Coilcraft - XAL4020-102MEC = DCR
+  13.3/14.6 mOhm typ/max (description corrected from ~27), Isat
+  8.7 A, Irms 9.6 A @ 40C; factory + disti stock ~12k. Alt on
+  record: XGL4020-102 (45% lower DCR).
+- Supply cross-checks: TLV74318PDBVR and TPS628502DRLR both ACTIVE
+  and broadly stocked (ti.com direct lists the buck low but disti
+  stock in the thousands); TPS389001DSET already a BOM part at
+  U1701/U1702. All PROPOSED flags remain for the user's own
+  distributor check per the rules.
+Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
+warnings.
+
+2026-11-01 (cont): VAP18 LDO RULED (user) = TLV74318PDBVR as drawn
+at U854. For the record: user surfaced TPS6285020MQDRLRQ1 during
+the search - rejected as a candidate; it decodes as the fixed-1.8V
+automotive BUCK variant of the VAP09 switcher family, not an LDO
+(a switcher on a 55 mA rail buys ~70 mW for an inductor + ripple
+on the USB_VDD18 PHY supply). Same-land SOT-23-5 alternates on
+record: TPS7A2018PDBVR, LP5907-1.8, TLV75518PDBVR. Verify: regen
+clean, xcheck PASS (MPN-text-only change, ERC baseline holds).
+
+2026-11-01 (cont): rail-presence LED audit complete - every LDO/buck
+output now has an indicator (user request). Three gaps found and
+filled on BRINGUP: (1) V4P3_LC (U705 TPS7A4501, the FF dual-mono
+split branch added after led_rails was written) -> direct LED,
+4.99k like the other 4.3 V branches. (2)+(3) VAP18/VAP09 ->
+MMBT3904-buffered like V18_PRESENT but re-referenced to the AP
+domain: base 4.7k from the rail (VAP09 @0.9V still forces beta ~8
+saturation), 1M pulldown, LED current ~500uA from VAP_IO through
+2.74k returning to GND_AP - moat never crossed. VAP09 lighting
+requires the U856/U855 sequence to complete = visible order check.
+Buffered-indicator tuple generalised to (source,title,supply,ret,
+rbase,rled,x,y). Also fixed stale "D9023" ref in the MANUAL TESTS
+text -> named "TEST_ACTIVE" (ref drifts when the list grows).
+xcheck synced: V4P3_LC in both tuples, AP buffered pair checked
+(R9116->VAP18, R9119->VAP09, R9118/R9121->VAP_IO, Q9002/Q9003
+emitter->GND_AP, values 4.7k/2.74k). Verify: regen clean, xcheck
+PASS (22 endpoints / 27 direct indicators), ERC 0 errors / 2
+known CASB2 warnings.

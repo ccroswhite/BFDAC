@@ -50,9 +50,10 @@ if ($env:TB_DEFINES) { $env:TB_DEFINES.Split(' ') | Where-Object { $_ } | ForEac
 $rc = Invoke-Stage "xvlog" "xvlog.bat" (@('-sv', '-i', "$dir\..") + $defs + $srcs)
 if ($rc -eq 0) { $rc = Invoke-Stage "xelab" "xelab.bat" @($tb, '-s', "${tb}_snap") }
 if ($rc -eq 0) { $rc = Invoke-Stage "xsim"  "xsim.bat"  @("${tb}_snap", '-runall') }
-if ($rc -eq 0 -and $tb -in @('tb_bench_controller', 'tb_bench_stimulus', 'tb_cell_measurement', 'tb_dac_ctrl_plane')) {
+if ($rc -eq 0 -and $tb -in @('tb_bench_controller', 'tb_bench_stimulus', 'tb_cell_measurement', 'tb_dac_ctrl_plane', 'tb_qspi_subsys')) {
     $result = Get-Content "$dir\${tb}_xsim.out" -Raw
-    if ($result -notmatch 'TB_PASS:' -or $result -match '(?m)^\s*(Fatal:|Error:|FAIL:|TB_FAIL:)') { $rc = 1 }
+    $passMarker = if ($tb -eq 'tb_qspi_subsys') { 'ALL TESTS PASS \(tb_qspi_subsys\)' } else { 'TB_PASS:' }
+    if ($result -notmatch $passMarker -or $result -match '(?m)^\s*(Fatal:|Error:|FAIL:|TB_FAIL:|TESTS FAILED)') { $rc = 1 }
 }
 "=== run end rc=$rc $(Get-Date) ===" | Out-File $log -Append
 exit $rc

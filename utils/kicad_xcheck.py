@@ -133,10 +133,12 @@ def main():
         if net_names.get(ep) != expected:
             errs += 1
             print("[BRINGUP] wrong GPIO/supply", ep, net_names.get(ep), "expected", expected)
-    led_rails = ("P16A", "N16A", "V8P3", "V4P3", "V12SOM", "V33CLK", "V33FF", "V33D",
+    led_rails = ("P16A", "N16A", "V8P3", "V4P3_LA", "V4P3_LB", "V4P3_LC", "V4P3_RA", "V4P3_RB",
+                 "V12SOM", "V33CLK", "V33FF_L", "V33FF_R", "V33D",
                  "V_ROFF_L", "P15A_L", "N15A_L", "VEE15_L", "VE1_L", "P5A_L", "V33RLY", "VAP_IO",
                  "V_ROFF_R", "P15A_R", "N15A_R", "VEE15_R", "VE1_R", "P5A_R")
-    led_resistors = ("28.7k", "28.7k", "13k", "4.99k", "20.5k", "3.01k", "3.01k", "3.01k",
+    led_resistors = ("28.7k", "28.7k", "13k", "4.99k", "4.99k", "4.99k", "4.99k", "4.99k",
+                     "20.5k", "3.01k", "3.01k", "3.01k", "3.01k",
                      "26.7k", "26.7k", "26.7k", "26.7k", "10.7k", "3.01k", "3.01k", "3.01k",
                      "26.7k", "26.7k", "26.7k", "26.7k", "10.7k", "3.01k")
     for i, rail in enumerate(led_rails):
@@ -159,7 +161,7 @@ def main():
         if values.get(refdes) != expected:
             errs += 1
             print("[BRINGUP] wrong 500uA LED driver resistor", refdes, values.get(refdes))
-    print("[BRINGUP] checked 16 GPIO/supply endpoints, 22 direct rail indicators and 500uA resistor/driver values")
+    print("[BRINGUP] checked 16 GPIO/supply endpoints, 27 direct rail indicators and 500uA resistor/driver values")
     unmapped_refs = sorted({r for r, _ in kpart if r not in {e[0] for e in all_mapped}})
     extra = [r for r in unmapped_refs if not r.startswith("#")]
     incell = [r for r in extra if len(r) > 4 and r[-4:].isdigit()]

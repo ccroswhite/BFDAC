@@ -47,7 +47,7 @@
 `define SPI_W_CELL_TEST_R      7'h19
 `define SPI_W_STREAM_RATE      7'h1A  // [2:0]={rate_shift[1:0],family48}; 24-bit PCM/32-bit slots
 `define SPI_W_STREAM_VALID     7'h1B  // [0]=AP source ready; zero on underrun/stop
-`define SPI_W_I2S_RX_TRIM      7'h1C  // [4:0]=extra DSP capture-delay cycles; muted/source stopped only
+`define SPI_W_I2S_RX_TRIM      7'h1C  // [4:0]=extra DSP capture-delay cycles, [5]=src_sel (0=XMOS/USB, 1=host); muted/source stopped only
 
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026

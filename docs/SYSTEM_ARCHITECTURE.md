@@ -823,6 +823,10 @@ The user's current enclosure partition has three cooled tubs:
 | Tub 2, middle | MuMetal sheet and thermal sink for main-board underside electronics, especially the FPGA/SoM and level shifters. |
 | Tub 3, top | Main-circuit tub and heat sink for top-side board components. It is inverted so its bottom face forms the enclosure top. |
 
+There are two principal PCB assemblies: one pre-regulator board in Tub 1 and
+one main circuit board. The three tubs are enclosure/thermal compartments, not
+three separate PCBs.
+
 The main carrier is one board assembly with the SoM/FPGA and level shifters on
 the underside; FF retimers, clock fanout, converter cells and I/V/V stages are
 on the top side. Level-shifter outputs transition through vias to the top-side
@@ -831,7 +835,12 @@ FFs.
 The current two-stage low-noise rail path is:
 
 ```text
-mains -> R-core transformer(s) -> rectifier/reservoir filtering
+IEC inlet -> mains switch -> fuse -> MOV/CM-choke/X2-Y2 protection
+      -> series soft-start resistor + timed relay bypass
+      -> auto 115/230 VAC primary-select relay (sense-before-select,
+         series/230 V fail-safe default; bom 17p, ACENTRY sheet)
+      -> R-core transformer(s), THT on the Tub-1 PCB
+      -> rectifier/reservoir filtering
       -> Tub 1 first-stage precision LDO per rail (~1 V above final)
       -> board-to-board power connector with dedicated return
       -> main-carrier final LDO at the intended load
@@ -840,8 +849,9 @@ mains -> R-core transformer(s) -> rectifier/reservoir filtering
 The exact first-stage voltage is rail- and LDO-specific, not a fixed 1 V:
 allow for the final LDO's PSRR headroom/dropout, load current, pre-regulator
 tolerance and connector drop. The FPGA switch-mode supply is also in Tub 1.
-Mains fusing, isolation, protective-earth/chassis bonding, inrush and
-primary-to-secondary creepage/clearance require a separate safety review.
+The AC-entry/mains chain is drawn on the ACENTRY sheet (bom 17p); creepage,
+clearance, PE bonding, primary-to-secondary isolation and the safety review
+items listed there still apply.
 
 Keep the two thermal paths distinct: Tub 2 serves underside electronics,
 especially the FPGA/SoM; Tub 3 removes heat from top-side circuitry. For
@@ -861,14 +871,38 @@ after board placement and routing.
 
 ### 8.3 Board-to-board interfaces
 
-Separate power and signal connector bodies are acceptable. Mounting hardware
-must carry mechanical loads rather than relying on connector contacts. The
-SoM-to-carrier mating interface and carrier-to-base connector stack have
-separate height/clearance budgets.
+The user selected Samtec `SEAF-40-05.0-L-06-2-A-K-TR` for the three main-board
+mezzanine sites and three `SEAR-40-30.0-06-85` interposers (one per site) for
+the 40-mm board separation. The SEAR is BOM/mechanical content only; it does not
+receive a PCB footprint or participate in the chassis 3MF. The supplied SEAF
+land-pattern drawing is used for the board-side footprint.
 
-Both analog entry groups carry the shared upstream rails. Local placement
-and return routing must implement the intended channel distribution;
-duplicated connectors on the same nets do not create independent supplies.
+On the main circuit board, all three SEAF sites are bottom-side: Conn1/J506
+on the west edge closest to the FPGA; Conn2/J603 north-center; and Conn3/J604
+south-center.
+The corresponding pre-regulator-board connectors use the same SEAF land
+pattern. North/east/south are defined in the board's top-view compass frame;
+"bottom" means the B.Cu side. Mounting hardware must carry mechanical loads
+rather than relying on connector contacts. The footprint and schematic define
+the part and contact mapping, but a carrier PCB layout and routed keepouts are
+not yet present.
+
+Each site uses a project-local 240-pin symbol (40 contacts per row x six rows)
+and a 240-pad footprint, numbered A1-F40 in row-major order. Conn1/J506 keeps
+the AP signal map on row A, carries 30 `V12SOM` contacts with a `GND` perimeter,
+and has a separate four-contact `V33_IF_IN` supply with a carrier-`GND` guard
+for the local 1.8 V interface LDO. `VAP_IO/GND_AP` power the AP and AP-side
+isolator supplies and remain separate from carrier-side power. The Conn1 map is recorded in
+`docs/SEAF_PIN_ASSIGNMENTS.md`; J507/J508 are removed as separate 12-V
+terminals. The local LDO part/output circuit, `SOM_PG` isolation path and
+connector-current derating remain open; no carrier or pre-regulator PCB layout
+is represented here.
+
+J603/J604 currently assign row-A pads 1-8 to the shared upstream rails with
+dedicated returns; their remaining contacts are unassigned pending the
+mating pre-regulator-board map. Their duplicated connections do not create
+independent supplies; channel current distribution remains determined by the
+pre-regulator wiring and main-board rail layout.
 
 ### 8.4 Layout requirements
 
@@ -893,11 +927,11 @@ the local electrical/routing requirements justify them.
 
 ### 8.5 Mechanical and assembly deliverables
 
-The hardware handoff must include an approved floorplan, connector mating
-drawings, thermal mounting details, stackup, electrical constraints and
-assembly variants. Exact board-to-board connector part numbers and
-footprints remain selection work; provisional family names are not
-manufacturing specifications.
+The hardware handoff must include an approved floorplan, verified SEAF/SEAR
+mating drawings, thermal mounting details, stackup, electrical constraints and
+assembly variants. The SEAF MPN is selected and its land pattern is captured;
+contact-map review, tolerance/alignment analysis, board keepouts and routed
+clearance remain manufacturing gates.
 
 The first article may populate one analog channel while retaining shared
 infrastructure. The population matrix must explicitly preserve shared
@@ -1193,7 +1227,7 @@ BOM, component drawings or implementation evidence.
 | Stream-mode control and I²S | [stream_rate_controller](../Xilinx/stream_rate_controller.sv), [i2s_master_ingress](../Xilinx/i2s_master_ingress.sv) |
 | DSP chain | [dac_dsp_core](../Xilinx/dac_dsp_core.sv), FIR/halfband modules, [noise_shaper_ef3](../Xilinx/noise_shaper_ef3.sv), [dem_sort](../Xilinx/dem_sort.sv) |
 | Predistortion and calibration memory | [dpd_engine](../Xilinx/dpd_engine.sv), [cal_coef_store](../Xilinx/cal_coef_store.sv) |
-| Filter transport/storage | Micron MT25QU02G-class carrier NOR, SoM DDR4, [coefficient subsystem](../Xilinx/dac_coef_subsys.sv), flash/boot-loader modules |
+| Filter transport/storage | Selected carrier part: four Macronix `MX66UM2G45GXRI00` devices, x1 SPI at a 100 MHz target, with 4-byte Fast Read `0x0C` and eight dummy clocks; the part's x8 OPI mode is not used. Four 1-Gb `MX66UM1G45GXDI00` devices share the same ball map/land pattern and CS pins, but the library is limited to 44 full-size records by per-device boundaries (2-Gb default: 88). The [flash controller](../Xilinx/qspi_flash_ctrl.sv) density parameter changes the local address width; SoM DDR4 and the [coefficient subsystem](../Xilinx/dac_coef_subsys.sv) remain. Kingston EMMC04G-CT32-02DB0 was evaluated but not selected; it would require an eMMC host migration. |
 | Audio clock source/distribution | Crystek CCHD-957 family; LMK1C1108 fanouts; FPGA MMCM for digital domains |
 | DATA translation and reclocking | SN74AXC8T245 family and SN74LVC1G74 per-cell FFs |
 | Current cells | THAT300 arrays, DMMT5551 steering pairs and precision tail/base networks |

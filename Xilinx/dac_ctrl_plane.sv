@@ -100,6 +100,7 @@ module dac_ctrl_plane (
     output logic          stream_rate_toggle,
     output logic          stream_source_valid,
     output logic [4:0]    i2s_rx_trim,
+    output logic          i2s_src_sel,
     input  tri0           stream_busy,
     input  tri1           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
@@ -314,7 +315,7 @@ module dac_ctrl_plane (
                 end
             end
             `SPI_W_I2S_RX_TRIM: begin
-                if (ctrl_bus_data[23:5] != 0) begin
+                if (ctrl_bus_data[23:6] != 0) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (cmd_unmute || stream_source_valid || bench_busy || stream_busy) begin
@@ -531,6 +532,7 @@ module dac_ctrl_plane (
             stream_rate_toggle <= 0;
             stream_source_valid <= 0;
             i2s_rx_trim <= 5'd8;
+            i2s_src_sel <= 1'b0;
             cmd_unmute      <= 1'b0;
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
@@ -589,7 +591,10 @@ module dac_ctrl_plane (
                             stream_source_valid <= ctrl_bus_data[0];
                             if (!ctrl_bus_data[0]) cmd_unmute <= 0;
                         end
-                        `SPI_W_I2S_RX_TRIM: if (!wr_rejected) i2s_rx_trim <= ctrl_bus_data[4:0];
+                        `SPI_W_I2S_RX_TRIM: if (!wr_rejected) begin
+                            i2s_rx_trim <= ctrl_bus_data[4:0];
+                            i2s_src_sel <= ctrl_bus_data[5];
+                        end
                         `SPI_W_UNMUTE: if (!wr_rejected) cmd_unmute <= ctrl_bus_data[0];
                         `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: if (!wr_rejected) begin
                             cell_test_cfg[cell_test_channel] <= ctrl_bus_data[7:0];

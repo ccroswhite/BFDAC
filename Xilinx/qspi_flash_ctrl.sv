@@ -6,17 +6,16 @@
 // Single x1-SPI engine shared by ALL flash devices:
 //   target 0 = SoM Flash 1 (128 MiB coefficient store) — dedicated bank-65 pins
 //   target 1 = SoM Flash 0 (bitstream/config)          — via STARTUPE3 (FCSBO/DO/DI)
-//   target 2 = carrier coefficient flash (bom item 18/18a, 2026-10-05):
-//              1..4 x MT25QU02G (2 Gb = 256 MiB each) on one shared bus,
+//   target 2 = carrier coefficient flash (bom item 18b):
+//              4 x Macronix MX66UM2G45GXRI00 (2 Gb = 256 MiB each) on one bus,
 //              bank-70 user IOs, user-IO forwarded SCK (NOT the CCLK).
-//              addr[29:28] selects the chip (cf_cs_sel), addr[27:0] goes to
-//              the device. A single op must not straddle a 256 MiB boundary
-//              (the image layout tool guarantees this; records are <= 12 MB).
+//              With CF_DEVICE_ADDR_BITS=28, addr[29:28] selects the chip and
+//              addr[27:0] goes to it. The 1-Gb build uses 27 local address bits
+//              and addr[28:27] chip selection. An op must not straddle a chip.
 //   target 3 = reserved (aliased to 2 so a stray register value cannot hang)
 // SCK for targets 0/1 is the shared CCLK (STARTUPE3.USRCCLKO); the top level
-// forwards spi_sck to the carrier pin only while sel_target == 2. All targets
-// run at 25 MHz: SoM devices are conservatively down-clocked pending an exact
-// Flash-1 MPN/timing confirmation; the carrier divider also yields 25 MHz.
+// forwards spi_sck to the carrier pin only while sel_target == 2. SoM targets
+// remain at 25 MHz; the carrier target is x1 SPI at 100 MHz.
 // Only the selected CS is ever asserted. Pin muxing lives in the top level.
 //
 // Supersedes flash_bridge.sv:
@@ -31,8 +30,8 @@
 // ARM command set (cmd_opcode):
 //   0x01 = Erase 64 KB sector   (WREN -> 0xDC+A32 -> poll WIP)
 //   0x02 = Program 256 B page   (WREN -> 0x12+A32+page_buffer -> poll WIP)
-//   0x03 = Read 256 B page      (0x13+A32 -> read_buffer)
-// SCK = clk/8 = 25 MHz (mode 0).
+//   0x03 = Read 256 B page      (SoM 0x13; carrier 0x0C+A32+8 dummy -> buffer)
+// Carrier SCK = clk / 2^CF_CKDIV_LOG2 (default 1 -> 100 MHz, mode 0).
 //
 // Watchdog (2026-08-28): ARM commands are aborted (CS deasserted, busy
 // released, cmd_err pulsed) if not complete within WDT_CYCLES. Default
@@ -42,7 +41,8 @@
 // =============================================================================
 module qspi_flash_ctrl #(
     parameter int unsigned WDT_CYCLES    = 32'h4000_0000, // ~5.4 s @ 200 MHz
-    parameter int unsigned CF_CKDIV_LOG2 = 3              // carrier SCK = clk / 2^N (3 -> 25 MHz)
+    parameter int unsigned CF_CKDIV_LOG2 = 1,             // carrier SCK = clk / 2^N (1 -> 100 MHz)
+    parameter int unsigned CF_DEVICE_ADDR_BITS = 28       // 28 for 2 Gb, 27 for 1 Gb
 )(
     input  logic        clk,           // 200 MHz ctrl clock
     input  logic        rst_n,
@@ -53,7 +53,7 @@ module qspi_flash_ctrl #(
     input  logic [31:0] cmd_addr,
     input  logic        cmd_trigger,   // single-cycle pulse
     output logic        cmd_busy,
-    output logic        cmd_err,       // single-cycle pulse: watchdog abort
+    output logic        cmd_err,       // single-cycle pulse: watchdog or invalid carrier address
 
     // Page buffer (ARM writes bytes before a 0x02 program)
     input  logic [7:0]  buf_wdata,
@@ -80,7 +80,7 @@ module qspi_flash_ctrl #(
     output logic        spi_mosi,
     output logic [1:0]  sel_target,    // which device owns the bus (see header)
     output logic        sel_flash0,    // 1 = drive Flash 0 via STARTUPE3 (== sel_target == 1)
-    output logic [1:0]  cf_cs_sel,     // carrier chip index (addr[29:28]) for the current op
+    output logic [1:0]  cf_cs_sel,     // carrier index: addr[CF_DEVICE_ADDR_BITS+1:CF_DEVICE_ADDR_BITS]
     input  logic        spi_miso
 );
 
@@ -90,10 +90,20 @@ module qspi_flash_ctrl #(
 
     assign sel_flash0 = (sel_target == TGT_SOM0);
 
-    // Carrier device address: top 4 bits are chip select / unused, the device
-    // sees 28 bits. SoM targets pass the full 32-bit address through.
+    localparam logic [31:0] CF_DEVICE_ADDR_MASK =
+        32'hFFFF_FFFF >> (32 - CF_DEVICE_ADDR_BITS);
+
+    // Carrier chip-local address width depends on the populated density.
     function automatic logic [31:0] dev_addr(input logic [1:0] tgt, input logic [31:0] a);
-        return (tgt == TGT_CARRIER) ? {4'd0, a[27:0]} : a;
+        return (tgt == TGT_CARRIER) ? (a & CF_DEVICE_ADDR_MASK) : a;
+    endfunction
+
+    function automatic logic [1:0] carrier_cs_index(input logic [31:0] a);
+        return 2'((a >> CF_DEVICE_ADDR_BITS) & 32'd3);
+    endfunction
+
+    function automatic logic carrier_addr_valid(input logic [31:0] a);
+        return (a >> (CF_DEVICE_ADDR_BITS + 2)) == 0;
     endfunction
 
     // Buffers
@@ -106,7 +116,7 @@ module qspi_flash_ctrl #(
         buf_rdata <= read_buffer[buf_raddr];
 
     // ------------------------------------------------------------------------
-    // Bit engine: mode-0 SPI, SCK = clk/8. One "op" = CS low, shift tx_bits
+    // Bit engine: mode-0 x1 SPI. One "op" = CS low, shift tx_bits
     // header bits (MSB first), then either shift page bytes out (program) or
     // clock rx_bytes in (read), then CS high. WIP polling handled by the FSM
     // as separate short ops.
@@ -136,19 +146,24 @@ module qspi_flash_ctrl #(
                                   // (guards rx: the last header rising edge
                                   // must not be sampled as data)
 
-    // SCK edge enable: both SoM and carrier targets run at 25 MHz by default.
+    // SoM targets use a fixed /8 SCK. Carrier half-period is configurable;
+    // CF_CKDIV_LOG2=1 toggles each clk_200m cycle for a 100-MHz carrier SCK.
     logic tick;
-    logic [CF_CKDIV_LOG2-2:0] cf_div;
+    localparam int unsigned CF_DIV_WIDTH = (CF_CKDIV_LOG2 > 1) ? CF_CKDIV_LOG2 - 1 : 1;
+    logic [CF_DIV_WIDTH-1:0] cf_div;
+    logic cf_tick;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             ckdiv  <= '0;
             cf_div <= '0;
         end else begin
             ckdiv  <= ckdiv + 2'd1;
-            cf_div <= cf_div + 1'b1;
+            if (CF_CKDIV_LOG2 > 1)
+                cf_div <= (&cf_div) ? '0 : cf_div + 1'b1;
         end
     end
-    assign tick = (sel_target == TGT_CARRIER) ? (&cf_div) : (&ckdiv);
+    assign cf_tick = (CF_CKDIV_LOG2 <= 1) ? 1'b1 : (&cf_div);
+    assign tick = (sel_target == TGT_CARRIER) ? cf_tick : (&ckdiv);
 
     // Pause the stream (hold SCK low between bytes) on consumer back-pressure
     logic pause;
@@ -180,6 +195,11 @@ module qspi_flash_ctrl #(
     logic [39:0] op_hdr;
     logic [5:0]  op_hdr_bits;
     logic [23:0] op_bytes;
+    logic [3:0]  op_dummy_clocks;
+    logic [3:0]  dummy_clocks_left;
+    logic [1:0]  op_rx_skip;
+    logic [1:0]  rx_skip_left;
+    logic        dummy_phase;
     logic        op_write, op_capture, op_stream;
 
     always_ff @(posedge clk) begin
@@ -193,6 +213,8 @@ module qspi_flash_ctrl #(
             hdr_sr        <= '0;
             hdr_bits      <= '0;
             data_bytes    <= '0;
+            dummy_clocks_left <= '0;
+            rx_skip_left  <= '0;
             buf_ptr       <= '0;
             rx_sr         <= '0;
             tx_byte       <= '0;
@@ -200,6 +222,7 @@ module qspi_flash_ctrl #(
             capture_rx    <= 1'b0;
             stream_mode   <= 1'b0;
             data_phase    <= 1'b0;
+            dummy_phase   <= 1'b0;
         end else begin
             rd_byte_valid <= 1'b0;
             if (wdt_abort && !stream_mode) begin
@@ -214,23 +237,59 @@ module qspi_flash_ctrl #(
                 hdr_sr      <= op_hdr;
                 hdr_bits    <= op_hdr_bits;
                 data_bytes  <= op_bytes;
+                dummy_clocks_left <= op_dummy_clocks;
+                rx_skip_left <= op_rx_skip;
                 dir_write   <= op_write;
                 capture_rx  <= op_capture;
                 stream_mode <= op_stream;
                 bit_cnt     <= 3'd7;
                 buf_ptr     <= '0;
                 data_phase  <= 1'b0;
+                dummy_phase <= 1'b0;
             end else if (op_busy && tick && !pause) begin
                 if (!sck_int) begin
                     // SCK low phase: present next MOSI bit
+                    // Skip the first carrier read sample: the serial output
+                    // must settle through the flash and connector return path.
+                    if (sel_target == TGT_CARRIER && !dir_write &&
+                        hdr_bits == 0 && dummy_clocks_left == 0 && !dummy_phase &&
+                        data_bytes != 0) begin
+                        if (rx_skip_left != 0) begin
+                            rx_skip_left <= rx_skip_left - 2'd1;
+                        end else begin
+                            rx_sr <= {rx_sr[6:0], spi_miso};
+                            if (bit_cnt == 3'd0) begin
+                                bit_cnt    <= 3'd7;
+                                data_bytes <= data_bytes - 24'd1;
+                                if (capture_rx) begin
+                                    if (stream_mode) begin
+                                        rd_byte       <= {rx_sr[6:0], spi_miso};
+                                        rd_byte_valid <= 1'b1;
+                                    end else begin
+                                        read_buffer[buf_ptr] <= {rx_sr[6:0], spi_miso};
+                                    end
+                                end
+                                if (!stream_mode)
+                                    buf_ptr <= buf_ptr + 8'd1;
+                            end else begin
+                                bit_cnt <= bit_cnt - 3'd1;
+                            end
+                        end
+                    end
                     if (hdr_bits != 0) begin
                         spi_mosi   <= hdr_sr[39];
                         hdr_sr     <= {hdr_sr[38:0], 1'b0};
                         hdr_bits   <= hdr_bits - 6'd1;
                         data_phase <= 1'b0;
                         sck_int    <= 1'b1;
+                    end else if (dummy_clocks_left != 0) begin
+                        spi_mosi   <= 1'b0;
+                        data_phase <= 1'b0;
+                        dummy_phase <= 1'b1;
+                        sck_int    <= 1'b1;
                     end else if (data_bytes != 0) begin
                         data_phase <= 1'b1;
+                        dummy_phase <= 1'b0;
                         if (dir_write) begin
                             if (bit_cnt == 3'd7) tx_byte <= page_buffer[buf_ptr];
                             spi_mosi <= (bit_cnt == 3'd7) ? page_buffer[buf_ptr][7]
@@ -245,11 +304,16 @@ module qspi_flash_ctrl #(
                         op_busy  <= 1'b0;
                     end
                 end else begin
-                    // Sample during the stable high phase. sck_int's falling
-                    // transition is nonblocking and reaches the pin after this
-                    // clock edge, so this samples before the flash shifts MISO.
+                    // SoM reads sample on the stable high phase. Carrier reads
+                    // use the forwarded-IO phase above; carrier writes still
+                    // advance their payload bit counters here.
                     sck_int <= 1'b0;
-                    if (data_phase && data_bytes != 0) begin
+                    if (dummy_phase && dummy_clocks_left != 0) begin
+                        dummy_clocks_left <= dummy_clocks_left - 4'd1;
+                        if (dummy_clocks_left == 4'd1)
+                            dummy_phase <= 1'b0;
+                    end else if (data_phase && data_bytes != 0 &&
+                                 (sel_target != TGT_CARRIER || dir_write)) begin
                         rx_sr <= {rx_sr[6:0], spi_miso};
                         if (bit_cnt == 3'd0) begin
                             bit_cnt    <= 3'd7;
@@ -303,6 +367,8 @@ module qspi_flash_ctrl #(
             op_hdr     <= '0;
             op_hdr_bits<= '0;
             op_bytes   <= '0;
+            op_dummy_clocks <= '0;
+            op_rx_skip <= '0;
             op_write   <= 1'b0;
             op_capture <= 1'b0;
             op_stream  <= 1'b0;
@@ -329,25 +395,34 @@ module qspi_flash_ctrl #(
                         // Boot loader streaming read (SoM Flash 1 or carrier)
                         rd_active   <= 1'b1;
                         sel_target  <= rd_target ? TGT_CARRIER : TGT_SOM1;
-                        cf_cs_sel   <= rd_addr[29:28];
-                        op_hdr      <= {8'h13, dev_addr(rd_target ? TGT_CARRIER : TGT_SOM1, rd_addr)};
+                        cf_cs_sel   <= carrier_cs_index(rd_addr);
+                            op_hdr      <= {rd_target ? 8'h0C : 8'h13,
+                                        dev_addr(rd_target ? TGT_CARRIER : TGT_SOM1, rd_addr)};
                         op_hdr_bits <= 6'd40;
                         op_bytes    <= rd_len;
+                        op_dummy_clocks <= rd_target ? 4'd8 : 4'd0;
+                        op_rx_skip <= rd_target ? 2'd1 : 2'd0;
                         op_write    <= 1'b0;
                         op_capture  <= 1'b1;
                         op_stream   <= 1'b1;
                         op_start    <= 1'b1;
                         state       <= B_READ;
                     end else if (cmd_trigger) begin
-                        cmd_busy   <= 1'b1;
-                        sel_target <= (cmd_target == 2'd3) ? TGT_CARRIER : cmd_target;
-                        cf_cs_sel  <= cmd_addr[29:28];
-                        case (cmd_opcode)
+                        if ((cmd_target == TGT_CARRIER || cmd_target == 2'd3) &&
+                            !carrier_addr_valid(cmd_addr)) begin
+                            cmd_err <= 1'b1;
+                        end else begin
+                            cmd_busy   <= 1'b1;
+                            sel_target <= (cmd_target == 2'd3) ? TGT_CARRIER : cmd_target;
+                            cf_cs_sel  <= carrier_cs_index(cmd_addr);
+                            case (cmd_opcode)
                             8'h01, 8'h02: begin
                                 // WREN first
                                 op_hdr      <= {8'h06, 32'd0};
                                 op_hdr_bits <= 6'd8;
                                 op_bytes    <= '0;
+                                op_dummy_clocks <= '0;
+                                op_rx_skip <= '0;
                                 op_write    <= 1'b0;
                                 op_capture  <= 1'b0;
                                 op_stream   <= 1'b0;
@@ -355,17 +430,21 @@ module qspi_flash_ctrl #(
                                 state       <= A_WREN;
                             end
                             8'h03: begin
-                                op_hdr      <= {8'h13, dev_addr((cmd_target == 2'd3) ? TGT_CARRIER : cmd_target, cmd_addr)};
+                                op_hdr      <= {(cmd_target == 2'd2 || cmd_target == 2'd3) ? 8'h0C : 8'h13,
+                                                dev_addr((cmd_target == 2'd3) ? TGT_CARRIER : cmd_target, cmd_addr)};
                                 op_hdr_bits <= 6'd40;
                                 op_bytes    <= 24'd256;
+                                op_dummy_clocks <= (cmd_target == 2'd2 || cmd_target == 2'd3) ? 4'd8 : 4'd0;
+                                op_rx_skip <= (cmd_target == 2'd2 || cmd_target == 2'd3) ? 2'd1 : 2'd0;
                                 op_write    <= 1'b0;
                                 op_capture  <= 1'b1;
                                 op_stream   <= 1'b0;
                                 op_start    <= 1'b1;
                                 state       <= A_READ;
                             end
-                            default: ;  // unknown opcode ignored
-                        endcase
+                                default: ;  // unknown opcode ignored
+                            endcase
+                        end
                     end
                 end
 
@@ -416,6 +495,8 @@ module qspi_flash_ctrl #(
                                 op_hdr      <= {8'hDC, dev_addr(sel_target, cmd_addr)};
                                 op_hdr_bits <= 6'd40;
                                 op_bytes    <= '0;
+                                op_dummy_clocks <= '0;
+                                op_rx_skip <= '0;
                                 op_write    <= 1'b0;
                                 op_capture  <= 1'b0;
                             end
@@ -423,6 +504,8 @@ module qspi_flash_ctrl #(
                                 op_hdr      <= {8'h12, dev_addr(sel_target, cmd_addr)};
                                 op_hdr_bits <= 6'd40;
                                 op_bytes    <= 24'd256;
+                                op_dummy_clocks <= '0;
+                                op_rx_skip <= '0;
                                 op_write    <= 1'b1;
                                 op_capture  <= 1'b0;
                             end
@@ -430,6 +513,8 @@ module qspi_flash_ctrl #(
                                 op_hdr      <= {8'h05, 32'd0};
                                 op_hdr_bits <= 6'd8;
                                 op_bytes    <= 24'd1;
+                                op_dummy_clocks <= '0;
+                                op_rx_skip <= (sel_target == TGT_CARRIER) ? 2'd1 : 2'd0;
                                 op_write    <= 1'b0;
                                 op_capture  <= 1'b0;
                             end
