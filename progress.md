@@ -4904,3 +4904,27 @@ xcheck synced: V4P3_LC in both tuples, AP buffered pair checked
 emitter->GND_AP, values 4.7k/2.74k). Verify: regen clean, xcheck
 PASS (22 endpoints / 27 direct indicators), ERC 0 errors / 2
 known CASB2 warnings.
+
+2026-11-02 (cont): VAP18/VAP09 LEDs REMOVED per user ruling - the two
+AP-rail rails get test points, not indicators (V4P3_LC direct LED
+kept; buffered pair + its xcheck checks and bom lock-list entries
+reverted). Rail test-point audit + additions across BOTH boards:
+- AP sheet (separate PCB): bank TP852..860 after TP850/851 -
+  VAP18, VAP09, PLL_AVDD, USB_VBUS, USB_GND, GND_AP + control
+  probes AP09_EN / XMOS_RST_N; all AP-domain returns to GND_AP.
+- PREREG sheet (tub-1, previously ZERO test points): bank
+  TP7700..7722 - VRAW6_L/R, VRAW16P/N, VRAW9, all AC secondaries
+  (AC6_L1/L2, AC6_R1/R2, AC18_1/4, AC9_1/2), and all 8 regulator
+  outputs P16A/N16A/V8P3/V4P3_L[A,B,C]/V4P3_R[A,B], + GND pads.
+- Main board already covered (converter/IV/refs/clk/fpga/som/
+  ctrl/out/xlat/power TP banks verified intact); CTRL gained
+  VAP_IO + GND_AP hook pads at the J506 isolator entry.
+- BUG FIX found in audit: L852 (PLL_AVDD ferrite) was fed from
+  VAP18 (1.8 V into a 0.945 V-max rail) - pin 1 now VAP09.
+Regression found+fixed: prereg TP tuples written ("G","p16a")
+bypassed the G() uppercase rule -> 8 lowercase orphan globals =
+8 isolated_pin_label + 240 similar_labels warnings. Routed
+through G() -> labels join the existing P16A/V8P3/V4P3_* nets.
+Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
+warnings (kicad-cli must run with cwd=hw/kicad or forward-slash
+paths - backslash args get mangled under git-bash).
