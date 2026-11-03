@@ -1,45 +1,36 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-//  FIR_POLYPHASE_STEREO  —  XCVU13P single-FPGA stereo design
+//  FIR_POLYPHASE_STEREO — Milestone 2 (Half-Curve Fold) & Milestone 3 (Quad-MAC URAM)
 //
 //  Stereo wrapper around two fir_polyphase_interpolator instances (L and R).
 //
-//  Coefficient storage: URAM288 (UltraRAM), 2 MACs packed per URAM.
-//  URAM288 SDP mode: 4096 × 72-bit.
-//  Layout per URAM (pair of MACs, indexed u = m/2):
-//    Bits [17: 0] = MAC(2u+0) Bank A coef  (18-bit signed)
-//    Bits [35:18] = MAC(2u+0) Bank B coef  (18-bit signed)
-//    Bits [53:36] = MAC(2u+1) Bank A coef  (18-bit signed)
-//    Bits [71:54] = MAC(2u+1) Bank B coef  (18-bit signed)
-//  Address [11:0]: lower COEF_DEPTH addresses = coef index (0..COEF_DEPTH-1).
+//  Milestone 3 Quad-MAC URAM288 Packing (QUAD_URAM_EN = 1):
+//    Packs 4 MACs (4 x 18-bit = 72-bit) per URAM288 using PARITY_INTERLEAVED
+//    byte+parity lanes (k = coef_wmac[1:0] = 0..3):
+//      Lane k=0 (MAC 4u+0): BWE=8'h03 -> {uram_dout[65:64], uram_dout[15: 0]}
+//      Lane k=1 (MAC 4u+1): BWE=8'h0C -> {uram_dout[67:66], uram_dout[31:16]}
+//      Lane k=2 (MAC 4u+2): BWE=8'h30 -> {uram_dout[69:68], uram_dout[47:32]}
+//      Lane k=3 (MAC 4u+3): BWE=8'hC0 -> {uram_dout[71:70], uram_dout[63:48]}
+//    Cuts URAM288 count by 50% (e.g. 1280 MACs = 320 URAMs instead of 640).
 //
-//  Write: coef_bank_loader supplies (coef_wmac, coef_waddr, coef_wdata, bank_load_target).
-//         Address into URAM = coef_waddr. URAM index = coef_wmac/2. Lane = coef_wmac[0].
-//         WEN[7:0] selects the 9-bit byte lanes for the target MAC+bank within the 72-bit word.
-//
-//  Read:  coef_addr driven by L interpolator (R lockstep identical).
-//         2-cycle registered URAM read latency (OUTPUT_REG=1).
-//         bank_select mux picks Bank A or Bank B slice from registered output.
-//
-//  Resource usage:
-//    NUM_MACS=1024: 512 URAMs (41% of 1,250)  — 1M taps/ch
-//    NUM_MACS=2048: 1024 URAMs (82% of 1,250) — 2M taps/ch
-//
-//  Both channels share the same coef array (coefficient sets are channel-independent
-//  for a symmetric linear-phase prototype filter).
+//  Milestone 2 Bit-Exact Half-Curve Fold (SYM_FOLD_EN = 1):
+//    Passed down to u_l_fir and u_r_fir, doubling effective filter taps
+//    (2 * 16 * NUM_MACS * TAPS_PER_PHASE) from the shared half-curve URAMs.
 // =============================================================================
 module fir_polyphase_stereo #(
-    parameter int NUM_MACS       = 1024,  // Any multiple of 64 (see legality asserts); pow2 NOT required
-    parameter int TAPS_PER_PHASE = 64,    // 16 phases × 64 = 1024 coefs/MAC
+    parameter int NUM_MACS       = 1024,  // Any multiple of 64 at production scale
+    parameter int TAPS_PER_PHASE = 64,    // 16 phases x 64 = 1024 coefs/MAC
     parameter int DATA_WIDTH     = 24,
     parameter int COEF_WIDTH     = 18,
-    parameter int ACC_WIDTH      = 48
+    parameter int ACC_WIDTH      = 48,
+    parameter bit SYM_FOLD_EN    = 1'b1,  // 1: Milestone 2 Option B 2x half-curve fold
+    parameter bit QUAD_URAM_EN   = 1'b1   // 1: Milestone 3 4-MACs-per-URAM288 packing
 )(
     input  logic                          clk,
     input  logic                          rst_n,
     input  tri0 [1:0]                     rate_shift,
-    output logic                         input_overrun,
+    output logic                          input_overrun,
 
     // Baseband inputs (one per channel)
     input  logic                          new_sample_valid,
@@ -55,34 +46,26 @@ module fir_polyphase_stereo #(
 
     // Coefficient write bus (from coef_bank_loader, dsp_clk domain)
     input  logic                               coef_we,
-    input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,  // 10 bits for COEF_DEPTH=1024
+    input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,
     input  logic signed [COEF_WIDTH-1:0]       coef_wdata,
-    input  logic [$clog2(NUM_MACS)-1:0]        coef_wmac,     // Which MAC to write
+    input  logic [$clog2(NUM_MACS)-1:0]        coef_wmac,
 
-    // Dual-bank gapless switching control
-    input  logic                          bank_select,       // 0=Bank A active, 1=Bank B active
-    input  logic                          bank_load_target   // 0=write Bank A, 1=write Bank B
+    // Dual-bank control (retained for top-level port compatibility; unused when QUAD_URAM_EN=1)
+    input  logic                          bank_select,
+    input  logic                          bank_load_target
 );
 
     // -------------------------------------------------------------------------
     //  Parameters and local constants
     // -------------------------------------------------------------------------
-    localparam int COEF_DEPTH  = 16 * TAPS_PER_PHASE;  // 1024 for TAPS_PER_PHASE=64
-    localparam int NUM_URAMS   = NUM_MACS / 2;          // 2 MACs packed per URAM288
-    // URAM288 SDP: 4096 × 72-bit. We only use COEF_DEPTH addresses (lower 1024 of 4096).
-    localparam int URAM_AW     = 12;   // URAM address is always 12-bit (4096 deep)
-    localparam int URAM_DW     = 72;   // URAM data width in SDP mode
+    localparam int COEF_DEPTH  = 16 * TAPS_PER_PHASE;
+    localparam int MACS_PER_U  = QUAD_URAM_EN ? 4 : 2;
+    localparam int NUM_URAMS   = NUM_MACS / MACS_PER_U;
+    localparam int URAM_AW     = 12;   // URAM288 address is always 12-bit (4096 deep)
+    localparam int URAM_DW     = 72;   // URAM288 data width in SDP mode
 
     // -------------------------------------------------------------------------
-    //  Write-bus broadcast tree (2026-08-14 timing fix, f9pb route review)
-    //
-    //  The single max_fanout-registered write bus still left one FF driving
-    //  all NUM_URAMS UltraRAMs across four SLRs (worst post-route path:
-    //  bank_load_target_r -> URAM BWE_A, 7.2 ns of pure routing). Same cure
-    //  as the read side: stage 1 registers the bus once, then explicit
-    //  replicated stages fan out per super-group (s2) and per group (s3).
-    //  Write latency grows from 1 to 3 cycles — invisible to the SPI-paced
-    //  coefficient loader (writes are strobed, not back-to-back-critical).
+    //  Write-bus broadcast tree
     // -------------------------------------------------------------------------
     logic [URAM_AW-1:0]              coef_waddr_r;
     logic signed [COEF_WIDTH-1:0]    coef_wdata_r;
@@ -91,40 +74,32 @@ module fir_polyphase_stereo #(
     logic                            coef_we_r;
 
     always_ff @(posedge clk) begin
-        coef_waddr_r        <= URAM_AW'(coef_waddr);
-        coef_wdata_r        <= coef_wdata;
-        bank_load_target_r  <= bank_load_target;
-        coef_wmac_r         <= coef_wmac;
-        coef_we_r           <= coef_we;
+        coef_waddr_r       <= URAM_AW'(coef_waddr);
+        coef_wdata_r       <= coef_wdata;
+        bank_load_target_r <= bank_load_target;
+        coef_wmac_r        <= coef_wmac;
+        coef_we_r          <= coef_we;
     end
 
     // -------------------------------------------------------------------------
-    //  Coefficient address from L interpolator (R is lockstep identical)
-    //
-    //  Broadcast tree (2026-08-13 timing fix, f9 datum route): coef_addr fans
-    //  out to NUM_URAMS UltraRAMs across all four SLRs. Two replicated
-    //  register stages (NUM_USUPER -> NUM_UGROUPS) break the broadcast into
-    //  short local nets. This delays coefficient delivery by 2 cycles — which
-    //  exactly matches the 2-cycle window broadcast tree inside the
-    //  interpolators, keeping audio and coef CO-TIMED at the MACs.
+    //  Read/Write super-group -> group broadcast tree (64 MACs per URAM group:
+    //  16 URAMs/group when QUAD_URAM_EN=1, 32 URAMs/group when QUAD_URAM_EN=0)
     // -------------------------------------------------------------------------
     logic [$clog2(COEF_DEPTH)-1:0] coef_addr;
 
-    localparam int URAM_GRP_SZ  = (NUM_URAMS < 32) ? NUM_URAMS : 32;
+    localparam int TARGET_GRP_U = QUAD_URAM_EN ? 16 : 32;
+    localparam int URAM_GRP_SZ  = (NUM_URAMS < TARGET_GRP_U) ? NUM_URAMS : TARGET_GRP_U;
     localparam int NUM_UGROUPS  = NUM_URAMS / URAM_GRP_SZ;
     localparam int NUM_USUPER   = ((NUM_UGROUPS >= 4) && (NUM_UGROUPS % 4 == 0)) ? 4 : 1;
     localparam int UGRP_PER_SUP = NUM_UGROUPS / NUM_USUPER;
 
-    // Parameter legality (2026-08-17, scalable-coefficient generalization):
-    // NUM_MACS need NOT be a power of 2 (adder tree zero-pads), but the URAM
-    // word packing (2 MACs x 2 banks x 18b = 72b) and group tree impose:
     initial begin
-        assert (NUM_MACS % 2 == 0)
-            else $fatal(1, "NUM_MACS (%0d) must be even (2 MACs packed per URAM288)", NUM_MACS);
-        assert ((NUM_URAMS < 32) || (NUM_URAMS % 32 == 0))
-            else $fatal(1, "NUM_MACS (%0d) must be a multiple of 64 at production scale (URAM group tree)", NUM_MACS);
+        assert (NUM_MACS % MACS_PER_U == 0)
+            else $fatal(1, "NUM_MACS (%0d) must be a multiple of %0d", NUM_MACS, MACS_PER_U);
+        assert ((NUM_URAMS < TARGET_GRP_U) || (NUM_URAMS % TARGET_GRP_U == 0))
+            else $fatal(1, "NUM_MACS (%0d) must be a multiple of 64 at production scale", NUM_MACS);
         assert (COEF_DEPTH <= 4096)
-            else $fatal(1, "COEF_DEPTH (%0d) exceeds URAM288 depth 4096; TAPS_PER_PHASE max is 256 with dual-bank packing", COEF_DEPTH);
+            else $fatal(1, "COEF_DEPTH (%0d) exceeds URAM288 depth 4096", COEF_DEPTH);
     end
 
     (* dont_touch = "true" *) logic [$clog2(COEF_DEPTH)-1:0] coef_addr_s2 [0:NUM_USUPER-1];
@@ -137,26 +112,20 @@ module fir_polyphase_stereo #(
             coef_addr_s3[g] <= coef_addr_s2[g / UGRP_PER_SUP];
     end
 
-    // Write-bus replicated stages (same super/group topology as coef_addr)
-    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s3 [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s3 [0:NUM_UGROUPS-1];
+    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s2       [0:NUM_USUPER-1];
+    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s3       [0:NUM_UGROUPS-1];
+    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s2       [0:NUM_USUPER-1];
+    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s3       [0:NUM_UGROUPS-1];
     (* dont_touch = "true" *) logic                         bank_load_target_s2 [0:NUM_USUPER-1];
     (* dont_touch = "true" *) logic                         bank_load_target_s3 [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s3 [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic                         coef_we_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic                         coef_we_s3 [0:NUM_UGROUPS-1];
+    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s2        [0:NUM_USUPER-1];
+    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s3        [0:NUM_UGROUPS-1];
+    (* dont_touch = "true" *) logic                         coef_we_s2          [0:NUM_USUPER-1];
+    (* dont_touch = "true" *) logic                         coef_we_s3          [0:NUM_UGROUPS-1];
 
-    // bank_select broadcast tree (2026-08-14, f9wb route review): bank_select
-    // drives the read-side output mux of every URAM. Left as a single FF it
-    // was auto-replicated by Vivado with the replica CEs still broadcast from
-    // the coef_mgr FSM (-1.98 ns). Same tree, uniform 3-cycle delay — the swap
-    // stays atomic (all group replicas toggle on the same cycle).
-    logic                                                    bank_select_r1;
-    (* dont_touch = "true" *) logic                         bank_select_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic                         bank_select_s3 [0:NUM_UGROUPS-1];
+    logic                                                   bank_select_r1;
+    (* dont_touch = "true" *) logic                         bank_select_s2      [0:NUM_USUPER-1];
+    (* dont_touch = "true" *) logic                         bank_select_s3      [0:NUM_UGROUPS-1];
 
     always_ff @(posedge clk) begin
         bank_select_r1 <= bank_select;
@@ -179,61 +148,43 @@ module fir_polyphase_stereo #(
     end
 
     // -------------------------------------------------------------------------
-    //  Muxed coefficient output to FIR engines (one 18-bit value per MAC per cycle)
+    //  Coefficient output to FIR engines (one 18-bit value per MAC per cycle)
     // -------------------------------------------------------------------------
     logic signed [COEF_WIDTH-1:0] coef_out [0:NUM_MACS-1];
 
     // -------------------------------------------------------------------------
-    //  URAM288 coefficient storage — NUM_URAMS instances, 2 MACs per URAM
-    //
-    //  BWE_MODE = PARITY_INTERLEAVED (UG573): BWE[i] (i=0..7) gates data byte
-    //  DIN[8i+:8] AND its interleaved parity bit DIN[64+i]. It does NOT gate
-    //  9 contiguous bits. Two BWE bits therefore write an independent 18-bit
-    //  quantity: 16 data bits + 2 parity bits.
-    //
-    //  Lane k (k = {mac_odd, bank}: 0=evenA, 1=evenB, 2=oddA, 3=oddB) stores:
-    //    coef[15:0]  → data bits DIN[16k +: 16]   (bytes 2k, 2k+1)
-    //    coef[17:16] → parity bits DIN[64+2k +: 2]
-    //  gated by BWE = 2'b11 << 2k.
-    //
-    //  (Previous packing put 18-bit lanes at [17:0]/[35:18]/[53:36]/[71:54],
-    //  which straddles byte boundaries: bits above each 16-bit byte pair were
-    //  never written — odd-MAC coefficients silently lost their upper bits.)
-    //
-    //  URAM read latency: 2 cycles (IREG_PRE=1, OREG=1).
-    //  bank_select mux applied after URAM output register.
+    //  URAM288 coefficient storage
+    //  PARITY_INTERLEAVED lane k (0..3):
+    //    coef[15:0]  -> DIN[16k +: 16] (bytes 2k, 2k+1)
+    //    coef[17:16] -> DIN[64+2k +: 2] (parity bits 64+2k, 64+2k+1)
+    //    gated by uram_wen = 8'h03 << (2*k).
     // -------------------------------------------------------------------------
     genvar u;
     generate
         for (u = 0; u < NUM_URAMS; u++) begin : gen_uram_coef
             localparam int UGRP = u / URAM_GRP_SZ;
 
-            // Determine if this URAM is being written this cycle
-            // coef_wmac[0]=0 → even MAC (lower lane), [0]=1 → odd MAC (upper lane)
-            // All write-bus signals come from this URAM's group replica (s3).
-            wire uram_sel    = (int'(coef_wmac_s3[UGRP][$clog2(NUM_MACS)-1:1]) == u);
-            wire uram_we     = coef_we_s3[UGRP] && uram_sel;
-            wire lane_odd    = coef_wmac_s3[UGRP][0];  // 0=even MAC (lower 36b), 1=odd MAC (upper 36b)
+            wire uram_sel = QUAD_URAM_EN
+                            ? ((int'(coef_wmac_s3[UGRP]) >> 2) == u)
+                            : ((int'(coef_wmac_s3[UGRP]) >> 1) == u);
+            wire uram_we  = coef_we_s3[UGRP] && uram_sel;
 
-            // WEN[7:0]: two BWE bits select byte pair 2k,2k+1 (+ parity bits
-            // 64+2k,64+2k+1) for lane k = {lane_odd, bank}.
-            //   even, Bank A → k=0 → 8'h03    even, Bank B → k=1 → 8'h0C
-            //   odd,  Bank A → k=2 → 8'h30    odd,  Bank B → k=3 → 8'hC0
-            wire [7:0] uram_wen;
-            assign uram_wen = !uram_we ? 8'h00 :
-                              (!lane_odd && !bank_load_target_s3[UGRP]) ? 8'h03 :  // even, Bank A
-                              (!lane_odd &&  bank_load_target_s3[UGRP]) ? 8'h0C :  // even, Bank B
-                              ( lane_odd && !bank_load_target_s3[UGRP]) ? 8'h30 :  // odd,  Bank A
-                                                                          8'hC0;   // odd,  Bank B
+            // Lane index k (0..3):
+            //   QUAD_URAM_EN = 1: k = coef_wmac[1:0] (4 MACs per URAM)
+            //   QUAD_URAM_EN = 0: k = {coef_wmac[0], bank_load_target} (2 MACs x 2 banks)
+            wire [1:0] lane_k = QUAD_URAM_EN
+                                ? coef_wmac_s3[UGRP][1:0]
+                                : {coef_wmac_s3[UGRP][0], bank_load_target_s3[UGRP]};
 
-            // Write data: coef[15:0] replicated across all four byte pairs,
-            // coef[17:16] replicated across all four parity-bit pairs.
-            // WEN gates the lane actually written.
+            wire [7:0] uram_wen = !uram_we ? 8'h00 :
+                                  (lane_k == 2'd0) ? 8'h03 :
+                                  (lane_k == 2'd1) ? 8'h0C :
+                                  (lane_k == 2'd2) ? 8'h30 : 8'hC0;
+
             wire [URAM_DW-1:0] uram_din;
             assign uram_din = {{4{coef_wdata_s3[UGRP][17:16]}},   // [71:64] parity bits
                                {4{coef_wdata_s3[UGRP][15:0]}}};   // [63: 0] data bytes
 
-            // URAM288 read data (2-cycle latency)
             wire [URAM_DW-1:0] uram_dout;
 
 `ifdef SIM
@@ -247,7 +198,6 @@ module fir_polyphase_stereo #(
 
             always_ff @(posedge clk) begin
                 if (uram_we) begin
-                    // PARITY_INTERLEAVED: WEN[b] gates byte [8b+:8] AND parity bit [64+b]
                     for (int b = 0; b < 8; b++) begin
                         if (uram_wen[b]) begin
                             uram_mem[coef_waddr_s3[UGRP]][b*8 +: 8] <= uram_din[b*8 +: 8];
@@ -261,44 +211,37 @@ module fir_polyphase_stereo #(
 
             assign uram_dout = uram_rd_s2;
 `else
-            // ----------------------------------------------------------------
-            //  Synthesis: explicit URAM288 primitive instantiation
-            //  UG974 / PG-Xilinx UltraRAM primitive
-            // ----------------------------------------------------------------
             URAM288 #(
-                .OREG_A             ("FALSE"),   // No output reg on write port (write-only)
-                .OREG_B             ("TRUE"),    // Output register on read port (1 extra cycle)
-                .IREG_PRE_A         ("FALSE"),
-                .IREG_PRE_B         ("TRUE"),    // Input addr register (total 2-cycle read latency)
-                .AUTO_SLEEP_LATENCY (8),
+                .OREG_A                  ("FALSE"),
+                .OREG_B                  ("TRUE"),
+                .IREG_PRE_A              ("FALSE"),
+                .IREG_PRE_B              ("TRUE"),
+                .AUTO_SLEEP_LATENCY      (8),
                 .AVG_CONS_INACTIVE_CYCLES(10),
-                .BWE_MODE_A         ("PARITY_INTERLEAVED"),
-                .BWE_MODE_B         ("PARITY_INTERLEAVED"),
-                .EN_AUTO_SLEEP_MODE ("FALSE"),
-                .EN_ECC_RD_A        ("FALSE"),
-                .EN_ECC_RD_B        ("FALSE"),
-                .EN_ECC_WR_A        ("FALSE"),
-                .EN_ECC_WR_B        ("FALSE")
+                .BWE_MODE_A              ("PARITY_INTERLEAVED"),
+                .BWE_MODE_B              ("PARITY_INTERLEAVED"),
+                .EN_AUTO_SLEEP_MODE      ("FALSE"),
+                .EN_ECC_RD_A             ("FALSE"),
+                .EN_ECC_RD_B             ("FALSE"),
+                .EN_ECC_WR_A             ("FALSE"),
+                .EN_ECC_WR_B             ("FALSE")
             ) u_uram (
-                // Port A — Write only (coefficient load)
                 .ADDR_A     (23'(coef_waddr_s3[UGRP])),
                 .DIN_A      (uram_din),
-                .BWE_A      ({1'b0, uram_wen}),  // 9-bit BWE: pad MSB to 0
+                .BWE_A      ({1'b0, uram_wen}),
                 .EN_A       (uram_we),
-                .RDB_WR_A   (1'b1),              // 1=write mode
-                .DOUT_A     (),                  // unused
+                .RDB_WR_A   (1'b1),
+                .DOUT_A     (),
                 .RST_A      (1'b0),
 
-                // Port B — Read only (coefficient sweep)
                 .ADDR_B     (23'(coef_addr_s3[UGRP])),
                 .DIN_B      ('0),
-                .BWE_B      (9'h1FF),            // all lanes enabled for read port
+                .BWE_B      (9'h1FF),
                 .EN_B       (1'b1),
-                .RDB_WR_B   (1'b0),              // 0=read mode
+                .RDB_WR_B   (1'b0),
                 .DOUT_B     (uram_dout),
                 .RST_B      (!rst_n),
 
-                // Cascade — not used (single URAM, no chaining)
                 .CAS_IN_ADDR_A    (23'h0),
                 .CAS_IN_ADDR_B    (23'h0),
                 .CAS_IN_BWE_A     (9'h0),
@@ -318,46 +261,50 @@ module fir_polyphase_stereo #(
                 .CAS_IN_SBITERR_A (1'b0),
                 .CAS_IN_SBITERR_B (1'b0),
 
-                .OREG_CE_A  (1'b1),
-                .OREG_CE_B  (1'b1),
-                .OREG_ECC_CE_A (1'b0),
-                .OREG_ECC_CE_B (1'b0),
+                .OREG_CE_A        (1'b1),
+                .OREG_CE_B        (1'b1),
+                .OREG_ECC_CE_A    (1'b0),
+                .OREG_ECC_CE_B    (1'b0),
                 .INJECT_DBITERR_A (1'b0),
                 .INJECT_DBITERR_B (1'b0),
                 .INJECT_SBITERR_A (1'b0),
                 .INJECT_SBITERR_B (1'b0),
-                .SLEEP      (1'b0),
-                .CLK        (clk)
+                .SLEEP            (1'b0),
+                .CLK              (clk)
             );
 `endif
 
-            // Extract coef_out for even and odd MAC from registered URAM output:
-            // lane k = {coef[17:16] @ parity[64+2k+:2], coef[15:0] @ data[16k+:16]}
-            assign coef_out[2*u]   = bank_select_s3[UGRP]
-                                     ? signed'({uram_dout[67:66], uram_dout[31:16]})  // even, Bank B (k=1)
-                                     : signed'({uram_dout[65:64], uram_dout[15: 0]}); // even, Bank A (k=0)
-
-            assign coef_out[2*u+1] = bank_select_s3[UGRP]
-                                     ? signed'({uram_dout[71:70], uram_dout[63:48]})  // odd, Bank B (k=3)
-                                     : signed'({uram_dout[69:68], uram_dout[47:32]}); // odd, Bank A (k=2)
-
+            if (QUAD_URAM_EN) begin : gen_quad_dout
+                assign coef_out[4*u + 0] = signed'({uram_dout[65:64], uram_dout[15: 0]});
+                assign coef_out[4*u + 1] = signed'({uram_dout[67:66], uram_dout[31:16]});
+                assign coef_out[4*u + 2] = signed'({uram_dout[69:68], uram_dout[47:32]});
+                assign coef_out[4*u + 3] = signed'({uram_dout[71:70], uram_dout[63:48]});
+            end else begin : gen_dual_dout
+                assign coef_out[2*u]   = bank_select_s3[UGRP]
+                                         ? signed'({uram_dout[67:66], uram_dout[31:16]})
+                                         : signed'({uram_dout[65:64], uram_dout[15: 0]});
+                assign coef_out[2*u+1] = bank_select_s3[UGRP]
+                                         ? signed'({uram_dout[71:70], uram_dout[63:48]})
+                                         : signed'({uram_dout[69:68], uram_dout[47:32]});
+            end
         end
     endgenerate
-
 
     // -------------------------------------------------------------------------
     //  Left channel interpolator
     // -------------------------------------------------------------------------
     logic overrun_l, overrun_r;
     logic frame_done_l, frame_done_r;
-    assign input_overrun = overrun_l || overrun_r;
+    assign input_overrun    = overrun_l || overrun_r;
     assign input_frame_done = frame_done_l;
+
     fir_polyphase_interpolator #(
         .NUM_MACS       (NUM_MACS),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (DATA_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),
-        .ACC_WIDTH      (ACC_WIDTH)
+        .ACC_WIDTH      (ACC_WIDTH),
+        .SYM_FOLD_EN    (SYM_FOLD_EN)
     ) u_l_fir (
         .clk                (clk),
         .rst_n              (rst_n),
@@ -374,8 +321,6 @@ module fir_polyphase_stereo #(
 
     // -------------------------------------------------------------------------
     //  Right channel interpolator
-    //  coef_in is the same coef_out[] array -- shared BRAMs.
-    //  coef_addr_out is ignored (lockstep with L).
     // -------------------------------------------------------------------------
     logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_addr_r_unused;
 
@@ -384,7 +329,8 @@ module fir_polyphase_stereo #(
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (DATA_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),
-        .ACC_WIDTH      (ACC_WIDTH)
+        .ACC_WIDTH      (ACC_WIDTH),
+        .SYM_FOLD_EN    (SYM_FOLD_EN)
     ) u_r_fir (
         .clk                (clk),
         .rst_n              (rst_n),

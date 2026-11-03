@@ -1,81 +1,45 @@
 `timescale 1ns / 1ps
 
-// Mono polyphase FIR interpolator — TRUE x16 polyphase interpolation.
+// =============================================================================
+// FIR_POLYPHASE_INTERPOLATOR — Milestone 1 + Milestone 2 (Option B Fold)
 //
-// Architecture: Parameterized NUM_MACS adder-tree reduction, per-MAC
-// tap-indexed audio WINDOW RAMs with systolic one-sample handoff.
-//
-// !! AUDIO-WINDOW REDESIGN (2026-08-01, user-ratified) !!
-// The previous datapath fed each MAC ONE static history sample for the whole
-// sweep, so the TAPS_PER_PHASE coefficients of each MAC phase window
-// collapsed into a single effective tap: the "1M-tap" build actually
-// computed a 16k-tap filter with boxcar-summed coefficients. Each MAC now
-// owns a TAPS_PER_PHASE-deep window of the history so every coefficient
-// multiplies its own sample.
-//
-//   Tap partition: MAC m, phase p, tap t computes
-//       h[p + 16*(TAPS_PER_PHASE*m + t)] * x[n - (TAPS_PER_PHASE*m + t)]
-//   Coefficient layout per MAC (URAM address): addr = p*TAPS_PER_PHASE + t
-//       ↔ c_m[addr] = h[p + 16*(TAPS_PER_PHASE*m + t)]
-//   Total taps = NUM_PHASES * NUM_MACS * TAPS_PER_PHASE (1024 MACs -> 1M).
-//   History depth K = NUM_MACS*TAPS_PER_PHASE samples (65,536 @ 1M taps),
-//   held in NUM_MACS distributed-RAM windows, TAPS_PER_PHASE deep each.
-//
-//   Phase 1 - Systolic shift (4 cycles; replaces the NUM_MACS+1 preload):
-//     On new_sample_valid each window emits its oldest sample to its
-//     right-hand neighbor and absorbs one (window 0 absorbs the new input
-//     sample): a one-sample advance of the whole K-deep delay line.
-//   Phase 2 - Coefficient Sweep (NUM_PHASES*TAPS_PER_PHASE cycles):
-//     One GLOBAL window read address (same tap index t for every MAC),
-//     pipelined so audio and coefficient arrive CO-TIMED at each MAC
-//     (both are 3-cycle paths from the sweep counter).
-//     phase_sync_d1 broadcast to all NUM_MACS simultaneously.
-//     Each MAC accumulates independently (NO PCIN/PCOUT cascade).
-//     preg_out[m] connects to polyphase_adder_tree for log2(NUM_MACS)-level reduction.
-//
-//   Shadow trigger: phase_sync_d1 + 5 (MAC pipe) + tree_levels + 1 cycles.
-//
-//   Phase p output: y[16n+p] = 2 * sum_{k=0}^{K-1} h[p+16k] * x[n-k]
-//   (factor 2 = legacy pre-adder gain, preserved; the pre-adder is the hook
-//   for a future symmetric fwd+rev coefficient fold.)
-//
-//   Total cycle budget: 4 (shift) + NUM_PHASES*TAPS_PER_PHASE (sweep).
-//   At 48 kHz / 400 MHz: ~8333 available. TAPS_PER_PHASE=64 -> 1028 (12%);
-//   TAPS_PER_PHASE=256 (4M taps on 1024 MACs) -> 4100 (49%).
-//   TAPS_PER_PHASE must be a power of two and exceed SHADOW_DELAY.
-//
-//   NUM_MACS (2026-08-17): any multiple of 8 (window group tree granularity);
-//   power of 2 NOT required — the adder tree zero-pads. The stereo wrapper
-//   additionally requires a multiple of 64 at production scale (URAM group
-//   tree). E.g. 1280 MACs x TAPS_PER_PHASE=256 = 5,242,880 taps, gapless.
-//
-// Coefficient BRAMs are NOT owned here -- shared at fir_polyphase_stereo level.
+// - SYM_FOLD_EN = 0 (Milestone 1):
+//     Uses phase-end snapshot + 3-tier time-multiplexed polyphase_adder_tree.
+// - SYM_FOLD_EN = 1 (Milestone 2):
+//     Bit-exact Option B polyphase half-curve fold. Doubles effective tap count
+//     (2 * NUM_PHASES * NUM_MACS * TAPS_PER_PHASE) from a half-curve URAM table
+//     using dual systolic windows (win shifting 0 -> NUM_MACS-1 and win_rev
+//     shifting NUM_MACS-1 -> 0). Evaluates Y_fwd[s] and Y_rev[s] during the
+//     sweep and emits y[p] = Y_fwd[p] + Y_rev[P - 1 - p] in chronological order
+//     p = 0..P-1 spaced by EMIT_SPACING = 16 dsp_clk cycles.
+// =============================================================================
 module fir_polyphase_interpolator #(
-    parameter int NUM_MACS        = 4096,        // Any multiple of 8 (see header)
-    parameter int DATA_WIDTH      = 24,
-    parameter int COEF_WIDTH      = 18,
-    parameter int ACC_WIDTH       = 48,
-    parameter int NUM_PHASES      = 16,
-    parameter int TAPS_PER_PHASE  = 64          // 4K MACs * 16 * 64 = 4,194,304 taps (4M)
+    parameter int NUM_MACS       = 4096,
+    parameter int DATA_WIDTH     = 24,
+    parameter int COEF_WIDTH     = 18,
+    parameter int ACC_WIDTH      = 48,
+    parameter int NUM_PHASES     = 16,
+    parameter int TAPS_PER_PHASE = 64,
+    parameter bit SYM_FOLD_EN    = 1'b0
 )(
-    input  logic                                 clk,
-    input  logic                                 rst_n,
-    input  tri0 [1:0]                             rate_shift,
-    output logic                                 input_overrun,
+    input  logic                                clk,
+    input  logic                                rst_n,
+    input  tri0 [1:0]                           rate_shift,
+    output logic                                input_overrun,
 
     // Baseband Input
-    input  logic                                 new_sample_valid,
-    input  logic signed [DATA_WIDTH-1:0]         new_sample_data,
+    input  logic                                new_sample_valid,
+    input  logic signed [DATA_WIDTH-1:0]        new_sample_data,
 
     // Oversampled Output
-    output logic signed [ACC_WIDTH-1:0]          interpolated_out,
-    output logic                                 interpolated_valid,
-    output logic                                 input_frame_done,
+    output logic signed [ACC_WIDTH-1:0]         interpolated_out,
+    output logic                                interpolated_valid,
+    output logic                                input_frame_done,
 
-    // -- Coefficient input from shared BRAMs (one value per MAC per cycle) --
-    input  logic signed [COEF_WIDTH-1:0]         coef_in [0:NUM_MACS-1],
+    // Coefficient input from shared URAMs (one value per MAC per cycle)
+    input  logic signed [COEF_WIDTH-1:0]        coef_in [0:NUM_MACS-1],
 
-    // -- Coefficient address output (to drive shared BRAM read port) --------
+    // Coefficient address output (to drive shared URAM read port)
     output logic [$clog2(NUM_PHASES*TAPS_PER_PHASE)-1:0] coef_addr_out
 );
 
@@ -84,19 +48,17 @@ module fir_polyphase_interpolator #(
     logic [PHASE_COUNT_WIDTH-1:0] output_phase_count;
     logic sample_accept;
 
-    // One native input sample emits NUM_PHASES >> rate_shift outputs.
-    // Report completion only after the final phase has been captured.
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             output_phase_count <= '0;
-            input_frame_done <= 1'b0;
+            input_frame_done   <= 1'b0;
         end else begin
             input_frame_done <= 1'b0;
             if (sample_accept)
                 output_phase_count <= '0;
             else if (interpolated_valid) begin
                 if (output_phase_count == PHASE_COUNT_WIDTH'((NUM_PHASES >> rate_shift) - 1)) begin
-                    input_frame_done <= 1'b1;
+                    input_frame_done   <= 1'b1;
                     output_phase_count <= '0;
                 end else
                     output_phase_count <= output_phase_count + 1'b1;
@@ -105,60 +67,23 @@ module fir_polyphase_interpolator #(
     end
 
     // =================================---------------------------------------
-    // 1. Per-MAC Audio Window RAMs + systolic handoff
-    //    Window m holds x[n - TAPS_PER_PHASE*m - j], j = 0..TAPS_PER_PHASE-1.
-    //    Newest sample of window m sits at address hp (global head pointer);
-    //    sample x[n - (TAPS_PER_PHASE*m + t)] sits at address (hp - t).
-    //    ONE global read address serves all windows (same tap t for all MACs).
-    //
-    //    Handoff (ST_SHIFT, 3 counts after the new_sample_valid cycle):
-    //      E   (new_sample_valid): read address switches to hp+1 (the OLDEST
-    //           sample slot = the slot the incoming sample will overwrite)
-    //      cnt0: address registered into the RAM read pipeline
-    //      cnt1: win_q[m] = oldest sample of window m → boundary_reg[m]
-    //      cnt2: win_we — window 0 writes ns_reg (new input sample), window
-    //            m>0 writes boundary_reg[m-1]; hp advances → ST_SWEEP
-    //
-    //    Sweep read pipeline (incl. 2-stage broadcast tree, 2026-08-13):
-    //      T: win_rd_addr (comb, from tap_counter) → T+1: win_rd_addr_q
-    //      → T+2: rd_addr_s2 → T+3: rd_addr_s3 → T+4: win_q → T+5: win_q2
-    //      Coef: T: master_coef_addr → T+1: coef_addr_out → T+2/T+3: addr
-    //      tree in stereo wrapper → T+5: coef_in (2-cycle URAM read).
-    //      Audio (win_q2) and coef therefore arrive CO-TIMED at the MACs.
+    // 1. Per-MAC Audio Window RAMs (Forward + Reverse Systolic Handoff)
     // =================================---------------------------------------
     localparam int WIN_AW = $clog2(TAPS_PER_PHASE);
     logic [WIN_AW-1:0] history_clear_addr;
     logic history_clear;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            history_clear <= 1;
-            history_clear_addr <= 0;
+            history_clear      <= 1'b1;
+            history_clear_addr <= '0;
         end else if (history_clear) begin
             if (history_clear_addr == WIN_AW'(TAPS_PER_PHASE - 1))
-                history_clear <= 0;
-            else history_clear_addr <= history_clear_addr + 1'b1;
+                history_clear <= 1'b0;
+            else
+                history_clear_addr <= history_clear_addr + 1'b1;
         end
     end
 
-    // -- Broadcast pipeline (2026-08-13 timing fix, f9 datum route) ----------
-    // The global window read/write address, write strobes and phase_sync fan
-    // out to NUM_MACS windows spread across all four SLRs. The f9 route showed
-    // this broadcast failing timing on pure route delay (WNS -2.74 ns, 97%
-    // route, 1 logic level). All window-facing controls now travel through a
-    // 3-stage replicated register tree (global -> NUM_SUPER -> NUM_GROUPS),
-    // adding 2 cycles of uniform latency. Coefficient delivery is delayed the
-    // same 2 cycles in fir_polyphase_stereo (URAM address tree) so audio and
-    // coef stay CO-TIMED at the MACs; SHADOW_DELAY absorbs the extra 2.
-    // GROUP_SZ 64 -> 16 (2026-08-14, f9wb route review): with 64 windows per
-    // final replica the s3 -> win_q hop still failed at -2.1 ns on pure route
-    // delay (windows spread across the super-group pblock). 16 windows per
-    // replica keeps every final hop local; s2 -> s3 fanout rises to 16, well
-    // within reach of a single dsp_clk cycle. Latency unchanged (still 3 stages).
-    // GROUP_SZ 16 -> 8, NUM_SUPER 4 -> 8 (2026-08-16, f9we route review): the
-    // s3 -> win_q hop was the LAST remaining violation class (-0.097 ns, >90%
-    // route, 2608 shallow endpoints) - a 16-window capture cluster is still
-    // too physically spread. 8 windows per replica halves the cluster again;
-    // 8 super groups keep the s2 -> s3 fanout at 16. Latency unchanged.
     localparam int GROUP_SZ    = (NUM_MACS < 8) ? NUM_MACS : 8;
     localparam int NUM_GROUPS  = NUM_MACS / GROUP_SZ;
     localparam int NUM_SUPER   = ((NUM_GROUPS >= 8) && (NUM_GROUPS % 8 == 0)) ? 8 :
@@ -171,52 +96,55 @@ module fir_polyphase_interpolator #(
                            ((state == ST_IDLE) ||
                             (state == ST_SWEEP && input_frame_done));
 
-    // Sweep counters — declared here (referenced by the window read mux),
-    // driven by the sweep FSM in section 3.
     logic [$clog2(COEF_DEPTH)-1:0]     master_coef_addr;
     logic [$clog2(TAPS_PER_PHASE)-1:0] tap_counter;
-    logic                              phase_sync;   // driven by the sweep FSM (section 3)
+    logic                              phase_sync;
 
-    logic [WIN_AW-1:0]            hp;         // global head pointer (newest-sample slot)
+    logic [WIN_AW-1:0]            hp;
     logic [1:0]                   shift_cnt;
-    logic signed [DATA_WIDTH-1:0] ns_reg;     // captured new input sample
+    logic signed [DATA_WIDTH-1:0] ns_reg;
 
-    logic [WIN_AW-1:0] win_rd_addr;           // combinational, global
-    logic [WIN_AW-1:0] win_rd_addr_q;         // registered address into all windows
-    logic [WIN_AW-1:0] win_wr_addr;           // combinational, global
-    logic              cap_bnd;               // capture boundary_reg this cycle
-    logic              win_we;                // window write strobe
+    logic [WIN_AW-1:0] win_rd_addr,     win_rd_addr_q;
+    logic [WIN_AW-1:0] win_rev_rd_addr, win_rev_rd_addr_q;
+    logic [WIN_AW-1:0] win_wr_addr;
+    logic              cap_bnd;
+    logic              win_we;
 
-    assign win_wr_addr = hp + WIN_AW'(1);   // slot vacated by the departing oldest sample
+    assign win_wr_addr = hp + WIN_AW'(1);
 
-    // Global read address: oldest slot during handoff, tap-indexed during sweep
-    assign win_rd_addr = (sample_accept || state == ST_SHIFT)
-                         ? (hp + WIN_AW'(1))
-                         : (hp - tap_counter);   // both WIN_AW bits, natural mod-TPP wrap
+    // Forward window reads (hp - tap_counter) newest-to-oldest during sweep;
+    // Reverse window reads (hp + 1 + tap_counter) oldest-to-newest during sweep.
+    assign win_rd_addr     = (sample_accept || state == ST_SHIFT)
+                             ? (hp + WIN_AW'(1))
+                             : (hp - tap_counter);
+    assign win_rev_rd_addr = (sample_accept || state == ST_SHIFT)
+                             ? (hp + WIN_AW'(1))
+                             : (hp + WIN_AW'(1) + tap_counter);
 
     assign cap_bnd = (state == ST_SHIFT) && (shift_cnt == 2'd1);
     assign win_we  = (state == ST_SHIFT) && (shift_cnt == 2'd2);
 
-    always_ff @(posedge clk)
-        win_rd_addr_q <= win_rd_addr;
+    always_ff @(posedge clk) begin
+        win_rd_addr_q     <= win_rd_addr;
+        win_rev_rd_addr_q <= win_rev_rd_addr;
+    end
 
-    // Broadcast tree stage 1 (single copies; win_rd_addr_q above is the
-    // read-address stage 1), stages 2/3 replicated. dont_touch prevents the
-    // identical replicas from being merged back into one high-fanout driver.
     logic [WIN_AW-1:0] win_wr_addr_s1;
     logic              win_we_s1, cap_bnd_s1, ps_s1;
 
-    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_addr_s2 [0:NUM_SUPER-1];
-    (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s2 [0:NUM_SUPER-1];
-    (* dont_touch = "true" *) logic              we_s2      [0:NUM_SUPER-1];
-    (* dont_touch = "true" *) logic              cap_s2     [0:NUM_SUPER-1];
-    (* dont_touch = "true" *) logic              ps_s2      [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_addr_s2     [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_rev_addr_s2 [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s2     [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic              we_s2          [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic              cap_s2         [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic              ps_s2          [0:NUM_SUPER-1];
 
-    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_addr_s3 [0:NUM_GROUPS-1];
-    (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s3 [0:NUM_GROUPS-1];
-    (* dont_touch = "true" *) logic              we_s3      [0:NUM_GROUPS-1];
-    (* dont_touch = "true" *) logic              cap_s3     [0:NUM_GROUPS-1];
-    (* dont_touch = "true" *) logic              ps_s3      [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_addr_s3     [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_rev_addr_s3 [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s3     [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic              we_s3          [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic              cap_s3         [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic              ps_s3          [0:NUM_GROUPS-1];
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -253,12 +181,14 @@ module fir_polyphase_interpolator #(
     always_ff @(posedge clk) begin
         win_wr_addr_s1 <= win_wr_addr;
         for (int s = 0; s < NUM_SUPER; s++) begin
-            rd_addr_s2[s] <= win_rd_addr_q;
-            wr_addr_s2[s] <= win_wr_addr_s1;
+            rd_addr_s2[s]     <= win_rd_addr_q;
+            rd_rev_addr_s2[s] <= win_rev_rd_addr_q;
+            wr_addr_s2[s]     <= win_wr_addr_s1;
         end
         for (int g = 0; g < NUM_GROUPS; g++) begin
-            rd_addr_s3[g] <= rd_addr_s2[g / GRP_PER_SUP];
-            wr_addr_s3[g] <= wr_addr_s2[g / GRP_PER_SUP];
+            rd_addr_s3[g]     <= rd_addr_s2[g / GRP_PER_SUP];
+            rd_rev_addr_s3[g] <= rd_rev_addr_s2[g / GRP_PER_SUP];
+            wr_addr_s3[g]     <= wr_addr_s2[g / GRP_PER_SUP];
         end
     end
 
@@ -300,11 +230,12 @@ module fir_polyphase_interpolator #(
         end
     end
 
-    // Window RAM array — distributed RAM, fully parallel one-cycle handoff.
-    // 1024 windows × 64 × 24 b = 1.5 Mb LUTRAM (≈ 1.4% of VU13P LUTs).
-    logic signed [DATA_WIDTH-1:0] win_q        [0:NUM_MACS-1];
-    logic signed [DATA_WIDTH-1:0] win_q2       [0:NUM_MACS-1];
-    logic signed [DATA_WIDTH-1:0] boundary_reg [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] win_q            [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] win_q2           [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] boundary_reg     [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] win_rev_q        [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] win_rev_q2       [0:NUM_MACS-1];
+    logic signed [DATA_WIDTH-1:0] boundary_rev_reg [0:NUM_MACS-1];
 
     genvar w;
     generate
@@ -320,8 +251,6 @@ module fir_polyphase_interpolator #(
                     win[wi] = '0;
             end
 
-            // All controls arrive via the group-stage broadcast registers
-            // (uniform +2 cycles vs. the pre-f9 direct broadcast).
             always_ff @(posedge clk) begin
                 win_q[w]  <= win[rd_addr_s3[GRP]];
                 win_q2[w] <= win_q[w];
@@ -332,22 +261,46 @@ module fir_polyphase_interpolator #(
                 else if (we_s3[GRP])
                     win[wr_addr_s3[GRP]] <= (w == 0) ? ns_reg : boundary_reg[w-1];
             end
+
+            if (SYM_FOLD_EN) begin : gen_win_rev
+                (* ram_style = "distributed" *)
+                logic signed [DATA_WIDTH-1:0] win_rev [0:TAPS_PER_PHASE-1];
+
+                integer wri;
+                initial begin
+                    for (wri = 0; wri < TAPS_PER_PHASE; wri = wri + 1)
+                        win_rev[wri] = '0;
+                end
+
+                always_ff @(posedge clk) begin
+                    win_rev_q[w]  <= win_rev[rd_rev_addr_s3[GRP]];
+                    win_rev_q2[w] <= win_rev_q[w];
+                    if (cap_s3[GRP])
+                        boundary_rev_reg[w] <= win_rev_q[w];
+                    if (history_clear)
+                        win_rev[history_clear_addr] <= '0;
+                    else if (we_s3[GRP])
+                        win_rev[wr_addr_s3[GRP]] <= (w == NUM_MACS - 1)
+                                                    ? boundary_reg[NUM_MACS - 1]
+                                                    : boundary_rev_reg[w + 1];
+                end
+            end else begin : gen_no_win_rev
+                assign win_rev_q[w]        = '0;
+                assign win_rev_q2[w]       = '0;
+                assign boundary_rev_reg[w] = '0;
+            end
         end
     endgenerate
 
     // =================================---------------------------------------
     // 3. Coefficient Sweep State Machine
-    //    Runs only during ST_SWEEP. COEF_DEPTH cycles: NUM_PHASES phases × TAPS_PER_PHASE taps.
-    //    Starts 1 cycle after entering ST_SWEEP (handoff write completed).
-    //    (master_coef_addr / tap_counter declared in section 1 — the window
-    //    read mux references tap_counter.)
     // =================================---------------------------------------
     logic        sweep_active;
-    logic        sweep_done;     // prevents re-trigger after sweep completes
-    logic        sweep_first;    // suppresses shadow capture on sweep-start phase_sync
+    logic        sweep_done;
+    logic        sweep_first;
     always_ff @(posedge clk) begin
-        if (!rst_n) input_overrun <= 0;
-        else if (new_sample_valid && !sample_accept) input_overrun <= 1;
+        if (!rst_n) input_overrun <= 1'b0;
+        else if (new_sample_valid && !sample_accept) input_overrun <= 1'b1;
     end
 
     always_ff @(posedge clk) begin
@@ -371,14 +324,14 @@ module fir_polyphase_interpolator #(
                 sweep_active     <= 1'b1;
                 master_coef_addr <= '0;
                 tap_counter      <= '0;
-                phase_sync       <= 1'b1;   // reset accumulators for phase 0
-                sweep_first      <= 1'b1;   // this pulse has no prior phase to capture
+                phase_sync       <= 1'b1;
+                sweep_first      <= 1'b1;
             end else if (sweep_active) begin
                 master_coef_addr <= master_coef_addr + 1'b1;
                 tap_counter      <= tap_counter + 1'b1;
                 if (tap_counter == $bits(tap_counter)'(TAPS_PER_PHASE - 1)) begin
                     phase_sync  <= 1'b1;
-                    sweep_first <= 1'b0;    // first real phase boundary; suppress flag cleared
+                    sweep_first <= 1'b0;
                 end
                 if (master_coef_addr == $bits(master_coef_addr)'((COEF_DEPTH >> rate_shift) - 1)) begin
                     sweep_active <= 1'b0;
@@ -388,10 +341,9 @@ module fir_polyphase_interpolator #(
         end
     end
 
-    // Coef address output: delay by 1 cycle for shared BRAM read pipeline.
     logic [$clog2(COEF_DEPTH)-1:0] master_coef_addr_d1;
     logic        phase_sync_d1;
-    logic        sweep_first_d1;  // delayed sweep_first, aligned with phase_sync_d1
+    logic        sweep_first_d1;
 
     always_ff @(posedge clk) begin
         master_coef_addr_d1 <= master_coef_addr;
@@ -403,132 +355,178 @@ module fir_polyphase_interpolator #(
 
     // =================================---------------------------------------
     // 4. MAC Array
-    //    Each MAC m receives win_q2[m] — its tap-indexed window sample,
-    //    CO-TIMED with coef_in[m] (both 5-cycle paths from the sweep counter
-    //    since the broadcast-tree fix: window path T+3 -> T+5, URAM address
-    //    tree in the stereo wrapper delays coef T+3 -> T+5 to match).
-    //    phase_sync reaches each MAC through the same group tree (ps_s3), so
-    //    the sync-vs-data alignment at the MAC inputs is unchanged.
-    //    Each MAC outputs preg_out[m] independently — no PCIN/PCOUT.
     // =================================---------------------------------------
-    logic signed [ACC_WIDTH-1:0] mac_preg [0:NUM_MACS-1];
+    logic signed [ACC_WIDTH-1:0] mac_preg     [0:NUM_MACS-1];
+    logic signed [ACC_WIDTH-1:0] mac_preg_rev [0:NUM_MACS-1];
 
     genvar i;
     generate
         for (i = 0; i < NUM_MACS; i++) begin : gen_poly_mac
             polyphase_mac_engine #(
-                .DATA_WIDTH(DATA_WIDTH),
-                .COEF_WIDTH(COEF_WIDTH),
-                .ACC_WIDTH (ACC_WIDTH),
-                .MAC_ID    (i)
+                .DATA_WIDTH (DATA_WIDTH),
+                .COEF_WIDTH (COEF_WIDTH),
+                .ACC_WIDTH  (ACC_WIDTH),
+                .MAC_ID     (i),
+                .SYM_FOLD_EN(SYM_FOLD_EN)
             ) u_mac (
-                .clk        (clk),
-                .rst_n      (rst_n),
-                .phase_sync (ps_s3[i / GROUP_SZ]),
-                .coef_in    (coef_in[i]),
-                .audio_in   (win_q2[i]),
-                .preg_out   (mac_preg[i])
+                .clk          (clk),
+                .rst_n        (rst_n),
+                .phase_sync   (ps_s3[i / GROUP_SZ]),
+                .coef_in      (coef_in[i]),
+                .audio_in     (win_q2[i]),
+                .audio_rev_in (win_rev_q2[i]),
+                .preg_out     (mac_preg[i]),
+                .preg_rev_out (mac_preg_rev[i])
             );
         end
     endgenerate
 
     // =================================---------------------------------------
-    // 5. Adder Tree
-    //    Sums all NUM_MACS preg outputs in log2(NUM_MACS) pipelined levels.
-    //    Latency = TREE_LEVELS cycles after mac_preg is valid.
+    // 5. Phase-End Snapshot Trigger & Time-Multiplexed Adder Tree(s)
     // =================================---------------------------------------
+    localparam int SNAP_PIPE_DELAY = 8;
+    localparam int TREE_G1 = (TAPS_PER_PHASE >= 64) ? 32 :
+                             (TAPS_PER_PHASE >= 32) ? 8  : 4;
+    localparam int TREE_G2 = (TAPS_PER_PHASE >= 64) ? 8  :
+                             (TAPS_PER_PHASE >= 32) ? 4  : 2;
+
+    initial begin
+        assert ((NUM_MACS < 8) || (NUM_MACS % 8 == 0))
+            else $fatal(1, "NUM_MACS (%0d) must be a multiple of 8", NUM_MACS);
+        assert ((TAPS_PER_PHASE & (TAPS_PER_PHASE - 1)) == 0)
+            else $fatal(1, "TAPS_PER_PHASE (%0d) must be a power of 2", TAPS_PER_PHASE);
+        assert (TAPS_PER_PHASE >= 16)
+            else $fatal(1, "TAPS_PER_PHASE (%0d) must be >= 16", TAPS_PER_PHASE);
+    end
+
+    logic [SNAP_PIPE_DELAY-2:0] ps_shreg;
+    (* max_fanout = 32 *) logic snap_en_reg;
+    wire phase_sync_d1_gated = phase_sync_d1 & ~sweep_first_d1;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            ps_shreg    <= '0;
+            snap_en_reg <= 1'b0;
+        end else begin
+            ps_shreg    <= {ps_shreg[SNAP_PIPE_DELAY-3:0], phase_sync_d1_gated};
+            snap_en_reg <= ps_shreg[SNAP_PIPE_DELAY-2];
+        end
+    end
+
     logic signed [ACC_WIDTH-1:0] tree_sum;
+    logic                        tree_valid;
 
     polyphase_adder_tree #(
         .NUM_INPUTS(NUM_MACS),
-        .WIDTH     (ACC_WIDTH)
+        .WIDTH     (ACC_WIDTH),
+        .G1        (TREE_G1),
+        .G2        (TREE_G2)
     ) u_adder_tree (
-        .clk     (clk),
-        .rst_n   (rst_n),
-        .data_in (mac_preg),
-        .tree_out(tree_sum)
+        .clk      (clk),
+        .rst_n    (rst_n),
+        .snap_en  (snap_en_reg),
+        .data_in  (mac_preg),
+        .tree_out (tree_sum),
+        .valid_out(tree_valid)
     );
 
     // =================================---------------------------------------
-    // 6. Output Register
-    //    Shadow trigger: phase_sync_d1 delayed by SHADOW_DELAY cycles.
-    //    Captures the fully-accumulated PREG of phase p triggered by phase_sync of phase p+1.
-    //    Timeline from phase_sync_d1(p+1):
-    //      +0  : phase_sync_d1(p+1) fires
-    //      +5  : last PREG update of phase p (engine d6 load fires at +6)
-    //      +6  : stage[1] of adder tree registers the final PREG value
-    //      +6+TREE_LEVELS : tree_out valid (one-cycle window)
-    //    shadow_rising fires at phase_sync_d1(p+1) + SHADOW_DELAY
-    //    → SHADOW_DELAY = 6 + TREE_LEVELS   (TB-verified, tb_fir_window)
-    //    TAPS_PER_PHASE must exceed SHADOW_DELAY.
-    //    On rising edge of shadow trigger: register tree_sum as output.
+    // 6. Output Register (Direct in Milestone 1, Conjugate-Folded in Milestone 2)
     // =================================---------------------------------------
-    localparam int TREE_LEVELS  = $clog2(NUM_MACS);          // 2 for 4 MACs, 8 for 256 MACs
-    // 6 = matches the d6 load in the MAC engine (phase p's completed sum is
-    // visible in PREG for exactly one cycle before the load overwrites it);
-    // the tree delays it TREE_LEVELS more.
-    // (2026-08-01: was 8 + TREE_LEVELS, paired with the old d8 load.)
-    // +2 (2026-08-13): broadcast-tree stages delay data (and therefore PREG
-    // completion) two cycles relative to phase_sync_d1, which does NOT go
-    // through the tree for this shadow path.
-    localparam int SHADOW_DELAY = 8 + TREE_LEVELS;           // PREG_pipe(6) + bcast(2) + TREE_LEVELS
-
-    // Parameter legality (2026-08-17, scalable-coefficient generalization)
-    initial begin
-        assert ((NUM_MACS < 8) || (NUM_MACS % 8 == 0))
-            else $fatal(1, "NUM_MACS (%0d) must be a multiple of 8 (window group tree)", NUM_MACS);
-        assert ((TAPS_PER_PHASE & (TAPS_PER_PHASE - 1)) == 0)
-            else $fatal(1, "TAPS_PER_PHASE (%0d) must be a power of 2 (mod-TPP window wrap)", TAPS_PER_PHASE);
-        assert (TAPS_PER_PHASE > SHADOW_DELAY)
-            else $fatal(1, "TAPS_PER_PHASE (%0d) must exceed SHADOW_DELAY (%0d)", TAPS_PER_PHASE, SHADOW_DELAY);
-    end
-
-    logic [SHADOW_DELAY-1:0] ps_shreg;
-    wire  phase_sync_d1_gated = phase_sync_d1 & ~sweep_first_d1;  // suppress sweep-start pulse
-
-    always_ff @(posedge clk) begin
-        if (!rst_n)
-            ps_shreg <= '0;
-        else
-            ps_shreg <= {ps_shreg[SHADOW_DELAY-2:0], phase_sync_d1_gated};
-    end
-
-    wire shadow_trigger = ps_shreg[SHADOW_DELAY-1];
-
     logic signed [ACC_WIDTH-1:0] interpolated_out_reg;
-    logic                        shadow_trigger_last;
-    logic                        shadow_rising;
 
-    // Edge detect for shadow trigger
-    always_ff @(posedge clk) begin
-        if (!rst_n)
-            shadow_trigger_last <= 1'b0;
-        else
-            shadow_trigger_last <= shadow_trigger;
-    end
+    generate
+        if (!SYM_FOLD_EN) begin : gen_out_m1
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    interpolated_out_reg <= '0;
+                    interpolated_valid   <= 1'b0;
+                end else begin
+                    if (tree_valid)
+                        interpolated_out_reg <= tree_sum;
+                    interpolated_valid <= tree_valid;
+                end
+            end
+        end else begin : gen_out_m2
+            localparam int EMIT_SPACING = 16; // >= 8 clks required by downstream halfband_x2
+            logic signed [ACC_WIDTH-1:0] tree_sum_rev;
+            logic                        tree_valid_rev;
 
-    assign shadow_rising = shadow_trigger & ~shadow_trigger_last;
+            polyphase_adder_tree #(
+                .NUM_INPUTS(NUM_MACS),
+                .WIDTH     (ACC_WIDTH),
+                .G1        (TREE_G1),
+                .G2        (TREE_G2)
+            ) u_adder_tree_rev (
+                .clk      (clk),
+                .rst_n    (rst_n),
+                .snap_en  (snap_en_reg),
+                .data_in  (mac_preg_rev),
+                .tree_out (tree_sum_rev),
+                .valid_out(tree_valid_rev)
+            );
 
-    // Data register: capture tree_sum on rising edge of shadow trigger
-    always_ff @(posedge clk) begin
-        if (!rst_n)
-            interpolated_out_reg <= '0;
-        else if (shadow_rising)
-            interpolated_out_reg <= tree_sum;
-    end
+            logic signed [ACC_WIDTH-1:0] fwd_phase_buf [0:NUM_PHASES-1];
+            logic signed [ACC_WIDTH-1:0] rev_phase_buf [0:NUM_PHASES-1];
+            logic [PHASE_COUNT_WIDTH-1:0] cap_phase_idx;
+            logic [PHASE_COUNT_WIDTH-1:0] emit_phase_idx;
+            logic                         emit_active;
+            logic [3:0]                   emit_spacing_cnt;
 
-    // Valid: delayed one cycle after data capture so data is stable
-    always_ff @(posedge clk) begin
-        if (!rst_n)
-            interpolated_valid <= 1'b0;
-        else
-            interpolated_valid <= shadow_rising;
-    end
+            wire [PHASE_COUNT_WIDTH-1:0] active_phases = PHASE_COUNT_WIDTH'(NUM_PHASES >> rate_shift);
+
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    for (int p = 0; p < NUM_PHASES; p++) begin
+                        fwd_phase_buf[p] <= '0;
+                        rev_phase_buf[p] <= '0;
+                    end
+                    cap_phase_idx        <= '0;
+                    emit_phase_idx       <= '0;
+                    emit_active          <= 1'b0;
+                    emit_spacing_cnt     <= '0;
+                    interpolated_out_reg <= '0;
+                    interpolated_valid   <= 1'b0;
+                end else begin
+                    interpolated_valid <= 1'b0;
+
+                    if (sample_accept) begin
+                        cap_phase_idx    <= '0;
+                        emit_phase_idx   <= '0;
+                        emit_active      <= 1'b0;
+                        emit_spacing_cnt <= '0;
+                    end else if (tree_valid) begin
+                        fwd_phase_buf[cap_phase_idx] <= tree_sum;
+                        rev_phase_buf[cap_phase_idx] <= tree_sum_rev;
+                        if (cap_phase_idx == active_phases - 1'b1) begin
+                            cap_phase_idx    <= '0;
+                            emit_active      <= 1'b1;
+                            emit_phase_idx   <= '0;
+                            emit_spacing_cnt <= '0;
+                        end else begin
+                            cap_phase_idx <= cap_phase_idx + 1'b1;
+                        end
+                    end else if (emit_active) begin
+                        if (emit_spacing_cnt == 4'd0) begin
+                            automatic int p_idx   = int'(emit_phase_idx);
+                            automatic int rev_idx = int'(active_phases) - 1 - p_idx;
+                            interpolated_out_reg <= fwd_phase_buf[p_idx] + rev_phase_buf[rev_idx];
+                            interpolated_valid   <= 1'b1;
+                            if (emit_phase_idx == active_phases - 1'b1) begin
+                                emit_active <= 1'b0;
+                            end else begin
+                                emit_phase_idx   <= emit_phase_idx + 1'b1;
+                                emit_spacing_cnt <= 4'(EMIT_SPACING - 1);
+                            end
+                        end else begin
+                            emit_spacing_cnt <= emit_spacing_cnt - 4'd1;
+                        end
+                    end
+                end
+            end
+        end
+    endgenerate
 
     assign interpolated_out = interpolated_out_reg;
-
-    // synthesis translate_off
-    // (Debug prints removed — FIR output verified non-zero)
-    // synthesis translate_on
 
 endmodule
