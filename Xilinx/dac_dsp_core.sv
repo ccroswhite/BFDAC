@@ -1,36 +1,30 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// DAC DSP Core — XCVU13P single-FPGA stereo design
+// DAC DSP Core — XCVU13P single-FPGA stereo design (Milestones 1–4 Integrated)
 //
 // Signal chain (stereo throughout):
-//   1. fir_polyphase_stereo  : ×16 polyphase FIR, 16*NUM_MACS*TAPS_PER_PHASE taps
-//                              (release 1M = 256x256; 5.24M = 1280x256 proven), URAM288 coefs
-//   2. halfband_x2 HB1       : ×2 interpolation, 768k  → 1.536 MHz, 63 taps
-//   3. halfband_x2 HB2       : ×2 interpolation, 1.536 → 3.072 MHz, 31 taps
-//   4. halfband_x2 HB3       : ×2 interpolation, 3.072 → 6.144 MHz, 15 taps
-//   5. Volume multiplier     : DSP48, 4-stage pipeline, shared combined_volume
-//   6. Sample pacer          : elastic FIFO, one paced sample per 6.144 MHz tick
-//   7. TPDF dither           : 42-bit, independent L+R
-//   8. noise_shaper_ef3      : 3rd-order EF, IIR NTF (1-z)^3/(1-z/2)^3, per
-//                              channel (Round 30: replaces the 7th-order FIR-EF
-//                              whose placeholder coefs had NO DC zero)
-//   9. dem_sort              : 64-element sort-based 2nd-order vector shaper
-//                              (Round 30, ratified with RTZ; tones <= -168 dBFS)
-//  10. IOB output registers  : staging (dsp_clk) -> CDC -> RTZ pattern gen +
-//                              IOB register (cell_clk). Each selected cell
-//                              emits a 6-of-8 mclk-cycle pulse per 6.144 MHz
-//                              sample (RTZ 75 % duty, Round 30).
-//
-// Output: 64 RTZ data bits per channel (1 pin per cell, 128 total) -> AXC1T45
-//         translator -> SN74LVC1G74 per-cell reclock FF, whose Q/~Q pair
-//         drives the DMMT5551 steering cell (~3.3 V) -> cascode cells.
-// No LVDS serial TX, no CDC FIFO, no external FPGA interface.
+//   1.  fir_polyphase_stereo : x16 polyphase FIR (Option B 2x Half-Curve Fold +
+//                              Quad-MAC URAM288 packing + Time-Muxed Adder Tree)
+//   1b. dac_peq_engine       : 8-band stereo 48x32-bit (84-bit acc) double-precision
+//                              Parametric Equalizer & voicing stage (Milestone 4)
+//   2.  halfband_x2 HB1      : x2 interpolation, 768k  -> 1.536 MHz, 63 taps
+//   3.  halfband_x2 HB2      : x2 interpolation, 1.536 -> 3.072 MHz, 31 taps
+//   4.  halfband_x2 HB3      : x2 interpolation, 3.072 -> 6.144 MHz, 15 taps
+//   5.  Volume multiplier    : DSP48, 4-stage pipeline, shared combined_volume
+//   6.  Sample pacer         : elastic FIFO, one paced sample per 6.144 MHz tick
+//   7.  TPDF dither          : 42-bit, independent L+R
+//   8.  noise_shaper_ef3     : 3rd-order EF, IIR NTF (1-z)^3/(1-z/2)^3, + DPD
+//   9.  dem_sort             : 64-element sort-based 2nd-order vector shaper
+//  10.  IOB output registers : staging (dsp_clk) -> CDC -> RTZ pattern gen + IOB
 // =============================================================================
 module dac_dsp_core #(
-    parameter int NUM_MACS = 1024,  // Set at top: 256 (1M taps @ TPP=256, release) / 1280 (5.24M)
-    parameter int TAPS_PER_PHASE = 64,  // Coefs per MAC per phase; taps = 16*NUM_MACS*TAPS_PER_PHASE
-    parameter int CELL_TEST_MUTE_CYCLES = 4000000
+    parameter int NUM_MACS = 1024,
+    parameter int TAPS_PER_PHASE = 64,
+    parameter int CELL_TEST_MUTE_CYCLES = 4000000,
+    parameter bit SYM_FOLD_EN  = 1'b1,
+    parameter bit QUAD_URAM_EN = 1'b1,
+    parameter int PEQ_BANDS    = 8
 )(
     // Single clock domain — all logic runs on the 278/302 MHz audio-family dsp_clk
     input  logic        dsp_clk,
@@ -42,13 +36,13 @@ module dac_dsp_core #(
     input  logic        new_sample,
     input  logic        force_zero,    // 1: clamp FIR input to 0 (mute / relay sequencing)
     input  tri0 [1:0]   rate_shift,
-    output logic       stream_fault,
+    output logic        stream_fault,
 
     // Coefficient write bus (from dac_coef_subsys, dsp_clk domain)
-    input  logic                            coef_we,
-    input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,  // coef index within MAC
-    input  logic signed [17:0]              coef_wdata,
-    input  logic [$clog2(NUM_MACS)-1:0]     coef_wmac,
+    input  logic                               coef_we,
+    input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,
+    input  logic signed [17:0]                 coef_wdata,
+    input  logic [$clog2(NUM_MACS)-1:0]        coef_wmac,
 
     // Bank switching (from dac_coef_subsys, dsp_clk domain)
     input  logic        bank_select,
@@ -60,8 +54,7 @@ module dac_dsp_core #(
     // Boot envelope gain (from dac_coef_subsys, dsp_clk domain)
     input  logic [15:0] boot_envelope_gain,
 
-    // DPD (Step 4D.1): enable level (dsp_clk-synced in top) + cal_coef_store
-    // active-bank read ports (2 lanes x 2 channel engines)
+    // DPD (Step 4D.1): enable level + cal_coef_store active-bank read ports
     input  logic              dpd_enable,
     output logic [3:0][8:0]   dpd_cal_addr,
     input  logic [3:0][23:0]  dpd_cal_data,
@@ -72,40 +65,43 @@ module dac_dsp_core #(
     output logic        dpd_busy,
     output logic        dpd_deadline_miss,
 
-    // Cascode IOB launch clock — mclk-rate MMCM output, phase-aligned to the
-    // external SN74LVC1G74 reclock-FF clock (same LMK00304 tree, Round 30)
-    input  logic        cell_clk,
+    // Cascode IOB launch clock
+    input  logic            cell_clk,
     input  logic [1:0][7:0] cell_test_cfg,
     input  logic [1:0]      cell_test_req,
     output logic [1:0]      cell_test_ack,
     input  logic            cell_test_safe,
     input  tri0             bench_req,
     input  logic [10:0]     bench_cmd,
-    output logic           bench_ack,
-    output logic           bench_ready,
+    output logic            bench_ack,
+    output logic            bench_ready,
+
+    // Parametric Equalizer (Milestone 4) — optional ports with safe defaults
+    input  logic                        peq_enable        = 1'b1,
+    input  logic                        peq_coef_wr_en    = 1'b0,
+    input  logic [$clog2(PEQ_BANDS)-1:0] peq_coef_wr_band = '0,
+    input  logic [2:0]                  peq_coef_wr_idx   = 3'd0,
+    input  logic signed [31:0]          peq_coef_wr_data  = 32'sh0,
+    input  logic                        peq_coef_swap_req = 1'b0,
+    output logic                        peq_active_bank,
 
     // Direct cascode cell outputs — IOB-registered on cell_clk, RTZ-encoded
-    // (6-of-8 mclk pulse per selected cell per sample, Round 30). ONE pin per
-    // cell; the external SN74LVC1G74 reclock FF (Fig. 1b) produces the
-    // complementary base-drive pair (Q/~Q) for the DMMT5551 cell (Fig. 2).
-    // Constraint in XDC: set_property IOB TRUE [get_cells {*cascode_iob*}]
-    output logic [63:0] cascode_l,   // Left  channel: 64 cascode cell data bits
-    output logic [63:0] cascode_r    // Right channel: 64 cascode cell data bits
+    output logic [63:0] cascode_l,
+    output logic [63:0] cascode_r
 );
 
     // =========================================================================
-    // Mute input gating: zero audio data but keep new_sample alive so the FIR
-    // pipeline continues flushing and produces a true DC-zero output, not a
-    // held stale value.
+    // Mute input gating
+    // =========================================================================
     logic [23:0] gated_audio_l, gated_audio_r;
     assign gated_audio_l = force_zero ? 24'd0 : audio_l;
     assign gated_audio_r = force_zero ? 24'd0 : audio_r;
 
     // =========================================================================
-    // 1. Polyphase FIR ×16 — stereo, URAM288 coefficient storage
+    // 1. Polyphase FIR x16 — stereo, URAM288 coefficient storage
     //    Output rate: 768 kHz (48k) / 705.6 kHz (44.1k)
     // =========================================================================
-    logic signed [47:0] interp_l,     interp_r;
+    logic signed [47:0] interp_l,       interp_r;
     logic               interp_l_valid, interp_r_valid;
     logic fir_overrun, pace_fault;
     assign stream_fault = fir_overrun || pace_fault || dpd_deadline_miss;
@@ -117,7 +113,9 @@ module dac_dsp_core #(
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (24),
         .COEF_WIDTH     (18),
-        .ACC_WIDTH      (48)
+        .ACC_WIDTH      (48),
+        .SYM_FOLD_EN    (SYM_FOLD_EN),
+        .QUAD_URAM_EN   (QUAD_URAM_EN)
     ) u_stereo_fir (
         .clk                  (dsp_clk),
         .rst_n                (sys_rst_n),
@@ -140,18 +138,50 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 2. Half-band ×2 stage HB1 — stereo
-    //    63 taps, 768k → 1.536 MHz
+    // 1b. Studio-Grade Parametric Equalizer (Milestone 4)
+    //     8-band stereo double-precision (48x32-bit, 84-bit accumulator) IIR
+    //     biquad engine at 768 / 705.6 kHz. Resets to bit-exact unity gain.
     // =========================================================================
-    logic signed [47:0] hb1_l,     hb1_r;
+    logic signed [47:0] peq_l, peq_r;
+    logic               peq_valid;
+
+    (* keep_hierarchy = "yes" *)
+    dac_peq_engine #(
+        .NUM_BANDS  (PEQ_BANDS),
+        .DATA_WIDTH (48),
+        .COEF_WIDTH (32),
+        .FRAC_BITS  (30)
+    ) u_peq (
+        .clk           (dsp_clk),
+        .rst_n         (sys_rst_n),
+        .peq_enable    (peq_enable),
+        .in_valid      (interp_l_valid),
+        .in_data_l     (interp_l),
+        .in_data_r     (interp_r),
+        .out_valid     (peq_valid),
+        .out_data_l    (peq_l),
+        .out_data_r    (peq_r),
+        .coef_wr_en    (peq_coef_wr_en),
+        .coef_wr_band  (peq_coef_wr_band),
+        .coef_wr_idx   (peq_coef_wr_idx),
+        .coef_wr_data  (peq_coef_wr_data),
+        .coef_swap_req (peq_coef_swap_req),
+        .active_bank   (peq_active_bank)
+    );
+
+    // =========================================================================
+    // 2. Half-band x2 stage HB1 — stereo
+    //    63 taps, 768k -> 1.536 MHz
+    // =========================================================================
+    logic signed [47:0] hb1_l,       hb1_r;
     logic               hb1_l_valid, hb1_r_valid;
 
     halfband_x2 #(.NUM_TAPS(63), .DATA_WIDTH(48), .COEF_WIDTH(18), .ACC_WIDTH(48), .OUT_SPACING(4))
     u_hb1_l (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (interp_l_valid),
-        .data_in  (interp_l),
+        .in_valid (peq_valid),
+        .data_in  (peq_l),
         .out_valid(hb1_l_valid),
         .data_out (hb1_l)
     );
@@ -160,17 +190,17 @@ module dac_dsp_core #(
     u_hb1_r (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (interp_r_valid),
-        .data_in  (interp_r),
+        .in_valid (peq_valid),
+        .data_in  (peq_r),
         .out_valid(hb1_r_valid),
         .data_out (hb1_r)
     );
 
     // =========================================================================
-    // 3. Half-band ×2 stage HB2 — stereo
-    //    31 taps, 1.536 → 3.072 MHz
+    // 3. Half-band x2 stage HB2 — stereo
+    //    31 taps, 1.536 -> 3.072 MHz
     // =========================================================================
-    logic signed [47:0] hb2_l,     hb2_r;
+    logic signed [47:0] hb2_l,       hb2_r;
     logic               hb2_l_valid, hb2_r_valid;
 
     halfband_x2 #(.NUM_TAPS(31), .DATA_WIDTH(48), .COEF_WIDTH(18), .ACC_WIDTH(48), .OUT_SPACING(2))
@@ -194,10 +224,10 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 4. Half-band ×2 stage HB3 — stereo
-    //    15 taps, 3.072 → 6.144 MHz
+    // 4. Half-band x2 stage HB3 — stereo
+    //    15 taps, 3.072 -> 6.144 MHz
     // =========================================================================
-    logic signed [47:0] hb3_l,     hb3_r;
+    logic signed [47:0] hb3_l,       hb3_r;
     logic               hb3_l_valid, hb3_r_valid;
 
     halfband_x2 #(.NUM_TAPS(15), .DATA_WIDTH(48), .COEF_WIDTH(18), .ACC_WIDTH(48), .OUT_SPACING(1))
@@ -222,13 +252,7 @@ module dac_dsp_core #(
 
     // =========================================================================
     // 5. Volume multiplier - shared combined_volume, stereo paths
-    //    sys_volume is Q16.16 code gain; boot/level envelope is Q0.16.
-    //    DSP48 pipeline: AREG(1) + MREG(1) + PREG(1) + output reg = 4 cycles
     // =========================================================================
-    // Registered (f9wd route review 2026-08-15): as always_comb this 32x16
-    // multiply rode combinationally from u_boot_envelope/gain_r through a DSP
-    // into the vol_b_r1 capture (-0.16 ns). Both inputs are slow controls
-    // (volume pot / boot ramp), so one extra cycle of gain latency is free.
     (* use_dsp = "yes" *) logic [31:0] combined_volume;
     logic [47:0] combined_volume_product;
     assign combined_volume_product =
@@ -238,7 +262,6 @@ module dac_dsp_core #(
         else            combined_volume <= combined_volume_product[47:16];
     end
 
-    // Left volume pipeline
     logic signed [47:0] vol_a_l_r1;
     logic        [31:0] vol_b_r1;
     (* use_dsp = "yes" *) logic signed [79:0] vol_m_l_r2, vol_m_r_r2;
@@ -250,11 +273,11 @@ module dac_dsp_core #(
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            vol_a_l_r1  <= '0;  vol_a_r_r1  <= '0;
-            vol_b_r1    <= '0;
-            vol_m_l_r2  <= '0;  vol_m_r_r2  <= '0;
-            vol_p_l_r3  <= '0;  vol_p_r_r3  <= '0;
-            volumed_l   <= '0;  volumed_r   <= '0;
+            vol_a_l_r1     <= '0;  vol_a_r_r1  <= '0;
+            vol_b_r1       <= '0;
+            vol_m_l_r2     <= '0;  vol_m_r_r2  <= '0;
+            vol_p_l_r3     <= '0;  vol_p_r_r3  <= '0;
+            volumed_l      <= '0;  volumed_r   <= '0;
             vol_valid_pipe <= '0;
         end else begin
             vol_a_l_r1 <= hb3_l;
@@ -274,25 +297,6 @@ module dac_dsp_core #(
 
     // =========================================================================
     // 6. Sample pacer (Round 30) — elastic FIFO + cell_clk/8 tick.
-    //    The FIR sweep and HB chain produce the 128 per-sample updates in
-    //    BURSTS (FIR emits 16 outputs paced by the coefficient sweep, each
-    //    fanning out x8 through the HBs within ~11 clk). The NS/DEM/CDC
-    //    stages need one update per 6.144 MHz sample, evenly. The FIR sweep
-    //    compresses all 128 updates of one input sample into ~1024 clk while
-    //    draining spans the whole sample period -> peak occupancy ~110; a
-    //    256-deep FIFO (LUTRAM) absorbs it; the pop tick is cell_clk/8
-    //    (= exactly 6.144 MHz, same MMCM family as the input rate, so the
-    //    Gain ledger for unity-DC filters: Q1.17 coefficients and the MAC's
-    //    intentional 2x pre-adder produce 2^41 at 24-bit full scale. The
-    //    three halfbands have unity DC gain. SPI volume maps unity to 28.0
-    //    Q16.16 code units; ns_feed's x2 then produces 28 * 2^42, leaving
-    //    four code units of headroom around the NS center code 32.
-    //    long-term rates match exactly). Pop skips silently on empty
-    //    (startup fill). Overflow DROPS the newest write (state stays
-    //    consistent) and warns once in simulation — accelerated testbenches
-    //    (tb_vu13p_top's 768 kHz I2S frames vs the sim-shortened watchdog)
-    //    legitimately overrun the 6.144 MHz drain; hardware rates are
-    //    mclk-locked and cannot.
     // =========================================================================
     logic [95:0] pace_fifo [256];
     logic [7:0]  pace_wptr, pace_rptr;
@@ -304,15 +308,13 @@ module dac_dsp_core #(
     logic        pace_ovf_warned = 1'b0;
     // synthesis translate_on
 
-    // Saturating NS feed: volumed x2 with bit-46 full scale (see note above)
     function automatic logic signed [47:0] ns_feed(input logic signed [63:0] v);
         if (v[63:46] == '0 || v[63:46] == '1)
-            return {v[46:0], 1'b0};                       // in range: x2
+            return {v[46:0], 1'b0};
         else
-            return v[63] ? 48'sh8000_0000_0001 : 48'sh7FFF_FFFF_FFFF;  // saturate
+            return v[63] ? 48'sh8000_0000_0001 : 48'sh7FFF_FFFF_FFFF;
     endfunction
 
-    // cell_clk domain: /8 tick toggle (6.144 MHz)
     logic [2:0] pace_div;
     logic       pace_tgl;
 
@@ -327,7 +329,6 @@ module dac_dsp_core #(
         end
     end
 
-    // dsp_clk domain: sync + edge detect -> pop tick
     (* ASYNC_REG = "TRUE" *) logic [2:0] pace_sync;
     logic pace_tick;
 
@@ -353,14 +354,14 @@ module dac_dsp_core #(
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            pace_wptr  <= '0;
-            pace_rptr  <= '0;
-            pace_count <= '0;
-            pace_valid <= 1'b0;
-            paced_l    <= '0;
-            paced_r    <= '0;
+            pace_wptr    <= '0;
+            pace_rptr    <= '0;
+            pace_count   <= '0;
+            pace_valid   <= 1'b0;
+            paced_l      <= '0;
+            paced_r      <= '0;
             pace_started <= 0;
-            pace_fault <= 0;
+            pace_fault   <= 0;
         end else begin
             pace_valid <= 1'b0;
             if (volumed_valid && pace_count != 9'd256) begin
@@ -387,14 +388,14 @@ module dac_dsp_core #(
                 default: pace_count <= pace_count;
             endcase
             if (bench_active) begin
-                pace_count <= 0;
-                pace_wptr <= 0;
-                pace_rptr <= 0;
+                pace_count   <= 0;
+                pace_wptr    <= 0;
+                pace_rptr    <= 0;
                 pace_started <= 0;
-                pace_fault <= 0;
-                pace_valid <= pace_tick && bench_audio;
-                paced_l <= bench_sample_l;
-                paced_r <= bench_sample_r;
+                pace_fault   <= 0;
+                pace_valid   <= pace_tick && bench_audio;
+                paced_l      <= bench_sample_l;
+                paced_r      <= bench_sample_r;
             end
         end
     end
@@ -407,7 +408,7 @@ module dac_dsp_core #(
     tpdf_dither_gen #(.DITHER_WIDTH(42)) u_dither_l (
         .clk        (dsp_clk),
         .rst_n      (sys_rst_n),
-        .enable     (pace_valid),   // Round 30: one fresh value per NS sample
+        .enable     (pace_valid),
         .dither_out (dither_l)
     );
 
@@ -418,17 +419,12 @@ module dac_dsp_core #(
     ) u_dither_r (
         .clk        (dsp_clk),
         .rst_n      (sys_rst_n),
-        .enable     (pace_valid),   // Round 30: one fresh value per NS sample
+        .enable     (pace_valid),
         .dither_out (dither_r)
     );
 
     // =========================================================================
     // 8. Noise Shaper — independent L and R (Round 30: noise_shaper_ef3)
-    //    3rd-order error feedback, NTF (1-z^-1)^3/(1-z^-1/2)^3, 136 dB
-    //    in-band SNDR (ns_ef3_gen.py; code budget line 133.5 dB).
-    //    Input:  48-bit paced samples (bit-46 FS, see pacer note)
-    //    Output: 7-bit amplitude to DEM (range 0..63)
-    //    Pipeline: 4 stages, fires every 6.144 MHz tick
     // =========================================================================
     logic [6:0] dem_cmd_l, dem_cmd_r;
 
@@ -469,10 +465,7 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 8b. DPD Engines (Step 4D.1, 2026-08-22) — per channel, EF3-embedded
-    //     Volterra predistortion (certified dpd_fx_golden.py fixed point).
-    //     Coefficients from cal_coef_store (top level) via 2 lanes x 2 ports.
-    //     dpd_enable low -> corr_valid never fires -> legacy NS behavior.
+    // 8b. DPD Engines (Step 4D.1, 2026-08-22)
     // =========================================================================
     logic [7:0] dpd_addr_l_a, dpd_addr_l_b, dpd_addr_r_a, dpd_addr_r_b;
     logic dpd_busy_l, dpd_busy_r;
@@ -523,17 +516,7 @@ module dac_dsp_core #(
 
     // =========================================================================
     // 9. 64-Element DEM — sort-based 2nd-order vector shaper (Round 30)
-    //    Unconstrained selection (legal under RTZ: toggles are free): each
-    //    sample picks the c cells with the smallest 2*acc1+acc2 metric.
-    //    Mismatch + per-cell duty spread shaped to <= -153 dBFS, idle tones
-    //    <= -168 dBFS (dem_sort_check.py). Replaces dem_dwa (DWA had audible
-    //    -130 dBFS-class idle tones above the thermal floor).
-//    Multi-cycle (35 dsp_clk of 49-50 available at the revised MMCM setting) — uses valid_out instead
-    //    of a fixed pipeline delay.
-    //    enable is delayed to match NS pipeline (6 stages above + volumed_valid)
     // =========================================================================
-
-    // Delay enable by NS pipeline depth (6 stages) to align dem enable with NS output
     logic [5:0] ns_valid_pipe;
     logic       dem_enable;
 
@@ -568,33 +551,8 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 10. IOB Output Registers — two stages for minimum skew
-    //
-    //  Stage 1: Staging register (fabric FF, placed anywhere)
-    //           Captures DEM output 3 cycles after dem_enable (DEM pipeline depth).
-    //           Gives router slack from DEM logic to IOB.
-    //
-    //  Stage 2 (Round 29, todo #13): dsp_clk -> cell_clk CDC + IOB register.
-    //           The DEM word is stable for ~8 cell_clk cycles per 6.144 MHz
-    //           update, so a toggle handshake moves it safely into the
-    //           cell_clk domain (mclk-rate MMCM output, phase-aligned to the
-    //           external reclock-FF clock). Round 30: an RTZ phase counter
-    //           gates the captured word into a 6-of-8 mclk-cycle pulse per
-    //           sample (75 % duty); the IOB register launches on cell_clk,
-    //           giving the LVC1G74 D inputs ~9-13 ns of setup (bom.md §1.4).
-    //           Pulse width is ALWAYS exactly 6 cell_clk periods (phase
-    //           counter resets on capture) -> identical charge packets, the
-    //           RTZ invariant.  All 128 IOB FFs share the cell_clk BUFG.
-    //
-    //  XDC constraints required (see vu13p_dac_top.xdc §8):
-    //    set_property IOB TRUE [get_cells {u_dsp_core/cascode_iob_l_reg[*]}]
-    //    set_property IOB TRUE [get_cells {u_dsp_core/cascode_iob_r_reg[*]}]
-    //    set_max_delay -datapath_only across staging -> cellclk capture
-    //    set_output_delay vs virtual ff_clk on cascode_l/r ports
+    // 10. IOB Output Registers
     // =========================================================================
-
-    // DEM output valid: dem_sort is multi-cycle; both channels get identical
-    // enable cadence so their valids coincide — use the L one.
     (* ASYNC_REG = "TRUE" *) logic [1:0] cell_test_req_meta, cell_test_req_sync;
     logic [1:0][7:0] cell_test_applied;
     localparam int CELL_TEST_WAIT_W = $clog2(CELL_TEST_MUTE_CYCLES + 1);
@@ -604,10 +562,10 @@ module dac_dsp_core #(
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            cell_test_req_meta <= '0;
-            cell_test_req_sync <= '0;
-            cell_test_ack <= '0;
-            cell_test_applied <= '0;
+            cell_test_req_meta   <= '0;
+            cell_test_req_sync   <= '0;
+            cell_test_ack        <= '0;
+            cell_test_applied    <= '0;
             cell_test_mute_count <= '0;
         end else begin
             cell_test_req_meta <= cell_test_req;
@@ -620,7 +578,7 @@ module dac_dsp_core #(
                 if ((cell_test_req_sync[ch] != cell_test_ack[ch]) &&
                     (!cell_test_cfg[ch][7] || (cell_test_safe && cell_test_ready))) begin
                     cell_test_applied[ch] <= cell_test_cfg[ch];
-                    cell_test_ack[ch] <= cell_test_req_sync[ch];
+                    cell_test_ack[ch]     <= cell_test_req_sync[ch];
                 end
             end
         end
@@ -642,7 +600,6 @@ module dac_dsp_core #(
     logic dem_out_valid;
     assign dem_out_valid = (bench_cell || cell_test_active) ? pace_tick : dem_valid_l;
 
-    // Stage 1: staging registers (fabric, gated load)
     logic [63:0] staging_l, staging_r;
 
     always_ff @(posedge dsp_clk) begin
@@ -657,7 +614,6 @@ module dac_dsp_core #(
         end
     end
 
-    // dsp_clk domain: update toggle flips whenever a new DEM word is staged
     logic dem_update_tgl;
 
     always_ff @(posedge dsp_clk) begin
@@ -667,7 +623,6 @@ module dac_dsp_core #(
             dem_update_tgl <= ~dem_update_tgl;
     end
 
-    // cell_clk domain: local reset synchronizer (sys_rst_n is dsp_clk-domain)
     (* ASYNC_REG = "TRUE" *) logic [1:0] cell_rst_sync;
     logic cell_rst_n;
 
@@ -679,10 +634,6 @@ module dac_dsp_core #(
     end
     assign cell_rst_n = cell_rst_sync[1];
 
-    // cell_clk domain: toggle synchronizer + edge detect -> capture enable.
-    // staging_l/r are stable for ~8 cell_clk cycles by the time the toggle
-    // lands (2-FF sync = 2-3 cell_clk after the dsp_clk staging load, and the
-    // next DEM update is ~160 dsp_clk away), so the bus capture is race-free.
     (* ASYNC_REG = "TRUE" *) logic [2:0] tgl_sync;
     logic cell_capture_en;
 
@@ -694,7 +645,6 @@ module dac_dsp_core #(
     end
     assign cell_capture_en = tgl_sync[2] ^ tgl_sync[1];
 
-    // cell_clk domain: bus capture registers (single fabric stage)
     logic [63:0] cell_cap_l, cell_cap_r;
 
     always_ff @(posedge cell_clk) begin
@@ -707,27 +657,20 @@ module dac_dsp_core #(
         end
     end
 
-    // cell_clk domain: RTZ phase counter (Round 30). Resets on capture so
-    // every pulse is exactly 6 cell_clk wide regardless of CDC arrival
-    // wobble. Gate low on phases 0 and 7: phase 0 = data-update/settle
-    // window, phase 7 = return-to-zero before the next sample.
     logic [2:0] rtz_phase;
     logic       rtz_gate;
 
     always_ff @(posedge cell_clk) begin
         if (!cell_rst_n)
-            rtz_phase <= 3'd7;                   // parked: gate low
+            rtz_phase <= 3'd7;
         else if (cell_capture_en)
             rtz_phase <= 3'd0;
         else if (rtz_phase != 3'd7)
-            rtz_phase <= rtz_phase + 3'd1;       // saturate at 7 until next capture
+            rtz_phase <= rtz_phase + 3'd1;
     end
 
     assign rtz_gate = (rtz_phase != 3'd0) && (rtz_phase != 3'd7);
 
-    // cell_clk domain: IOB output registers (unconditional — timing-closure
-    // friendly). Vivado honours IOB=TRUE and places these FFs inside the
-    // output IOB. Reset '0 parks every cell on bus_minus (matches DEM reset).
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_l;
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_r;
 
