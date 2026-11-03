@@ -1,0 +1,809 @@
+{
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-11-01T22:36:51",
+    "ignored_checks": [
+        {
+            "description": "Global label only appears once in the schematic",
+            "key": "single_global_label"
+        },
+        {
+            "description": "Four connection points are joined together",
+            "key": "four_way_junction"
+        },
+        {
+            "description": "SPICE model issue",
+            "key": "simulation_model_issue"
+        },
+        {
+            "description": "Assigned footprint doesn't match footprint filters",
+            "key": "footprint_filter"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning"
+    ],
+    "kicad_version": "10.0.6",
+    "sheets": [
+        {
+            "path": "/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19",
+            "violations": []
+        },
+        {
+            "path": "/CELLL01/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/02de40b9-7056-49f6-8834-99146570d424",
+            "violations": []
+        },
+        {
+            "path": "/CELLL02/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/7b0a83a4-9d7c-45cd-9f55-1124da175c20",
+            "violations": []
+        },
+        {
+            "path": "/CELLL03/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/94876bb4-531d-45c9-86cc-0c7b7aadfaf8",
+            "violations": []
+        },
+        {
+            "path": "/CELLL04/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/b068f649-2939-42c5-a625-6378cc560b80",
+            "violations": []
+        },
+        {
+            "path": "/CELLL05/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/49dbccc7-b713-44f1-ad2b-bf7e13bb8a44",
+            "violations": []
+        },
+        {
+            "path": "/CELLL06/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1a2d07c8-0002-4dbc-9d60-8ca880b6f49e",
+            "violations": []
+        },
+        {
+            "path": "/CELLL07/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8c542a5c-8b44-4583-8661-35ddbecc1ce2",
+            "violations": []
+        },
+        {
+            "path": "/CELLL08/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/360de38b-be25-437b-9bb9-03ea6d08f5f4",
+            "violations": []
+        },
+        {
+            "path": "/CELLL09/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f570047c-1a7e-46ef-ae9f-4fef0442b319",
+            "violations": []
+        },
+        {
+            "path": "/CELLL10/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/62b29d15-a9fd-4f61-85fa-7903240596e3",
+            "violations": []
+        },
+        {
+            "path": "/CELLL11/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/b2e2423f-2d58-47d7-a361-64d7496c025b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL12/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1e997f23-08d2-4f2a-abd7-494084f204cd",
+            "violations": []
+        },
+        {
+            "path": "/CELLL13/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/adc8d431-b74f-4cbd-9642-9979e16c2a31",
+            "violations": []
+        },
+        {
+            "path": "/CELLL14/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c631bfa8-db97-4151-bd9e-9995a541d45b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL15/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a185fa9a-158a-42e7-858f-148ace293826",
+            "violations": []
+        },
+        {
+            "path": "/CELLL16/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/9b6b442d-71e5-4925-8cbe-c7e9f0cbe82a",
+            "violations": []
+        },
+        {
+            "path": "/CELLL17/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/bc40dd35-ee50-4e81-8804-a8f2d461fa98",
+            "violations": []
+        },
+        {
+            "path": "/CELLL18/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6b24d0f9-5079-45c3-975a-7616c77c9f54",
+            "violations": []
+        },
+        {
+            "path": "/CELLL19/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/bc32f24c-f604-4139-bc18-dd83137f6fd0",
+            "violations": []
+        },
+        {
+            "path": "/CELLL20/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/aadb9ba1-29ca-4ebc-9f06-1b2eb8f4693f",
+            "violations": []
+        },
+        {
+            "path": "/CELLL21/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/ab1808f0-03b1-4f42-85c9-cc4ec10665ef",
+            "violations": []
+        },
+        {
+            "path": "/CELLL22/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/b649a3e7-89dc-4ce4-ab7c-320be39f9723",
+            "violations": []
+        },
+        {
+            "path": "/CELLL23/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/4d864e50-1c9e-4afb-83a5-759b418d7303",
+            "violations": []
+        },
+        {
+            "path": "/CELLL24/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/01c3c3ba-59e3-4553-b3f0-2e800cfef39e",
+            "violations": []
+        },
+        {
+            "path": "/CELLL25/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/bb1c6615-2f93-484f-a688-ce59bff117d0",
+            "violations": []
+        },
+        {
+            "path": "/CELLL26/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/91da962f-942f-40f5-9f02-8019dcf748ff",
+            "violations": []
+        },
+        {
+            "path": "/CELLL27/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/31d6c35c-a17b-4f58-a0eb-71d6f4df6548",
+            "violations": []
+        },
+        {
+            "path": "/CELLL28/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/e5a6b342-6f98-4803-ac1f-f5658c1286f6",
+            "violations": []
+        },
+        {
+            "path": "/CELLL29/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a49acb4a-79fe-4f0b-97ad-d29eea4e2807",
+            "violations": []
+        },
+        {
+            "path": "/CELLL30/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f9c82f2f-cd53-41ee-81ab-41d9efdbb66f",
+            "violations": []
+        },
+        {
+            "path": "/CELLL31/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/0f0ba899-75ba-4490-8b8c-205956278603",
+            "violations": []
+        },
+        {
+            "path": "/CELLL32/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/3a45e09e-31f6-4e8b-b190-ff865cde29cf",
+            "violations": []
+        },
+        {
+            "path": "/CELLL33/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/7f18f972-b769-4e1c-8d76-e8b586f350c6",
+            "violations": []
+        },
+        {
+            "path": "/CELLL34/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/7b33ed3f-fffc-4f88-9d96-57f26f7df4ce",
+            "violations": []
+        },
+        {
+            "path": "/CELLL35/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/574e6d80-d745-4573-bf8a-4abc262fc056",
+            "violations": []
+        },
+        {
+            "path": "/CELLL36/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f39d207b-0b56-4333-943d-4a39fedea6b6",
+            "violations": []
+        },
+        {
+            "path": "/CELLL37/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1d5ff685-2713-49a4-91a4-746b524ed9b1",
+            "violations": []
+        },
+        {
+            "path": "/CELLL38/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1aa7e75f-4433-4d69-800e-7bb3401b95f8",
+            "violations": []
+        },
+        {
+            "path": "/CELLL39/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/de9007d1-cf55-43cc-8269-79c118b2b8a5",
+            "violations": []
+        },
+        {
+            "path": "/CELLL40/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/424faa3d-f1a8-436d-ad96-4d754d7e2576",
+            "violations": []
+        },
+        {
+            "path": "/CELLL41/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/083f17e1-4d60-473f-afed-0a15f219cf2d",
+            "violations": []
+        },
+        {
+            "path": "/CELLL42/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f50d9b0d-f624-4d71-b071-3b1c42b4be06",
+            "violations": []
+        },
+        {
+            "path": "/CELLL43/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/014cd060-c9dc-44a8-89ec-5d50bb17d182",
+            "violations": []
+        },
+        {
+            "path": "/CELLL44/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/404f9e94-79f8-4f0b-95ff-58cc32dee980",
+            "violations": []
+        },
+        {
+            "path": "/CELLL45/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1dc04f1b-09ec-41da-af9b-11fb6f110a78",
+            "violations": []
+        },
+        {
+            "path": "/CELLL46/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f1580171-adbb-4daf-8569-f86451297016",
+            "violations": []
+        },
+        {
+            "path": "/CELLL47/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/766a2893-d63b-4f43-a8c2-59361460a1c7",
+            "violations": []
+        },
+        {
+            "path": "/CELLL48/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/2a4e27d3-3c0e-4171-98f4-1b79f53be332",
+            "violations": []
+        },
+        {
+            "path": "/CELLL49/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a644b110-883e-4208-a1ef-39c3e0fc6ac7",
+            "violations": []
+        },
+        {
+            "path": "/CELLL50/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/01ced583-ac8c-4ac3-98f6-7289e98afda0",
+            "violations": []
+        },
+        {
+            "path": "/CELLL51/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/2eceec3c-3abf-4659-a7f4-6bee8d573734",
+            "violations": []
+        },
+        {
+            "path": "/CELLL52/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/fbb4517a-6120-4542-8240-541517613632",
+            "violations": []
+        },
+        {
+            "path": "/CELLL53/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/800a0a5f-b0ad-4b3d-869a-6095addc7a2e",
+            "violations": []
+        },
+        {
+            "path": "/CELLL54/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a42ba65a-5ddb-4fa2-be79-68968b50ef71",
+            "violations": []
+        },
+        {
+            "path": "/CELLL55/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/415beecb-e2ea-4d59-9102-0923222d7c59",
+            "violations": []
+        },
+        {
+            "path": "/CELLL56/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6164f6ba-6122-4419-8230-e39b8042b8a4",
+            "violations": []
+        },
+        {
+            "path": "/CELLL57/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/4b5bed3b-c211-44bb-bbb9-fcf2c5bcd48b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL58/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/859f4901-9217-4529-97bc-6738715edeff",
+            "violations": []
+        },
+        {
+            "path": "/CELLL59/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f654a383-e263-4119-9773-886d6397ae0d",
+            "violations": []
+        },
+        {
+            "path": "/CELLL60/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/baafce55-ae8c-4e52-857d-458235a17198",
+            "violations": []
+        },
+        {
+            "path": "/CELLL61/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8974d5c7-c158-4c2f-ba4d-4d9740b7eaa5",
+            "violations": []
+        },
+        {
+            "path": "/CELLL62/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/ef881b8c-e8fd-4afa-a546-db3767dbb433",
+            "violations": []
+        },
+        {
+            "path": "/CELLL63/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f0a5b1b3-830d-4de1-9bb3-d90c2132473b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL64/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8e67fceb-da3f-4150-a342-3d262f041e22",
+            "violations": []
+        },
+        {
+            "path": "/CELLR01/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1dd2a7eb-77e9-40c0-bbf0-bbcfe9502a24",
+            "violations": []
+        },
+        {
+            "path": "/CELLR02/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/74289d3d-e8b6-44ef-a527-02dc1c32111d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR03/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/965b8f55-0ff2-4091-9acf-e0484c8e9ad0",
+            "violations": []
+        },
+        {
+            "path": "/CELLR04/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/541789a7-324c-4689-84bc-ad0c6ed6cbbf",
+            "violations": []
+        },
+        {
+            "path": "/CELLR05/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/704e0512-5855-41c2-bbe0-fda08530a18d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR06/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/cadc14c4-2899-4ca7-9e59-1ac3d88eab30",
+            "violations": []
+        },
+        {
+            "path": "/CELLR07/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/29e2a596-fe2e-4685-950b-f586c6f6773b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR08/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/fdff66ff-359c-4236-9df2-e759ba9aba9f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR09/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c479cccf-78d6-43be-9e8d-1682a131e86a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR10/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c4b3e2d9-94e0-4b9e-97f6-f9e30b3e37e2",
+            "violations": []
+        },
+        {
+            "path": "/CELLR11/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/4e690578-ec96-42a9-b1ed-eccef7c08fa2",
+            "violations": []
+        },
+        {
+            "path": "/CELLR12/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6b043c32-0487-4771-afe5-409caf719194",
+            "violations": []
+        },
+        {
+            "path": "/CELLR13/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/d3a2f800-fce6-404b-b32b-3a50599045e1",
+            "violations": []
+        },
+        {
+            "path": "/CELLR14/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/70682270-3042-495a-b33f-bc16590a3fe9",
+            "violations": []
+        },
+        {
+            "path": "/CELLR15/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/d0514d98-c56f-48d5-98e7-e4aa4232042e",
+            "violations": []
+        },
+        {
+            "path": "/CELLR16/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/b2e0572a-97e6-4fe2-8c36-192efb283c10",
+            "violations": []
+        },
+        {
+            "path": "/CELLR17/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8ed9bf03-2319-4a55-ae97-37267150254a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR18/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8d689ed8-b0e3-418c-9187-304205e6cea6",
+            "violations": []
+        },
+        {
+            "path": "/CELLR19/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/3a792d07-7e28-418a-bcb3-62a261cdb567",
+            "violations": []
+        },
+        {
+            "path": "/CELLR20/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/2c63c5fc-4965-4351-a90b-7c77e2ca9754",
+            "violations": []
+        },
+        {
+            "path": "/CELLR21/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/5934613c-3ccb-4478-be04-ba0125291ae7",
+            "violations": []
+        },
+        {
+            "path": "/CELLR22/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/542e7af4-54e0-4fa6-b007-02c40377a517",
+            "violations": []
+        },
+        {
+            "path": "/CELLR23/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/15096c00-ee20-4038-b571-db8818de8ebb",
+            "violations": []
+        },
+        {
+            "path": "/CELLR24/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/2363d60b-a8e4-4c4e-88de-a34adb6174a3",
+            "violations": []
+        },
+        {
+            "path": "/CELLR25/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/e978f4ab-2835-49e3-b1ff-402be5b760bd",
+            "violations": []
+        },
+        {
+            "path": "/CELLR26/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/5d87378e-9ba8-4ede-ac0c-5ce105bbdd41",
+            "violations": []
+        },
+        {
+            "path": "/CELLR27/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/2cddc406-c2f5-44b2-b0a6-a5681fb4c368",
+            "violations": []
+        },
+        {
+            "path": "/CELLR28/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/9d43a5d0-6afc-4bf5-9847-d3f65d001061",
+            "violations": []
+        },
+        {
+            "path": "/CELLR29/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/9429554a-acfe-4e36-868c-4ed83d4b64e7",
+            "violations": []
+        },
+        {
+            "path": "/CELLR30/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/62f98380-7228-485f-84e3-36876e6dd8fe",
+            "violations": []
+        },
+        {
+            "path": "/CELLR31/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/04268bf0-a1d2-4a75-9bf6-b82f60a5c778",
+            "violations": []
+        },
+        {
+            "path": "/CELLR32/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/3210b8ae-a4c3-446a-87a7-47a3b963a3e4",
+            "violations": []
+        },
+        {
+            "path": "/CELLR33/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/97754073-14e6-4109-9997-c19ba70ecfb7",
+            "violations": []
+        },
+        {
+            "path": "/CELLR34/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/fdea57f1-c466-4bf3-a18c-fc16b6e42262",
+            "violations": []
+        },
+        {
+            "path": "/CELLR35/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c84d0e04-40fa-47ad-8011-b70b5d3bbc43",
+            "violations": []
+        },
+        {
+            "path": "/CELLR36/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/620e6cab-e130-41f1-9fcd-f7e7cb90d1f3",
+            "violations": []
+        },
+        {
+            "path": "/CELLR37/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/68c55a74-ce74-4375-a00a-6fd51768aba6",
+            "violations": []
+        },
+        {
+            "path": "/CELLR38/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/02bdbbd9-40be-4f24-996c-c64ead16bdc7",
+            "violations": []
+        },
+        {
+            "path": "/CELLR39/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/23883618-b2be-4c7f-b64c-b97266d9ef8c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR40/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/9f2deb28-5878-477f-8253-8fa09cd96cfb",
+            "violations": []
+        },
+        {
+            "path": "/CELLR41/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/ee205f16-e5af-40e5-9b60-4d43baf5f944",
+            "violations": []
+        },
+        {
+            "path": "/CELLR42/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/b6bca31e-f686-415a-be3b-8786b626bc53",
+            "violations": []
+        },
+        {
+            "path": "/CELLR43/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/35e74a7b-a95c-4825-94ca-ebb616eb2898",
+            "violations": []
+        },
+        {
+            "path": "/CELLR44/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/e1cd142b-6872-4192-8953-ddca271d3217",
+            "violations": []
+        },
+        {
+            "path": "/CELLR45/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/39159cc7-f577-4c04-a959-ea64df4b4ec0",
+            "violations": []
+        },
+        {
+            "path": "/CELLR46/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/e16f25d1-8eb8-4fa9-bec7-97a226fd926b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR47/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c7fb33ed-639a-40eb-8432-2f12e5bab142",
+            "violations": []
+        },
+        {
+            "path": "/CELLR48/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/4a965ee7-5fb8-498e-a1dc-83f9545a3a8b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR49/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/fea9cc33-ba43-4453-9ee3-714d41b514eb",
+            "violations": []
+        },
+        {
+            "path": "/CELLR50/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/cadec3a5-fa2a-428b-a1ee-1ed42b7f96ab",
+            "violations": []
+        },
+        {
+            "path": "/CELLR51/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8d802af5-91e5-40da-8e66-f1fc5633609c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR52/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/33774952-180f-48f2-b8e8-7c6fbbdd46a4",
+            "violations": []
+        },
+        {
+            "path": "/CELLR53/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/cb687cb6-3eed-4657-be68-240802f4f24e",
+            "violations": []
+        },
+        {
+            "path": "/CELLR54/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6be4d8f1-f51c-461b-9edf-c4fbd574882a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR55/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/66174d4c-10c4-449d-b2d4-8bdb861d959f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR56/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/38e331ff-fb88-4870-ba15-0f88264f712c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR57/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/922a4ede-1156-4bfe-bc07-72257c292a26",
+            "violations": []
+        },
+        {
+            "path": "/CELLR58/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/f2d50d15-49df-442a-8c15-5b20e2e2c5ff",
+            "violations": []
+        },
+        {
+            "path": "/CELLR59/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/1787e171-0c6e-448c-82f2-0921f484ef9a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR60/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/fbaf37d5-9e54-4253-8432-3b8d5fad6a4b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR61/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a91c253e-aa2c-4d93-adc3-f8bed5b73a56",
+            "violations": []
+        },
+        {
+            "path": "/CELLR62/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/9414979c-288c-4d79-81b5-bddd4c0ae40a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR63/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8319cca7-0365-41bb-ba9b-d4e49560b112",
+            "violations": []
+        },
+        {
+            "path": "/CELLR64/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c1931e66-9c80-4bfa-8912-27b48244e9e8",
+            "violations": []
+        },
+        {
+            "path": "/CORE_L/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6fbd57dd-f950-4991-b21a-1459e3f7243f",
+            "violations": []
+        },
+        {
+            "path": "/IV_L/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/8121d7e1-d849-4a0f-b448-9ca6be08321d",
+            "violations": []
+        },
+        {
+            "path": "/REFS_L/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/42ae2aeb-e5de-4f2d-819a-243c2f58b88f",
+            "violations": [
+                {
+                    "description": "Both CASB2_M_L and CASB2_P_L are attached to the same items; CASB2_M_L will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'CASB2_M_L'",
+                            "pos": {
+                                "x": 2.667,
+                                "y": 1.7526
+                            },
+                            "uuid": "b1d21cf8-3971-43db-9818-7d288de21f8f"
+                        },
+                        {
+                            "description": "Global Label 'CASB2_P_L'",
+                            "pos": {
+                                "x": 2.3495,
+                                "y": 1.8161
+                            },
+                            "uuid": "228fb203-437f-41d7-a222-f3c11a7afae3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        },
+        {
+            "path": "/CORE_R/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/e7bcb645-ce91-4a2d-858d-df1cf2df5eea",
+            "violations": []
+        },
+        {
+            "path": "/IV_R/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/110628ad-e8dc-452c-84ef-05456d907b46",
+            "violations": []
+        },
+        {
+            "path": "/REFS_R/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/0c1770d6-a5f8-4692-a8ad-6964e9ccc8e4",
+            "violations": [
+                {
+                    "description": "Both CASB2_M_R and CASB2_P_R are attached to the same items; CASB2_M_R will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'CASB2_M_R'",
+                            "pos": {
+                                "x": 2.667,
+                                "y": 1.7526
+                            },
+                            "uuid": "16a2988c-42a0-4494-ad3c-0a985d20ad6a"
+                        },
+                        {
+                            "description": "Global Label 'CASB2_P_R'",
+                            "pos": {
+                                "x": 2.3495,
+                                "y": 1.8161
+                            },
+                            "uuid": "e3706f3a-6e26-4040-91ba-42dfdf03a101"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        },
+        {
+            "path": "/FPGA INTERFACE AND CLOCK TREE/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/cff9a5ef-5aa2-4f51-a115-d26098ce6015",
+            "violations": []
+        },
+        {
+            "path": "/R-CHANNEL CLOCK TREE/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/6e327834-8b28-4e23-b371-d7ea8a15de97",
+            "violations": []
+        },
+        {
+            "path": "/SOM CARRIER/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/292aed2e-16ef-4566-af4e-2d4bf0f54e6a",
+            "violations": []
+        },
+        {
+            "path": "/CONTROL PLANE/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/161140f2-ad30-426f-8aee-ef54abffeb0d",
+            "violations": []
+        },
+        {
+            "path": "/OUTPUT ROUTING/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c10a7d71-2d9b-4db6-afef-c84246f3a5d9",
+            "violations": []
+        },
+        {
+            "path": "/XLAT/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/165b6b24-156e-45a0-bf26-4062f3d88844",
+            "violations": []
+        },
+        {
+            "path": "/POWER/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/32bcdcaf-5a02-41ae-b5a1-bb8d1af59460",
+            "violations": []
+        },
+        {
+            "path": "/BRINGUP/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/96215bac-f0c5-42db-8344-557bfbaf83f9",
+            "violations": []
+        },
+        {
+            "path": "/PREREG/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/abb48a14-03e1-4568-a164-42e94f1c6c84",
+            "violations": []
+        },
+        {
+            "path": "/ACENTRY/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/c128545a-32cc-4a7c-ab69-99160010ce8b",
+            "violations": []
+        },
+        {
+            "path": "/AP/",
+            "uuid_path": "/4c57f939-8b8e-4f7a-be94-e2f3bb254a19/a1af6fef-013e-4717-a5b8-4ecacbbfbf5c",
+            "violations": []
+        }
+    ],
+    "source": "bfdac_analog.kicad_sch"
+}

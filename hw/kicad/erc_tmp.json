@@ -1,0 +1,3693 @@
+{
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-10-25T23:28:31",
+    "ignored_checks": [
+        {
+            "description": "Global label only appears once in the schematic",
+            "key": "single_global_label"
+        },
+        {
+            "description": "Four connection points are joined together",
+            "key": "four_way_junction"
+        },
+        {
+            "description": "SPICE model issue",
+            "key": "simulation_model_issue"
+        },
+        {
+            "description": "Assigned footprint doesn't match footprint filters",
+            "key": "footprint_filter"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning"
+    ],
+    "kicad_version": "10.0.6",
+    "sheets": [
+        {
+            "path": "/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9",
+            "violations": [
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q316 [THAT300]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.8001
+                            },
+                            "uuid": "5c70d6c3-7ae8-498d-97ce-a3acdb73157f"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q301 [THAT300]",
+                            "pos": {
+                                "x": 0.3048,
+                                "y": 2.5527
+                            },
+                            "uuid": "65acf813-7bbe-4161-8a5b-62d5b1d4f6bb"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q309 [THAT300]",
+                            "pos": {
+                                "x": 0.3048,
+                                "y": 2.7559
+                            },
+                            "uuid": "b427b40f-65f9-41c9-ac75-7cb4d0235a91"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q302 [THAT300]",
+                            "pos": {
+                                "x": 0.4953,
+                                "y": 2.5527
+                            },
+                            "uuid": "ad841634-7d86-4486-a5f3-6b2dd8ad8601"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q310 [THAT300]",
+                            "pos": {
+                                "x": 0.4953,
+                                "y": 2.7559
+                            },
+                            "uuid": "e8d01118-9520-477a-8b5d-176bf01a9e6a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q1 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.5969
+                            },
+                            "uuid": "c2aa31b9-0d99-4e4c-b10b-1f35bb55428b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q2 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.9017
+                            },
+                            "uuid": "ed5eec0f-96d1-46a0-b4a7-14feff0810bf"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q5 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.2954
+                            },
+                            "uuid": "bb2b0fb2-837c-409b-9ec6-a8132b24b0ed"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q9 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.905
+                            },
+                            "uuid": "d5b22bba-53b0-4b98-a90d-1c41419b1ae9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q303 [THAT300]",
+                            "pos": {
+                                "x": 0.6985,
+                                "y": 2.5527
+                            },
+                            "uuid": "b342fcb0-ba1a-4f88-a46c-a66b2e5dc021"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q311 [THAT300]",
+                            "pos": {
+                                "x": 0.6985,
+                                "y": 2.7559
+                            },
+                            "uuid": "f6d17836-432a-4cdd-b487-aa65cb382209"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q7 [2SA1036K]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 1.2954
+                            },
+                            "uuid": "3d7a2c9c-f4e5-4025-b2ad-a20c3bcb5405"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q304 [THAT300]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 2.5527
+                            },
+                            "uuid": "400f20d0-7a33-458d-b42f-031218e0ea13"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q312 [THAT300]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 2.7559
+                            },
+                            "uuid": "02c48765-cec5-4f1e-8ef3-26fea63ce815"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q305 [THAT300]",
+                            "pos": {
+                                "x": 1.1049,
+                                "y": 2.5527
+                            },
+                            "uuid": "36866f9e-e4a8-4dc1-887d-f7b3ad90b8ae"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q313 [THAT300]",
+                            "pos": {
+                                "x": 1.1049,
+                                "y": 2.7559
+                            },
+                            "uuid": "bf1900d4-2057-4410-908d-808a43f14c61"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q306 [THAT300]",
+                            "pos": {
+                                "x": 1.2954,
+                                "y": 2.5527
+                            },
+                            "uuid": "02d37800-cc77-4a73-8979-ac86ba2d94d3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q314 [THAT300]",
+                            "pos": {
+                                "x": 1.2954,
+                                "y": 2.7559
+                            },
+                            "uuid": "47ba4f14-1ae4-4502-a0cf-0ba65c6e20fa"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q3 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 0.5969
+                            },
+                            "uuid": "c3cb48b0-8bab-4571-af90-b24b56630d38"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q4 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 0.9017
+                            },
+                            "uuid": "c3083036-ea23-4e02-8b89-67bbb04aad10"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q6 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 1.2954
+                            },
+                            "uuid": "502331ce-ae3d-4ccc-a727-8a61023dabc4"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q10 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 1.905
+                            },
+                            "uuid": "ac3e518f-4953-4159-88ff-4fee8ff5d83a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q307 [THAT300]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 2.5527
+                            },
+                            "uuid": "58178234-1863-43a4-adc6-ae1d0ced4bee"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q315 [THAT300]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 2.7559
+                            },
+                            "uuid": "5db3d5fc-99c1-4d2e-a44d-460b77211aba"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q8 [2SA1036K]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 1.2954
+                            },
+                            "uuid": "d2055b33-0b31-42da-ad16-be77c36c66aa"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q308 [THAT300]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 2.5527
+                            },
+                            "uuid": "a2c0e650-a88c-4bc3-950b-f13088b60e6b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q316 [THAT300]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 2.7559
+                            },
+                            "uuid": "78643b5c-a56e-40e1-a78e-d102ab94d905"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q1 [Si1555DL]",
+                            "pos": {
+                                "x": 3.0988,
+                                "y": 0.6985
+                            },
+                            "uuid": "9160b387-c199-4592-adb9-cba41d8fc8eb"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q5 [Si1555DL]",
+                            "pos": {
+                                "x": 3.0988,
+                                "y": 1.0033
+                            },
+                            "uuid": "fb11e0b9-7ee9-486b-a5e3-4922e9ffa65b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q2 [Si1555DL]",
+                            "pos": {
+                                "x": 3.3528,
+                                "y": 0.6985
+                            },
+                            "uuid": "b4aaef72-1982-4471-b8b4-a797949b0ff3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q6 [Si1555DL]",
+                            "pos": {
+                                "x": 3.3528,
+                                "y": 1.0033
+                            },
+                            "uuid": "11e2ce2b-625c-470b-95ca-9a6fe66ce28c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q3 [Si1555DL]",
+                            "pos": {
+                                "x": 3.5941,
+                                "y": 0.6985
+                            },
+                            "uuid": "a6995702-0923-4e6b-abaf-2fc27761dbcf"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q9 [Si1555DL]",
+                            "pos": {
+                                "x": 3.5941,
+                                "y": 1.0033
+                            },
+                            "uuid": "12bcbee2-0375-451a-9407-565c944b7c82"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q4 [Si1555DL]",
+                            "pos": {
+                                "x": 3.8481,
+                                "y": 0.6985
+                            },
+                            "uuid": "b0e410b8-5721-4561-b045-03deee43d71b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q10 [Si1555DL]",
+                            "pos": {
+                                "x": 3.8481,
+                                "y": 1.0033
+                            },
+                            "uuid": "397c3159-57f6-4880-84d0-184617b48498"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J6 [ACVU13P_J6]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.0033
+                            },
+                            "uuid": "d2f9b5fd-e1ac-427f-923b-e3e0c70dda0d"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Y301 [CCHD-957]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 3.302
+                            },
+                            "uuid": "6c119d74-fa40-40df-ab37-4831b4770cb9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Y302 [CCHD-957]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 3.6449
+                            },
+                            "uuid": "c24fd91f-9247-4bfd-ac79-0d3598752a3c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U320 [MX66UM2G45G]",
+                            "pos": {
+                                "x": 0.8001,
+                                "y": 5.1054
+                            },
+                            "uuid": "05806f49-bba1-44d3-aefa-c2abd75c998b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J6 [ACVU13P_J6]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 1.0033
+                            },
+                            "uuid": "3a79143b-b1e0-4f28-bb26-fbb71aa5a132"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U321 [MX66UM2G45G]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 5.1054
+                            },
+                            "uuid": "2d2bb048-a95b-4515-a9c2-2d12543df4f5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J6 [ACVU13P_J6]",
+                            "pos": {
+                                "x": 2.4003,
+                                "y": 1.0033
+                            },
+                            "uuid": "1b945fa1-33d5-4244-ab12-a0bb37b4c45f"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U302 [LMK1C1108]",
+                            "pos": {
+                                "x": 2.6035,
+                                "y": 3.5052
+                            },
+                            "uuid": "13f86887-3498-4bc4-9b47-1e88588fce2f"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U322 [MX66UM2G45G]",
+                            "pos": {
+                                "x": 2.6035,
+                                "y": 5.1054
+                            },
+                            "uuid": "835538db-f38c-429f-a96d-8a69de1e825c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J6 [ACVU13P_J6]",
+                            "pos": {
+                                "x": 3.302,
+                                "y": 1.0033
+                            },
+                            "uuid": "151cde8a-b869-4aa6-bb52-e072988f0e48"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U323 [MX66UM2G45G]",
+                            "pos": {
+                                "x": 3.5052,
+                                "y": 5.1054
+                            },
+                            "uuid": "73190977-29e0-4bde-8211-cbb5223e28ed"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'SOM_PG'",
+                            "pos": {
+                                "x": 3.5814,
+                                "y": 0.7112
+                            },
+                            "uuid": "5d9dcefb-76ac-4572-a1a7-70c97fcd7893"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U304 [LMK1C1108]",
+                            "pos": {
+                                "x": 3.7973,
+                                "y": 3.302
+                            },
+                            "uuid": "2d17e0d3-a66b-472e-aff7-73f1f0fed555"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U308 [LMK1C1108]",
+                            "pos": {
+                                "x": 3.7973,
+                                "y": 4.2037
+                            },
+                            "uuid": "79d3b841-7b1e-4afd-a36b-678fa61616a5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'EXT_RST_N'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.635
+                            },
+                            "uuid": "bb4f6e68-79a6-4f7b-a996-f3be0d1fafb8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'I2S_LRCLK'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.6604
+                            },
+                            "uuid": "920b0155-69ff-43dd-be38-9cf75c2361cf"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'I2S_DATA'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.7112
+                            },
+                            "uuid": "1b9c9653-0042-45c0-ac66-8552e9d49c77"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'FPGA_IRQ_N'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.7366
+                            },
+                            "uuid": "a5d3d759-6077-442c-8222-dee41bc4779f"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'LED_DBG0'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.8636
+                            },
+                            "uuid": "9658ce46-a971-47e7-9ab9-be211c35ceee"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'LED_DBG1'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.889
+                            },
+                            "uuid": "2faa573c-45dd-44ae-93d9-4f49a9f6fcda"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'LED_DBG2'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.9398
+                            },
+                            "uuid": "b521e9dc-d366-43db-b952-2374a6195be9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'LED_DBG3'",
+                            "pos": {
+                                "x": 4.1148,
+                                "y": 0.9652
+                            },
+                            "uuid": "513e4aea-f07f-4e60-983b-5ea4274597b1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J1 [ACVU13P_J1]",
+                            "pos": {
+                                "x": 4.3942,
+                                "y": 1.0033
+                            },
+                            "uuid": "c16a9649-3096-4f30-ba5b-7ffa95d94994"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U305 [LMK1C1108]",
+                            "pos": {
+                                "x": 4.8768,
+                                "y": 3.302
+                            },
+                            "uuid": "7f4a6334-1fbb-42ae-b180-7960af11a284"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U309 [LMK1C1108]",
+                            "pos": {
+                                "x": 4.8768,
+                                "y": 4.2037
+                            },
+                            "uuid": "494a68c1-8c61-4bc6-a2df-f4f804aff8d5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'I2S_BCLK'",
+                            "pos": {
+                                "x": 5.0165,
+                                "y": 1.0414
+                            },
+                            "uuid": "1e4f20b5-6a7a-4239-9c32-e42052ac3e01"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J1 [ACVU13P_J1]",
+                            "pos": {
+                                "x": 5.2959,
+                                "y": 1.0033
+                            },
+                            "uuid": "5a1dd69d-2dbc-4eec-a1a3-9834fcd71662"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'SPI_CS_N'",
+                            "pos": {
+                                "x": 5.9182,
+                                "y": 0.635
+                            },
+                            "uuid": "bcc6a76e-bef8-450c-9265-8d556065e93b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'SPI_SCLK'",
+                            "pos": {
+                                "x": 5.9182,
+                                "y": 0.6604
+                            },
+                            "uuid": "119887c7-69df-448a-8e57-ad04101b83ba"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'SPI_MISO'",
+                            "pos": {
+                                "x": 5.9182,
+                                "y": 0.7112
+                            },
+                            "uuid": "e5cb9b03-adab-4cdb-a608-9a1c1dd31b68"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'SPI_MOSI'",
+                            "pos": {
+                                "x": 5.9182,
+                                "y": 0.7366
+                            },
+                            "uuid": "1c238cf0-1d04-4c4f-b7d3-0cc612fbedc1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U306 [LMK1C1108]",
+                            "pos": {
+                                "x": 5.9563,
+                                "y": 3.302
+                            },
+                            "uuid": "c956f720-f16b-47b1-bada-5e648bd90123"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U310 [LMK1C1108]",
+                            "pos": {
+                                "x": 5.9563,
+                                "y": 4.2037
+                            },
+                            "uuid": "794ead60-6d0a-41e3-8c89-57ae7459bde0"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J1 [ACVU13P_J1]",
+                            "pos": {
+                                "x": 6.1976,
+                                "y": 1.0033
+                            },
+                            "uuid": "6de0509e-ac01-480d-aac2-6764d98f0922"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U307 [LMK1C1108]",
+                            "pos": {
+                                "x": 7.0358,
+                                "y": 3.302
+                            },
+                            "uuid": "232c4f24-5688-4382-9395-2b2ccd7a109b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U311 [LMK1C1108]",
+                            "pos": {
+                                "x": 7.0358,
+                                "y": 4.2037
+                            },
+                            "uuid": "2b17b084-3f76-429e-ad98-64965a12be4e"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J1 [ACVU13P_J1]",
+                            "pos": {
+                                "x": 7.0993,
+                                "y": 1.0033
+                            },
+                            "uuid": "0e070a5f-18cb-4115-b2fd-ca50ee7189e7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U303 [LMK1C1108]",
+                            "pos": {
+                                "x": 1.1049,
+                                "y": 1.0033
+                            },
+                            "uuid": "659afd7f-5969-40d5-b941-b6900178fccf"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U330 [LMK1C1108]",
+                            "pos": {
+                                "x": 2.2987,
+                                "y": 0.8001
+                            },
+                            "uuid": "03972a09-f017-473e-9b3f-5c7b115caaf1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U334 [LMK1C1108]",
+                            "pos": {
+                                "x": 2.2987,
+                                "y": 1.7018
+                            },
+                            "uuid": "94f4301f-d618-4d00-b570-68c29b3b0f50"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U331 [LMK1C1108]",
+                            "pos": {
+                                "x": 3.3782,
+                                "y": 0.8001
+                            },
+                            "uuid": "1b9fd1db-c533-41ea-a7b6-7c5db11916f3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U335 [LMK1C1108]",
+                            "pos": {
+                                "x": 3.3782,
+                                "y": 1.7018
+                            },
+                            "uuid": "05296580-6dea-4cc5-a9bc-14dff8721791"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U332 [LMK1C1108]",
+                            "pos": {
+                                "x": 4.4577,
+                                "y": 0.8001
+                            },
+                            "uuid": "c65a7575-81bb-47b6-a14c-5f7c58d30650"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U336 [LMK1C1108]",
+                            "pos": {
+                                "x": 4.4577,
+                                "y": 1.7018
+                            },
+                            "uuid": "44fa770b-91c3-407c-8892-ce1ada5f86c7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U333 [LMK1C1108]",
+                            "pos": {
+                                "x": 5.5372,
+                                "y": 0.8001
+                            },
+                            "uuid": "68b5bf48-5d6d-42bf-87a0-092b64f0ea19"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U337 [LMK1C1108]",
+                            "pos": {
+                                "x": 5.5372,
+                                "y": 1.7018
+                            },
+                            "uuid": "61269808-e5a3-442f-9520-b22af8633e2b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Global Label 'V33D'",
+                            "pos": {
+                                "x": 2.4003,
+                                "y": 2.2352
+                            },
+                            "uuid": "7cff598c-30a8-455e-b6e6-cbe5e5fbf1df"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U901 [REF7050]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.4986
+                            },
+                            "uuid": "41b38adc-61c5-43b3-9abd-8c00d16b43cc"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q902 [2SA1036K]",
+                            "pos": {
+                                "x": 3.1496,
+                                "y": 2.2479
+                            },
+                            "uuid": "23ce1f80-f2eb-4754-b558-307095da8f04"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J2 [ACVU13P_J2]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.1049
+                            },
+                            "uuid": "bdc427a7-f68c-40eb-91ac-63ed6c2e64d9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J3 [ACVU13P_J3]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 2.2987
+                            },
+                            "uuid": "8c839371-5e76-4221-b004-6aa65580891d"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J7 [ACVU13P_J7]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 3.5052
+                            },
+                            "uuid": "5ff62996-3a8a-4b60-a151-530404062353"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J2 [ACVU13P_J2]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 1.1049
+                            },
+                            "uuid": "81ba01da-86c0-44b7-84d7-a85920c0f486"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J3 [ACVU13P_J3]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 2.2987
+                            },
+                            "uuid": "6a2eff8a-f1ca-4ae9-8121-f931375acecd"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J7 [ACVU13P_J7]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 3.5052
+                            },
+                            "uuid": "9c5bba9c-9c7f-4131-87dc-2780d069fee9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J2 [ACVU13P_J2]",
+                            "pos": {
+                                "x": 2.4003,
+                                "y": 1.1049
+                            },
+                            "uuid": "60572a90-cc30-4615-b7a6-404ddbf134e2"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J3 [ACVU13P_J3]",
+                            "pos": {
+                                "x": 2.4003,
+                                "y": 2.2987
+                            },
+                            "uuid": "cf6e9501-79a0-4f8b-b089-d3bd04246d35"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J7 [ACVU13P_J7]",
+                            "pos": {
+                                "x": 2.4003,
+                                "y": 3.5052
+                            },
+                            "uuid": "43acd9b5-ca6c-45cc-952e-608fe4290cb3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J2 [ACVU13P_J2]",
+                            "pos": {
+                                "x": 3.302,
+                                "y": 1.1049
+                            },
+                            "uuid": "96f6f707-fa54-40ef-b1b4-1a05ccfe8514"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J3 [ACVU13P_J3]",
+                            "pos": {
+                                "x": 3.302,
+                                "y": 2.2987
+                            },
+                            "uuid": "08c2554b-3399-4f80-91a4-2ebbdf2d61da"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J7 [ACVU13P_J7]",
+                            "pos": {
+                                "x": 3.302,
+                                "y": 3.5052
+                            },
+                            "uuid": "38942f08-7ae4-4570-a55c-1bb0b0d60ac2"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J5 [ACVU13P_J5]",
+                            "pos": {
+                                "x": 4.3942,
+                                "y": 1.1049
+                            },
+                            "uuid": "63d3fc38-f01d-47a7-9bef-f0688631d6bd"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J4 [ACVU13P_J4]",
+                            "pos": {
+                                "x": 4.3942,
+                                "y": 2.2987
+                            },
+                            "uuid": "c4fe36a1-3f31-4cb1-983f-99442ab45969"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J8 [ACVU13P_J8]",
+                            "pos": {
+                                "x": 4.3942,
+                                "y": 3.5052
+                            },
+                            "uuid": "bc9650d1-66d4-4255-9dd2-2b48cdec747c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J5 [ACVU13P_J5]",
+                            "pos": {
+                                "x": 5.2959,
+                                "y": 1.1049
+                            },
+                            "uuid": "4f60cc0a-8739-4210-8464-745c4160b6ad"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J4 [ACVU13P_J4]",
+                            "pos": {
+                                "x": 5.2959,
+                                "y": 2.2987
+                            },
+                            "uuid": "1c558ffe-8332-438d-8d43-79a5dc4f0bff"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J8 [ACVU13P_J8]",
+                            "pos": {
+                                "x": 5.2959,
+                                "y": 3.5052
+                            },
+                            "uuid": "14b172c5-20e8-4f0b-a733-7bf09dc82e6e"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J5 [ACVU13P_J5]",
+                            "pos": {
+                                "x": 6.1976,
+                                "y": 1.1049
+                            },
+                            "uuid": "9daa0149-9922-49a2-bde5-c67fcebedff3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J4 [ACVU13P_J4]",
+                            "pos": {
+                                "x": 6.1976,
+                                "y": 2.2987
+                            },
+                            "uuid": "d23bb994-6584-44f3-bcf6-3196316fb2f7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J8 [ACVU13P_J8]",
+                            "pos": {
+                                "x": 6.1976,
+                                "y": 3.5052
+                            },
+                            "uuid": "278cca92-9654-4fa0-b09f-872299eacbf5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J5 [ACVU13P_J5]",
+                            "pos": {
+                                "x": 7.0993,
+                                "y": 1.1049
+                            },
+                            "uuid": "62b7df17-59f2-4d1d-8a06-78a77b734178"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J4 [ACVU13P_J4]",
+                            "pos": {
+                                "x": 7.0993,
+                                "y": 2.2987
+                            },
+                            "uuid": "33634980-434e-4053-ab24-18c9b6e65173"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol J8 [ACVU13P_J8]",
+                            "pos": {
+                                "x": 7.0993,
+                                "y": 3.5052
+                            },
+                            "uuid": "97dbe3d9-e8c5-44ff-99e9-fe1c27bc373a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q401 [THAT300]",
+                            "pos": {
+                                "x": 0.3048,
+                                "y": 2.5527
+                            },
+                            "uuid": "83e83584-1483-4d65-a04b-fb4dae4a2913"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q409 [THAT300]",
+                            "pos": {
+                                "x": 0.3048,
+                                "y": 2.7559
+                            },
+                            "uuid": "856eea82-b2f7-441a-8c30-adf7fa2771d8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q402 [THAT300]",
+                            "pos": {
+                                "x": 0.4953,
+                                "y": 2.5527
+                            },
+                            "uuid": "54632280-3611-42f8-9106-71207ab91052"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q410 [THAT300]",
+                            "pos": {
+                                "x": 0.4953,
+                                "y": 2.7559
+                            },
+                            "uuid": "0d6e03bd-4561-4eed-9264-19fff541599d"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q61 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.5969
+                            },
+                            "uuid": "2e6c7516-a6a7-4558-b1ed-abb470039305"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q62 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.9017
+                            },
+                            "uuid": "4ed37bc7-7de3-4e48-96bc-fa133c9ec493"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q65 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.2954
+                            },
+                            "uuid": "2df66cb8-61dc-49fb-a159-870fe1a05ff2"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q69 [Si1555DL]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.905
+                            },
+                            "uuid": "29dd13ef-aca7-4291-a7a1-1b9a32628743"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q403 [THAT300]",
+                            "pos": {
+                                "x": 0.6985,
+                                "y": 2.5527
+                            },
+                            "uuid": "eb166134-665b-490f-b529-de58724cb904"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q411 [THAT300]",
+                            "pos": {
+                                "x": 0.6985,
+                                "y": 2.7559
+                            },
+                            "uuid": "b2787027-d47b-4e46-aba5-33deaf843214"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q67 [2SA1036K]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 1.2954
+                            },
+                            "uuid": "fea8ac70-74ac-4588-a7ad-b3b71bc18793"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q404 [THAT300]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 2.5527
+                            },
+                            "uuid": "13419f38-a5f0-44d3-bdc0-e2c5593ab29e"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q412 [THAT300]",
+                            "pos": {
+                                "x": 0.9017,
+                                "y": 2.7559
+                            },
+                            "uuid": "adf951d3-88ea-4476-a9d6-db97dffe3e4b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q405 [THAT300]",
+                            "pos": {
+                                "x": 1.1049,
+                                "y": 2.5527
+                            },
+                            "uuid": "77760c93-1931-4001-b32a-8618271a39e3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q413 [THAT300]",
+                            "pos": {
+                                "x": 1.1049,
+                                "y": 2.7559
+                            },
+                            "uuid": "7086fce8-5c36-492f-a989-0c7b1169c678"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q406 [THAT300]",
+                            "pos": {
+                                "x": 1.2954,
+                                "y": 2.5527
+                            },
+                            "uuid": "fa728727-5d82-40e1-a336-46023b656ab1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q414 [THAT300]",
+                            "pos": {
+                                "x": 1.2954,
+                                "y": 2.7559
+                            },
+                            "uuid": "c6825ec0-53a7-43cf-9856-265f1c0da267"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q63 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 0.5969
+                            },
+                            "uuid": "16d71ce6-bd6d-41bd-a1b4-ece86b3e7a8b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q64 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 0.9017
+                            },
+                            "uuid": "bb52681e-6184-4d2b-a0e0-6978dac607c9"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q66 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 1.2954
+                            },
+                            "uuid": "d3161da3-4434-4ea4-a221-250ebb2f13c3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q70 [Si1555DL]",
+                            "pos": {
+                                "x": 1.397,
+                                "y": 1.905
+                            },
+                            "uuid": "7aa72cf4-5c07-4959-b97e-52fc7c148632"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q407 [THAT300]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 2.5527
+                            },
+                            "uuid": "4598cf45-d1b5-4c2f-ab37-856858ab8ea7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q415 [THAT300]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 2.7559
+                            },
+                            "uuid": "6783da08-4597-40ca-94ee-c7c1e69d2d90"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q68 [2SA1036K]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 1.2954
+                            },
+                            "uuid": "feb99916-a48f-4c2b-8a3a-bfca87885d80"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q408 [THAT300]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 2.5527
+                            },
+                            "uuid": "b44b0546-68f3-46dc-9d3a-0cb863b7e5dc"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q416 [THAT300]",
+                            "pos": {
+                                "x": 1.7018,
+                                "y": 2.7559
+                            },
+                            "uuid": "65ab3293-9f4c-4546-a49f-1ec19de17b7a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q61 [Si1555DL]",
+                            "pos": {
+                                "x": 3.0988,
+                                "y": 0.6985
+                            },
+                            "uuid": "5d6d7fa6-9b9b-4151-b7b9-ac025721ad53"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q65 [Si1555DL]",
+                            "pos": {
+                                "x": 3.0988,
+                                "y": 1.0033
+                            },
+                            "uuid": "0db69592-3ee0-4d87-b053-574cd60b7348"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q62 [Si1555DL]",
+                            "pos": {
+                                "x": 3.3528,
+                                "y": 0.6985
+                            },
+                            "uuid": "67c71c3b-d2a5-4f43-8400-9052164f36a8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q66 [Si1555DL]",
+                            "pos": {
+                                "x": 3.3528,
+                                "y": 1.0033
+                            },
+                            "uuid": "dca49416-7129-4cb5-aa84-0fa35701ad42"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q63 [Si1555DL]",
+                            "pos": {
+                                "x": 3.5941,
+                                "y": 0.6985
+                            },
+                            "uuid": "1ba4c37b-2423-4467-8b7b-9344006ab357"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q69 [Si1555DL]",
+                            "pos": {
+                                "x": 3.5941,
+                                "y": 1.0033
+                            },
+                            "uuid": "8c69629d-429d-4a2c-ae45-8a0fdb8f3901"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q64 [Si1555DL]",
+                            "pos": {
+                                "x": 3.8481,
+                                "y": 0.6985
+                            },
+                            "uuid": "dee8f300-dc91-4b75-b29a-fd093c3e3f77"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q70 [Si1555DL]",
+                            "pos": {
+                                "x": 3.8481,
+                                "y": 1.0033
+                            },
+                            "uuid": "38164242-537a-44fd-a4e4-6c5f7b61f48e"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol SW900 [SW_2P]",
+                            "pos": {
+                                "x": 0.4953,
+                                "y": 0.5969
+                            },
+                            "uuid": "d16f939b-c23f-44d7-827b-fd73ad493a24"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol L900 [CM_CHOKE]",
+                            "pos": {
+                                "x": 1.0033,
+                                "y": 0.5969
+                            },
+                            "uuid": "54903cc0-2074-4e46-948c-e95848829102"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "Footprint 'C_Rect_L13.0mm_W4.0mm_P10.00mm_FKS3_FKP3' not found in library 'Capacitor_THT'",
+                    "items": [
+                        {
+                            "description": "Symbol CY901 [C]",
+                            "pos": {
+                                "x": 1.143,
+                                "y": 0.6858
+                            },
+                            "uuid": "1e7f6f8b-c5e4-4686-a5d8-707e72d83e35"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "footprint_link_issues"
+                },
+                {
+                    "description": "Footprint 'C_Rect_L13.0mm_W4.0mm_P10.00mm_FKS3_FKP3' not found in library 'Capacitor_THT'",
+                    "items": [
+                        {
+                            "description": "Symbol CY902 [C]",
+                            "pos": {
+                                "x": 1.143,
+                                "y": 0.7747
+                            },
+                            "uuid": "3cac51dd-7392-4493-afb1-0960b782d601"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "footprint_link_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol K900 [RLY_SPDT]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 0.5461
+                            },
+                            "uuid": "cc98248a-8645-4f87-8e90-bc810a006b07"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol K901 [RLY_DPDT]",
+                            "pos": {
+                                "x": 1.4986,
+                                "y": 0.9017
+                            },
+                            "uuid": "8a753ab4-27bb-4e23-b020-20bbd368517c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol T900 [XFMR_2P2S]",
+                            "pos": {
+                                "x": 1.9939,
+                                "y": 1.1557
+                            },
+                            "uuid": "24f5970c-9d96-4250-b394-c3a03f7f5ea3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol T901 [XFMR_2P2S]",
+                            "pos": {
+                                "x": 2.2987,
+                                "y": 1.1557
+                            },
+                            "uuid": "cec3862c-4019-405b-bd66-dcde5fa517e8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol T902 [XFMR_2P4S]",
+                            "pos": {
+                                "x": 2.6035,
+                                "y": 1.1557
+                            },
+                            "uuid": "968ed81b-4986-4788-ab37-15bb21adcaf1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol T903 [XFMR_2P2S]",
+                            "pos": {
+                                "x": 2.8956,
+                                "y": 1.1557
+                            },
+                            "uuid": "b9922e30-87ee-4d76-a8fd-6c82ac949499"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U812 [TLV431]",
+                            "pos": {
+                                "x": 3.8481,
+                                "y": 1.9558
+                            },
+                            "uuid": "7a22b555-1c52-4199-a074-c00dd5df0afb"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U810 [LM393]",
+                            "pos": {
+                                "x": 4.3561,
+                                "y": 1.7018
+                            },
+                            "uuid": "3869e9df-da92-46bf-9924-855009d2fe1b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U811 [TLC555]",
+                            "pos": {
+                                "x": 4.6482,
+                                "y": 1.7018
+                            },
+                            "uuid": "384effdd-6506-4d99-a07d-0ed8207b8adf"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q416 [THAT300]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.8001
+                            },
+                            "uuid": "deddf9f4-085c-4ac7-97de-ae637124449c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol Q702 [2SA1036K]",
+                            "pos": {
+                                "x": 3.1496,
+                                "y": 2.2479
+                            },
+                            "uuid": "a78c05ec-c99e-44db-a924-fba4e4da3f19"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U440 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 0.5969
+                            },
+                            "uuid": "dc8c66de-c181-4402-8463-783bb3c68fd3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U442 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 1.5494
+                            },
+                            "uuid": "4b315a26-361a-49f6-aff4-28f5db3f9994"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U444 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 2.5019
+                            },
+                            "uuid": "5daaee24-1c23-407d-a02c-0032207f85e7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U446 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 0.5969,
+                                "y": 3.4544
+                            },
+                            "uuid": "f1b1bc90-8efc-435a-86a9-df501de36420"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U460 [ADP7158]",
+                            "pos": {
+                                "x": 1.1938,
+                                "y": 4.2545
+                            },
+                            "uuid": "b14ab1ff-8b80-4394-9699-bd6a8af739f0"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U461 [ADP7158]",
+                            "pos": {
+                                "x": 1.1938,
+                                "y": 5.0038
+                            },
+                            "uuid": "47a33ff8-af07-4b1f-ad53-ac6743b1288a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U441 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 1.9939,
+                                "y": 0.5969
+                            },
+                            "uuid": "6ab5bc98-c52e-4a86-a6de-cbd959fefea3"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U443 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 1.9939,
+                                "y": 1.5494
+                            },
+                            "uuid": "5acf2f17-2ad0-4916-83b0-0f570b454ea0"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U445 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 1.9939,
+                                "y": 2.5019
+                            },
+                            "uuid": "ff823eb6-e811-48b3-8f4a-e4582b7799f5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U447 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 1.9939,
+                                "y": 3.4544
+                            },
+                            "uuid": "ff5f48b1-24e9-437e-9d92-ce1c75ed79c5"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U448 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 3.5052,
+                                "y": 0.5969
+                            },
+                            "uuid": "44bff3c9-44b0-41e1-b270-08be4c0762cb"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U450 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 3.5052,
+                                "y": 1.5494
+                            },
+                            "uuid": "52f37f29-ca54-45cc-ab91-15cdc638d09c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U452 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 3.5052,
+                                "y": 2.5019
+                            },
+                            "uuid": "480c1ef6-a540-4efc-93d7-9c4ebbc8f114"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U454 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 3.5052,
+                                "y": 3.4544
+                            },
+                            "uuid": "69494004-9235-4a60-8d02-791d296f1eb8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U449 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 4.9022,
+                                "y": 0.5969
+                            },
+                            "uuid": "e2554ba2-83d3-4dee-82c3-c3e93bd82f85"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U451 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 4.9022,
+                                "y": 1.5494
+                            },
+                            "uuid": "e9d16418-0ba1-4c70-8097-b5f01bad4bcd"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U453 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 4.9022,
+                                "y": 2.5019
+                            },
+                            "uuid": "6ca45e25-be65-4b16-ad43-d53748fffb4f"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                },
+                {
+                    "description": "The symbol library 'bfdac' was not found at 'C:\\Users\\ccros\\src\\BFDAC\\hw\\kicad/bfdac.kicad_sym'",
+                    "items": [
+                        {
+                            "description": "Symbol U455 [SN74AXC8T245]",
+                            "pos": {
+                                "x": 4.9022,
+                                "y": 3.4544
+                            },
+                            "uuid": "e312b2f3-a0a7-4df4-8039-4efa99fe3f7b"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_issues"
+                }
+            ]
+        },
+        {
+            "path": "/CELLL01/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/52125536-4a5b-48b6-bb1f-ef1477644371",
+            "violations": []
+        },
+        {
+            "path": "/CELLL02/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d88b0eeb-dd68-49fb-9c1b-4ac1d106b0e7",
+            "violations": []
+        },
+        {
+            "path": "/CELLL03/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4edec519-0486-4eac-a77f-1e5b24e50509",
+            "violations": []
+        },
+        {
+            "path": "/CELLL04/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7dcb9ec8-c606-4ac6-b7b9-a6ce35758229",
+            "violations": []
+        },
+        {
+            "path": "/CELLL05/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/63868c58-c036-4a67-bdcc-31825078b99b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL06/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2e6dc2ff-ce25-4483-abe7-3fdd249a0186",
+            "violations": []
+        },
+        {
+            "path": "/CELLL07/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9260b151-8ad5-4a9f-b2de-111a1bfc0b6c",
+            "violations": []
+        },
+        {
+            "path": "/CELLL08/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/3bd10fd1-5711-45a4-95fa-f271739813ad",
+            "violations": []
+        },
+        {
+            "path": "/CELLL09/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c990b975-f26c-4317-97ee-8bf0e876e062",
+            "violations": []
+        },
+        {
+            "path": "/CELLL10/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/fcc62c3d-0cb8-482a-8e3d-64535ee889a1",
+            "violations": []
+        },
+        {
+            "path": "/CELLL11/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4bc808e9-283d-4183-93ca-19bb0d05dd6a",
+            "violations": []
+        },
+        {
+            "path": "/CELLL12/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7746124c-ab16-4e91-88f1-ea1d101a6c04",
+            "violations": []
+        },
+        {
+            "path": "/CELLL13/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/34d8dede-672b-4ef6-9ed4-c17df452b178",
+            "violations": []
+        },
+        {
+            "path": "/CELLL14/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/36c51273-ea67-4a7b-8af7-e2706c3040d6",
+            "violations": []
+        },
+        {
+            "path": "/CELLL15/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d7310ced-0cbf-4cc9-9119-67fe27cf728b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL16/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/5bf82992-d30b-44c9-a0ab-abb3c8c11688",
+            "violations": []
+        },
+        {
+            "path": "/CELLL17/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8b2f8e4c-1f4e-41df-9654-c36ebd44046e",
+            "violations": []
+        },
+        {
+            "path": "/CELLL18/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7b93dbc1-104e-4e88-8f38-f8bf64093585",
+            "violations": []
+        },
+        {
+            "path": "/CELLL19/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/1b3af467-4e4b-4387-aad3-97d252bc6f4f",
+            "violations": []
+        },
+        {
+            "path": "/CELLL20/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/53675095-9184-4584-b0c5-f97e4e1798d8",
+            "violations": []
+        },
+        {
+            "path": "/CELLL21/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/a7c104bd-384c-4fbf-a0ef-4ed8dcbe333e",
+            "violations": []
+        },
+        {
+            "path": "/CELLL22/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2bf85ebf-2848-48d4-830c-76b5442f75df",
+            "violations": []
+        },
+        {
+            "path": "/CELLL23/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/cbf63cbb-9d1f-40fc-a540-990dc7df27f7",
+            "violations": []
+        },
+        {
+            "path": "/CELLL24/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/20ef2fb3-4b8b-452e-bb89-fd4f3aa486ed",
+            "violations": []
+        },
+        {
+            "path": "/CELLL25/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/ed4fe717-0ade-4a1c-adb1-027e1a984ea8",
+            "violations": []
+        },
+        {
+            "path": "/CELLL26/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/26ef2752-f8c2-4f1e-bd10-623b9ebc2420",
+            "violations": []
+        },
+        {
+            "path": "/CELLL27/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d0e74d57-3f25-4f74-8537-47fdb93c6532",
+            "violations": []
+        },
+        {
+            "path": "/CELLL28/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9229a815-07fc-4244-96d2-18ce6dbf054d",
+            "violations": []
+        },
+        {
+            "path": "/CELLL29/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b43d380d-ae97-443b-a685-baa80bf5a7fa",
+            "violations": []
+        },
+        {
+            "path": "/CELLL30/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9b7aa259-8262-4b08-9626-6ab72f97b522",
+            "violations": []
+        },
+        {
+            "path": "/CELLL31/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/48343976-3c28-4ecd-ba87-efde8520f713",
+            "violations": []
+        },
+        {
+            "path": "/CELLL32/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/26b6ecf8-b7f2-45e6-99e1-21d5c57a7147",
+            "violations": []
+        },
+        {
+            "path": "/CELLL33/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9c4df0e2-f0c9-417f-8a35-61797ad3aaf1",
+            "violations": []
+        },
+        {
+            "path": "/CELLL34/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/fe993a85-cd3a-4e81-bfae-6a9e35d98ebf",
+            "violations": []
+        },
+        {
+            "path": "/CELLL35/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/409ef74a-728a-4003-ab83-aa56a37e54f0",
+            "violations": []
+        },
+        {
+            "path": "/CELLL36/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/f4c7d438-9c23-4acf-9835-662d65a4704a",
+            "violations": []
+        },
+        {
+            "path": "/CELLL37/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/67f70c1f-8405-4593-862d-1bbfd33a4d59",
+            "violations": []
+        },
+        {
+            "path": "/CELLL38/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2105032e-0bad-4141-a1b8-09ed956f59c4",
+            "violations": []
+        },
+        {
+            "path": "/CELLL39/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/f97bb58f-644e-4ccd-bf75-7a3a7632b166",
+            "violations": []
+        },
+        {
+            "path": "/CELLL40/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/29052798-1d1c-40fe-93fb-2871d30ce279",
+            "violations": []
+        },
+        {
+            "path": "/CELLL41/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/40b41673-318e-417a-b92b-d8dd007528a0",
+            "violations": []
+        },
+        {
+            "path": "/CELLL42/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/f6eacb0a-eb07-48d9-bbac-38e322270283",
+            "violations": []
+        },
+        {
+            "path": "/CELLL43/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/ddd25b23-6415-4517-a2ad-65f5dd08caad",
+            "violations": []
+        },
+        {
+            "path": "/CELLL44/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/82a26c50-9853-4c4c-9625-7aafac1dc758",
+            "violations": []
+        },
+        {
+            "path": "/CELLL45/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/04f14279-4686-4527-9193-c10b77782725",
+            "violations": []
+        },
+        {
+            "path": "/CELLL46/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/94f0c962-4b5a-49e3-9170-fe644745abdb",
+            "violations": []
+        },
+        {
+            "path": "/CELLL47/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4f3f8cf5-16cf-43d8-b6a4-9f2d64b35185",
+            "violations": []
+        },
+        {
+            "path": "/CELLL48/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c1183457-5e00-4f4a-ae2e-5d3ad2cbe3d9",
+            "violations": []
+        },
+        {
+            "path": "/CELLL49/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d16d3ecd-29fa-4762-a54e-baaaf766af84",
+            "violations": []
+        },
+        {
+            "path": "/CELLL50/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/cb543284-58b3-48c3-ad96-6aeedb435378",
+            "violations": []
+        },
+        {
+            "path": "/CELLL51/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/5e79d021-77f0-4ae8-b778-41e56f7fea18",
+            "violations": []
+        },
+        {
+            "path": "/CELLL52/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/089dd3de-66cc-45d7-b4df-8467b8cd4936",
+            "violations": []
+        },
+        {
+            "path": "/CELLL53/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/277fa8a8-ee2d-4612-948e-f44d2cb1a7ad",
+            "violations": []
+        },
+        {
+            "path": "/CELLL54/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/49de3db8-5f6c-4f85-acee-76b07046a532",
+            "violations": []
+        },
+        {
+            "path": "/CELLL55/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/6bd8f299-4803-4ddc-81df-205674e87aaa",
+            "violations": []
+        },
+        {
+            "path": "/CELLL56/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/51442648-924c-45d1-a32c-87c34af8a711",
+            "violations": []
+        },
+        {
+            "path": "/CELLL57/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b5cb81f1-2859-4635-b492-dcf5163cf44b",
+            "violations": []
+        },
+        {
+            "path": "/CELLL58/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/28027025-78d9-4f6e-a0a1-d87704b7783d",
+            "violations": []
+        },
+        {
+            "path": "/CELLL59/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/3a2a2ae9-45d0-405b-b698-ebc3f14d3821",
+            "violations": []
+        },
+        {
+            "path": "/CELLL60/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/18e6de47-2d19-4273-811c-2b72de6d8bae",
+            "violations": []
+        },
+        {
+            "path": "/CELLL61/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c6168ef0-d62a-4943-849b-22a6b8a24564",
+            "violations": []
+        },
+        {
+            "path": "/CELLL62/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/3c1dcbc6-5cb0-420d-ad80-4713981e4a41",
+            "violations": []
+        },
+        {
+            "path": "/CELLL63/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/34f0f6e5-859b-4977-9d55-3bd0eaef6c8c",
+            "violations": []
+        },
+        {
+            "path": "/CELLL64/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/26bc6b29-9640-4b93-b024-5f54745f20d5",
+            "violations": []
+        },
+        {
+            "path": "/CELLR01/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/e74b46b8-93c9-4da9-ad80-cba278e69416",
+            "violations": []
+        },
+        {
+            "path": "/CELLR02/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d7ff9928-8ab0-4b62-9051-f35412dd7e37",
+            "violations": []
+        },
+        {
+            "path": "/CELLR03/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/bb5dd9e1-6cf4-4ee5-a61b-5a33fc6fde2c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR04/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4271ebe8-f12f-4240-bf94-39b95490b6b4",
+            "violations": []
+        },
+        {
+            "path": "/CELLR05/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b730d8c9-e21b-433d-9db2-c3407dda6bad",
+            "violations": []
+        },
+        {
+            "path": "/CELLR06/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/76d7aac5-a646-481a-972d-b0e177a39732",
+            "violations": []
+        },
+        {
+            "path": "/CELLR07/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/6b00b9fd-1708-4e09-b4bb-d9ad7307a72f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR08/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/287d44fb-93ec-44b5-9c7f-5855a689f5e6",
+            "violations": []
+        },
+        {
+            "path": "/CELLR09/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0bc5d282-d296-4681-8497-130e1f6aaa2d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR10/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/1f845720-15a6-4f90-8f27-4ca97e1c15d7",
+            "violations": []
+        },
+        {
+            "path": "/CELLR11/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c9484159-717e-412d-badc-af1b67bd319c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR12/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b8dccb06-8305-439f-8e8f-42454bf13975",
+            "violations": []
+        },
+        {
+            "path": "/CELLR13/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/5a1c767f-fdd7-470b-b10d-ca6fd88b6c53",
+            "violations": []
+        },
+        {
+            "path": "/CELLR14/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/50e98bac-5e64-4bce-aec8-12f07fc4fb54",
+            "violations": []
+        },
+        {
+            "path": "/CELLR15/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/1bcf58ed-2413-4e92-abc5-c1ee9af1ec69",
+            "violations": []
+        },
+        {
+            "path": "/CELLR16/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/30cd03b6-19d5-4048-a079-b2e36faeda79",
+            "violations": []
+        },
+        {
+            "path": "/CELLR17/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/ae8b93b9-6111-44ca-9b5a-fe78b154f6f2",
+            "violations": []
+        },
+        {
+            "path": "/CELLR18/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/1046d4e0-9617-4083-803b-4991f9ddbcbd",
+            "violations": []
+        },
+        {
+            "path": "/CELLR19/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8715b29c-d099-4357-a3eb-bab12cf772d8",
+            "violations": []
+        },
+        {
+            "path": "/CELLR20/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/87e19eeb-4d83-49e5-b3cd-bcaaa48fe5ca",
+            "violations": []
+        },
+        {
+            "path": "/CELLR21/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2662fecc-baa1-47c6-bcac-84c1936549c6",
+            "violations": []
+        },
+        {
+            "path": "/CELLR22/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/011da7ea-f1c5-4425-b043-1beeeee8f8b3",
+            "violations": []
+        },
+        {
+            "path": "/CELLR23/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4473b42a-d601-4bda-9769-f97636e416c8",
+            "violations": []
+        },
+        {
+            "path": "/CELLR24/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/6dcd3031-74d8-416e-9aff-84de6f8582e2",
+            "violations": []
+        },
+        {
+            "path": "/CELLR25/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0f92b9c4-b2b8-48f0-820c-5f2e923436ef",
+            "violations": []
+        },
+        {
+            "path": "/CELLR26/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/07943631-7be5-4445-8358-cdab5cbd7575",
+            "violations": []
+        },
+        {
+            "path": "/CELLR27/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8c50efe2-0ca0-4ed2-9170-4568162f164d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR28/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7fbd7f55-2a76-4bce-847c-79630c2373ec",
+            "violations": []
+        },
+        {
+            "path": "/CELLR29/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2a389f5f-026c-4039-ac14-814c11cd0f83",
+            "violations": []
+        },
+        {
+            "path": "/CELLR30/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9edef011-3222-4f8f-8bb4-b2f2b8e1b26b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR31/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/f5f8c304-3d3c-45bd-8956-f1d35a96d63f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR32/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/ddef0273-9d29-4698-be6e-aa2c2a2c62b6",
+            "violations": []
+        },
+        {
+            "path": "/CELLR33/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/12f8720c-b0c7-43c2-9fcc-34037e00f7f2",
+            "violations": []
+        },
+        {
+            "path": "/CELLR34/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b1fea07b-78f8-44cb-b7f6-fbf78b47f27d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR35/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/e9e18070-4822-4553-a1b6-5e86e2af8713",
+            "violations": []
+        },
+        {
+            "path": "/CELLR36/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/da84e55a-b711-4c17-a52e-a46165cff793",
+            "violations": []
+        },
+        {
+            "path": "/CELLR37/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0bfd7c3c-2817-40ad-8f04-ea06fa643bfd",
+            "violations": []
+        },
+        {
+            "path": "/CELLR38/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0359a3d2-80b3-4b12-b6c5-8576805901b1",
+            "violations": []
+        },
+        {
+            "path": "/CELLR39/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/d50f29ab-8ede-4d00-b2bd-6254b16f450c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR40/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8152d142-cd9e-46b4-8615-18b8dae32c7a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR41/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/f0c77614-588a-451e-a4be-d6ec7e30ba2a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR42/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2599acd4-5909-4e8e-a295-a6bd7ae2c47f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR43/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7dcf0a85-dac8-42a6-879b-21f375630033",
+            "violations": []
+        },
+        {
+            "path": "/CELLR44/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/e04de501-8e41-49fe-ba8c-ae8df979f8ee",
+            "violations": []
+        },
+        {
+            "path": "/CELLR45/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/fe1a90de-7469-4088-8fb3-f0fa486aa8ed",
+            "violations": []
+        },
+        {
+            "path": "/CELLR46/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/3ff7c77c-2fe7-4b0e-b18f-1fe43bcfe0ab",
+            "violations": []
+        },
+        {
+            "path": "/CELLR47/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/87a3910f-7761-4074-b277-915c9de5b1d9",
+            "violations": []
+        },
+        {
+            "path": "/CELLR48/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/7c6f0014-d3c5-4263-bd7b-ee9b721b9e59",
+            "violations": []
+        },
+        {
+            "path": "/CELLR49/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/4c44ef80-fa4e-44d1-a5df-3b3f034a74c8",
+            "violations": []
+        },
+        {
+            "path": "/CELLR50/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c031ab12-5319-453e-8885-4a1c61d2153b",
+            "violations": []
+        },
+        {
+            "path": "/CELLR51/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0f3b7f00-c67d-432c-ad7e-65f9d4bf8b5f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR52/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8ca15e2e-cd74-4063-a172-61c6454459ee",
+            "violations": []
+        },
+        {
+            "path": "/CELLR53/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/045de0dc-8c33-434c-80ca-2e5c894752a3",
+            "violations": []
+        },
+        {
+            "path": "/CELLR54/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b46fa45d-c775-4d0b-bcfe-2bbf00bf949f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR55/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/27fb54bd-bf42-4850-9e9e-d406642eb31a",
+            "violations": []
+        },
+        {
+            "path": "/CELLR56/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c80d0660-4242-4f22-850f-023582a5bbc0",
+            "violations": []
+        },
+        {
+            "path": "/CELLR57/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/0e59042a-8b50-4ea0-a73e-16f175d2b16d",
+            "violations": []
+        },
+        {
+            "path": "/CELLR58/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/2303ae2f-a2c4-445a-9643-b27027438480",
+            "violations": []
+        },
+        {
+            "path": "/CELLR59/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/13ef97ef-b64e-4bd0-8106-89836fb30204",
+            "violations": []
+        },
+        {
+            "path": "/CELLR60/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/8933eddb-536e-4b4d-829a-44672501f08c",
+            "violations": []
+        },
+        {
+            "path": "/CELLR61/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/09037e12-666c-4d12-9ac4-65f4a268a9d0",
+            "violations": []
+        },
+        {
+            "path": "/CELLR62/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/62677086-0c25-4712-9dd8-1f6d7fbe460f",
+            "violations": []
+        },
+        {
+            "path": "/CELLR63/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/76c0da1d-e201-46d2-b5b3-17313ca91bf9",
+            "violations": []
+        },
+        {
+            "path": "/CELLR64/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/72530629-9e2b-4fcb-aff1-6a6ee7d60ca0",
+            "violations": []
+        },
+        {
+            "path": "/CORE_L/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/a9abd52e-acd8-4b8d-8339-03394ae2ab72",
+            "violations": []
+        },
+        {
+            "path": "/IV_L/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/6e8dcf13-e029-4eb2-b9cf-93931ccd3291",
+            "violations": []
+        },
+        {
+            "path": "/REFS_L/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/46069774-c8fe-4c1f-af7b-e826dcc3523d",
+            "violations": [
+                {
+                    "description": "Both CASB2_M_L and CASB2_P_L are attached to the same items; CASB2_M_L will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'CASB2_M_L'",
+                            "pos": {
+                                "x": 2.667,
+                                "y": 1.7526
+                            },
+                            "uuid": "80e81a75-e0fe-4098-9933-0c14bbb63916"
+                        },
+                        {
+                            "description": "Global Label 'CASB2_P_L'",
+                            "pos": {
+                                "x": 2.3495,
+                                "y": 1.8161
+                            },
+                            "uuid": "cb2e734e-80cf-4425-9980-2d90414f6454"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        },
+        {
+            "path": "/CORE_R/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/a9df76d9-5db9-496c-adfc-9c48e9e50d8f",
+            "violations": []
+        },
+        {
+            "path": "/IV_R/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/fb588ff4-c67e-46d2-823c-37479c7db19e",
+            "violations": []
+        },
+        {
+            "path": "/REFS_R/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/1e4688c7-480b-4457-87af-fbd4844fe4e7",
+            "violations": [
+                {
+                    "description": "Input Power pin not driven by any Output Power pins",
+                    "items": [
+                        {
+                            "description": "Symbol U708 Pin 1 [IN, Power input, Line]",
+                            "pos": {
+                                "x": 1.5494,
+                                "y": 3.9751
+                            },
+                            "uuid": "1d6a8bbc-c554-47b6-b910-cf1b2b94f983"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "power_pin_not_driven"
+                },
+                {
+                    "description": "Both CASB2_M_R and CASB2_P_R are attached to the same items; CASB2_M_R will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'CASB2_M_R'",
+                            "pos": {
+                                "x": 2.667,
+                                "y": 1.7526
+                            },
+                            "uuid": "80d5a25a-b33f-4392-8178-4021c371fc73"
+                        },
+                        {
+                            "description": "Global Label 'CASB2_P_R'",
+                            "pos": {
+                                "x": 2.6162,
+                                "y": 1.7526
+                            },
+                            "uuid": "3c97a9be-0a47-4ae1-9567-f40509f5cf2c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        },
+        {
+            "path": "/FPGA INTERFACE AND CLOCK TREE/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/972d0481-f278-4f22-9752-08e136e3a691",
+            "violations": []
+        },
+        {
+            "path": "/R-CHANNEL CLOCK TREE/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/9ff17a65-2daa-4d32-bc26-af504e75286b",
+            "violations": [
+                {
+                    "description": "Input Power pin not driven by any Output Power pins",
+                    "items": [
+                        {
+                            "description": "Symbol U340 Pin 1 [IN, Power input, Line]",
+                            "pos": {
+                                "x": 0.8001,
+                                "y": 4.7752
+                            },
+                            "uuid": "fe0e9556-a16b-4772-893c-cad021601acf"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "power_pin_not_driven"
+                }
+            ]
+        },
+        {
+            "path": "/SOM CARRIER/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/e2af1498-3f4c-407f-a402-8e32f62ff1f4",
+            "violations": []
+        },
+        {
+            "path": "/CONTROL PLANE/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/cf3a77e3-8c4a-4260-86fc-42f24c924616",
+            "violations": []
+        },
+        {
+            "path": "/OUTPUT ROUTING/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/fb6d488b-a8d7-4d86-993f-d69ad9c76c49",
+            "violations": [
+                {
+                    "description": "Input Power pin not driven by any Output Power pins",
+                    "items": [
+                        {
+                            "description": "Symbol U603 Pin 1 [IN, Power input, Line]",
+                            "pos": {
+                                "x": 1.9177,
+                                "y": 2.2733
+                            },
+                            "uuid": "3200db2f-ef70-4703-85d8-bff9a59f7b1f"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "power_pin_not_driven"
+                }
+            ]
+        },
+        {
+            "path": "/XLAT/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/c23e8bcf-61ec-4a49-bb10-424e8e015758",
+            "violations": [
+                {
+                    "description": "Input Power pin not driven by any Output Power pins",
+                    "items": [
+                        {
+                            "description": "Symbol U460 Pin 8 [VREG, Power input, Line]",
+                            "pos": {
+                                "x": 1.0668,
+                                "y": 4.2418
+                            },
+                            "uuid": "2af66f21-55dd-43f2-ab75-437d9d389d8c"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "power_pin_not_driven"
+                },
+                {
+                    "description": "Input Power pin not driven by any Output Power pins",
+                    "items": [
+                        {
+                            "description": "Symbol U461 Pin 8 [VREG, Power input, Line]",
+                            "pos": {
+                                "x": 1.0668,
+                                "y": 4.9911
+                            },
+                            "uuid": "580550e4-ee8c-4c5c-9e4d-2bb4112838e8"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "power_pin_not_driven"
+                }
+            ]
+        },
+        {
+            "path": "/POWER/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/032bc7c7-8b35-4fb3-befe-776b859718fe",
+            "violations": []
+        },
+        {
+            "path": "/BRINGUP/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/a3399f46-687e-475c-b432-23221c682c9b",
+            "violations": []
+        },
+        {
+            "path": "/PREREG/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/b88ed493-c057-40f9-a0c0-b6daffcb7cb0",
+            "violations": []
+        },
+        {
+            "path": "/ACENTRY/",
+            "uuid_path": "/9ce97d72-b8ad-4e13-95d1-90801a1634d9/5b0c7048-1605-4d3c-b72b-7eed4eb2f951",
+            "violations": [
+                {
+                    "description": "Pins of type Open collector and Power output are connected",
+                    "items": [
+                        {
+                            "description": "Symbol U810 Pin 1 [OUTA, Open collector, Line]",
+                            "pos": {
+                                "x": 4.4831,
+                                "y": 1.6637
+                            },
+                            "uuid": "218fd522-3e4e-4970-8ad0-30d609ea5ce8"
+                        },
+                        {
+                            "description": "Symbol #FLG1087 Pin 1 [Power output, Line]",
+                            "pos": {
+                                "x": 4.0513,
+                                "y": 2.0447
+                            },
+                            "uuid": "bba49bf9-6321-424e-87ab-57979783888f"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "pin_to_pin"
+                },
+                {
+                    "description": "Both AC_PE and AC_L_F are attached to the same items; AC_PE will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC_PE'",
+                            "pos": {
+                                "x": 0.2286,
+                                "y": 0.6223
+                            },
+                            "uuid": "6c58c7af-1ec1-4a6d-bcda-5e71898fc901"
+                        },
+                        {
+                            "description": "Label 'AC_L_F'",
+                            "pos": {
+                                "x": 0.6858,
+                                "y": 0.6096
+                            },
+                            "uuid": "fa6a55ab-700a-4748-bd91-620ec9fc6c6d"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both AC18_4 and AC_N_FILT are attached to the same items; AC18_4 will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC18_4'",
+                            "pos": {
+                                "x": 2.7559,
+                                "y": 1.1938
+                            },
+                            "uuid": "7f7dc2c1-4c50-459e-b53c-540cf198aa47"
+                        },
+                        {
+                            "description": "Label 'AC_N_FILT'",
+                            "pos": {
+                                "x": 1.143,
+                                "y": 0.7112
+                            },
+                            "uuid": "319fcb02-dc01-46af-81ec-c9306ceef7aa"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both AC18_1 and AC_L_SS are attached to the same items; AC18_1 will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC18_1'",
+                            "pos": {
+                                "x": 2.7559,
+                                "y": 1.1176
+                            },
+                            "uuid": "2a873d7f-dcf6-47c0-ba25-c6b319cc1e76"
+                        },
+                        {
+                            "description": "Label 'AC_L_SS'",
+                            "pos": {
+                                "x": 1.2954,
+                                "y": 0.6096
+                            },
+                            "uuid": "09e58641-65f2-4ad0-b924-caacba793a97"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both AC9_1 and SEL_DRV are attached to the same items; AC9_1 will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC9_1'",
+                            "pos": {
+                                "x": 3.4925,
+                                "y": 1.651
+                            },
+                            "uuid": "154fb4b6-bd6d-47c9-a190-b359e96dca76"
+                        },
+                        {
+                            "description": "Label 'SEL_DRV'",
+                            "pos": {
+                                "x": 1.3462,
+                                "y": 0.889
+                            },
+                            "uuid": "5394e69c-2539-409f-afe8-652c74ed06b4"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both AC18_3 and SEL_PB1 are attached to the same items; AC18_3 will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC18_3'",
+                            "pos": {
+                                "x": 2.7559,
+                                "y": 1.1684
+                            },
+                            "uuid": "fc4a759a-b867-4202-ba7f-f23013c047e7"
+                        },
+                        {
+                            "description": "Label 'SEL_PB1'",
+                            "pos": {
+                                "x": 1.3462,
+                                "y": 0.9144
+                            },
+                            "uuid": "d62d5be0-3047-47e4-b409-e919f63ab065"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both AC18_2 and SEL_PA2 are attached to the same items; AC18_2 will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'AC18_2'",
+                            "pos": {
+                                "x": 2.7559,
+                                "y": 1.143
+                            },
+                            "uuid": "b86626ea-cc50-4956-93d1-a2250a1646d1"
+                        },
+                        {
+                            "description": "Label 'SEL_PA2'",
+                            "pos": {
+                                "x": 1.8415,
+                                "y": 1.143
+                            },
+                            "uuid": "381096e5-2167-4615-a4ac-bd1478e5d59a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                },
+                {
+                    "description": "Both GND and VREF are attached to the same items; GND will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Global Label 'GND'",
+                            "pos": {
+                                "x": 3.6957,
+                                "y": 1.9431
+                            },
+                            "uuid": "3261141b-746f-4f39-9a2c-a57b1c91fa3b"
+                        },
+                        {
+                            "description": "Label 'VREF'",
+                            "pos": {
+                                "x": 4.2037,
+                                "y": 1.7399
+                            },
+                            "uuid": "9e592ac6-da95-463e-bbdd-fd314608c897"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        }
+    ],
+    "source": "bfdac_analog.kicad_sch"
+}

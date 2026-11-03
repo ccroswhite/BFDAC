@@ -1,0 +1,310 @@
+ERC report (2026-11-01T12:54:32, Encoding UTF8)
+Report includes: Errors, Warnings
+
+***** Sheet /
+
+***** Sheet /CELLL01/
+
+***** Sheet /CELLL02/
+
+***** Sheet /CELLL03/
+
+***** Sheet /CELLL04/
+
+***** Sheet /CELLL05/
+
+***** Sheet /CELLL06/
+
+***** Sheet /CELLL07/
+
+***** Sheet /CELLL08/
+
+***** Sheet /CELLL09/
+
+***** Sheet /CELLL10/
+
+***** Sheet /CELLL11/
+
+***** Sheet /CELLL12/
+
+***** Sheet /CELLL13/
+
+***** Sheet /CELLL14/
+
+***** Sheet /CELLL15/
+
+***** Sheet /CELLL16/
+
+***** Sheet /CELLL17/
+
+***** Sheet /CELLL18/
+
+***** Sheet /CELLL19/
+
+***** Sheet /CELLL20/
+
+***** Sheet /CELLL21/
+
+***** Sheet /CELLL22/
+
+***** Sheet /CELLL23/
+
+***** Sheet /CELLL24/
+
+***** Sheet /CELLL25/
+
+***** Sheet /CELLL26/
+
+***** Sheet /CELLL27/
+
+***** Sheet /CELLL28/
+
+***** Sheet /CELLL29/
+
+***** Sheet /CELLL30/
+
+***** Sheet /CELLL31/
+
+***** Sheet /CELLL32/
+
+***** Sheet /CELLL33/
+
+***** Sheet /CELLL34/
+
+***** Sheet /CELLL35/
+
+***** Sheet /CELLL36/
+
+***** Sheet /CELLL37/
+
+***** Sheet /CELLL38/
+
+***** Sheet /CELLL39/
+
+***** Sheet /CELLL40/
+
+***** Sheet /CELLL41/
+
+***** Sheet /CELLL42/
+
+***** Sheet /CELLL43/
+
+***** Sheet /CELLL44/
+
+***** Sheet /CELLL45/
+
+***** Sheet /CELLL46/
+
+***** Sheet /CELLL47/
+
+***** Sheet /CELLL48/
+
+***** Sheet /CELLL49/
+
+***** Sheet /CELLL50/
+
+***** Sheet /CELLL51/
+
+***** Sheet /CELLL52/
+
+***** Sheet /CELLL53/
+
+***** Sheet /CELLL54/
+
+***** Sheet /CELLL55/
+
+***** Sheet /CELLL56/
+
+***** Sheet /CELLL57/
+
+***** Sheet /CELLL58/
+
+***** Sheet /CELLL59/
+
+***** Sheet /CELLL60/
+
+***** Sheet /CELLL61/
+
+***** Sheet /CELLL62/
+
+***** Sheet /CELLL63/
+
+***** Sheet /CELLL64/
+
+***** Sheet /CELLR01/
+
+***** Sheet /CELLR02/
+
+***** Sheet /CELLR03/
+
+***** Sheet /CELLR04/
+
+***** Sheet /CELLR05/
+
+***** Sheet /CELLR06/
+
+***** Sheet /CELLR07/
+
+***** Sheet /CELLR08/
+
+***** Sheet /CELLR09/
+
+***** Sheet /CELLR10/
+
+***** Sheet /CELLR11/
+
+***** Sheet /CELLR12/
+
+***** Sheet /CELLR13/
+
+***** Sheet /CELLR14/
+
+***** Sheet /CELLR15/
+
+***** Sheet /CELLR16/
+
+***** Sheet /CELLR17/
+
+***** Sheet /CELLR18/
+
+***** Sheet /CELLR19/
+
+***** Sheet /CELLR20/
+
+***** Sheet /CELLR21/
+
+***** Sheet /CELLR22/
+
+***** Sheet /CELLR23/
+
+***** Sheet /CELLR24/
+
+***** Sheet /CELLR25/
+
+***** Sheet /CELLR26/
+
+***** Sheet /CELLR27/
+
+***** Sheet /CELLR28/
+
+***** Sheet /CELLR29/
+
+***** Sheet /CELLR30/
+
+***** Sheet /CELLR31/
+
+***** Sheet /CELLR32/
+
+***** Sheet /CELLR33/
+
+***** Sheet /CELLR34/
+
+***** Sheet /CELLR35/
+
+***** Sheet /CELLR36/
+
+***** Sheet /CELLR37/
+
+***** Sheet /CELLR38/
+
+***** Sheet /CELLR39/
+
+***** Sheet /CELLR40/
+
+***** Sheet /CELLR41/
+
+***** Sheet /CELLR42/
+
+***** Sheet /CELLR43/
+
+***** Sheet /CELLR44/
+
+***** Sheet /CELLR45/
+
+***** Sheet /CELLR46/
+
+***** Sheet /CELLR47/
+
+***** Sheet /CELLR48/
+
+***** Sheet /CELLR49/
+
+***** Sheet /CELLR50/
+
+***** Sheet /CELLR51/
+
+***** Sheet /CELLR52/
+
+***** Sheet /CELLR53/
+
+***** Sheet /CELLR54/
+
+***** Sheet /CELLR55/
+
+***** Sheet /CELLR56/
+
+***** Sheet /CELLR57/
+
+***** Sheet /CELLR58/
+
+***** Sheet /CELLR59/
+
+***** Sheet /CELLR60/
+
+***** Sheet /CELLR61/
+
+***** Sheet /CELLR62/
+
+***** Sheet /CELLR63/
+
+***** Sheet /CELLR64/
+
+***** Sheet /CORE_L/
+
+***** Sheet /IV_L/
+
+***** Sheet /REFS_L/
+[multiple_net_names]: Both CASB2_M_L and CASB2_P_L are attached to the same items; CASB2_M_L will be used in the netlist
+    ; warning
+    @(266.70 mm, 175.26 mm): Global Label 'CASB2_M_L'
+    @(234.95 mm, 181.61 mm): Global Label 'CASB2_P_L'
+
+***** Sheet /CORE_R/
+
+***** Sheet /IV_R/
+
+***** Sheet /REFS_R/
+[multiple_net_names]: Both CASB2_M_R and CASB2_P_R are attached to the same items; CASB2_M_R will be used in the netlist
+    ; warning
+    @(266.70 mm, 175.26 mm): Global Label 'CASB2_M_R'
+    @(261.62 mm, 175.26 mm): Global Label 'CASB2_P_R'
+
+***** Sheet /FPGA INTERFACE AND CLOCK TREE/
+
+***** Sheet /R-CHANNEL CLOCK TREE/
+
+***** Sheet /SOM CARRIER/
+
+***** Sheet /CONTROL PLANE/
+
+***** Sheet /OUTPUT ROUTING/
+
+***** Sheet /XLAT/
+
+***** Sheet /POWER/
+
+***** Sheet /BRINGUP/
+
+***** Sheet /PREREG/
+
+***** Sheet /ACENTRY/
+
+***** Sheet /AP/
+
+ ** ERC messages: 2  Errors 0  Warnings 2
+
+ ** Ignored checks:
+    - Global label only appears once in the schematic
+    - Four connection points are joined together
+    - SPICE model issue
+    - Assigned footprint doesn't match footprint filters
