@@ -2944,8 +2944,9 @@ def main():
     tp(ap, "TP858", 170, 290, G("GND_AP"))
     tp(ap, "TP859", 170, 310, G("USB_GND"))
     tp(ap, "TP860", 170, 330, G("GND_AP"))
-    ap.text("DEFERRED: host SoM + radios, SEAM mate to J506 (net labels above already match the J506 AP pad"
-            " names), S/PDIF front end (isolation transformer or TOSLINK -> X1D22, pin currently NC'd),"
+    ap.text("DEFERRED: host SoM + radios, AP-board interconnect toward the pre-reg board (J506's SEAF mate is J7705"
+            " on PREREG - row-A nets above already match its pad names; physical path TBD pending the AP processor"
+            " pick), S/PDIF front end (isolation transformer or TOSLINK -> X1D22, pin currently NC'd),"
             " XMOS I2C GPIO expander if pin budget grows.", 20, 320)
 
     # ---------------- output-routing sheet (bom 7, RULED 2026-10-07): K4 mute only; level select is digital (K1/K2 struck)
@@ -3403,9 +3404,20 @@ def main():
     k, v = pw_("pwrc")
     place_seaf_rows(prereg, "J7703", v, conn23("v4p3_la", "v4p3_lb", "v4p3_lc"), 560, 60, 53, **k)
     place_seaf_rows(prereg, "J7704", v, conn23("v4p3_ra", "v4p3_rb"), 760, 60, 53, **k)
+    k, v = cp_("jap")
+    conn1_mate = {str(pin): (GND if net == "GND" else G(net))
+                  for pin, net in seaf_conn1_map().items()}
+    place_seaf_rows(prereg, "J7705", v, conn1_mate, 960, 60, 53, **k)
     prereg.text("J7703/J7704 = pre-reg-board SEAF-40 mates (the SEAR-40-30.0-06-85 interposers plug these to main-board J603/J604)."
                 " Pad map mirrors the main board: A branches on pads 7/9-11, B branches on pads 15-18, LC branch on pads 23-26"
                 " (J703 only), shared rails on 1/3/5 (+41/43/45).", 560, 40)
+    prereg.text("J7705 = pre-reg-board SEAF-40 mate to Conn1/J506 (user ruling 2026-11-03: the pre-reg board mates ALL"
+                " THREE main-board SEAFs through SEAR-40 interposers; SEAF sockets on both boards, male pins live on the"
+                " riser/interposer card).  Full 240-pad mirror of docs/SEAF_PIN_ASSIGNMENTS.md: V12SOM bank (30 pads)"
+                " is SOURCED on this assembly (LRS-200-12 -> J931/J932 harness on the acentry section); V33_IF_IN"
+                " source is TBD on this board; row-A AP_* signals, SOM_PG, and VAP_IO/GND_AP continue to the"
+                " application-processor section - its physical interconnect is undecided (AP processor path not yet"
+                " picked), so the row-A nets land here as pass-through for now.", 960, 40)
 
     # --- prereg test points (TP rules c/d): every rail on this board gets a hook pad - all five
     #     reservoir raw nodes, all eight regulator outputs, and the transformer secondaries (AC pads

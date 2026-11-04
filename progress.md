@@ -4962,3 +4962,24 @@ paths - backslash args get mangled under git-bash).
 Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
 warnings (baseline). gen_kicad.py emitter does not escape '"'
 in property strings - keep inch-marks out of emitted text.
+
+2026-11-03: J7705 - the third pre-reg SEAF (Conn1/J506 mate)
+-----------------------------------------------------------
+User ruling: the pre-reg board mates ALL THREE main-board SEAF-40
+sites through SEAR-40 interposers - SEAF sockets on both boards,
+male pins live on the riser/interposer card (no SEAM parts on our
+PCBs). Added J7705 on the PREREG sheet: full 240-pad mirror of
+seaf_conn1_map() so pad N meets pad N through the interposer.
+Roles flip vs the main board: V12SOM (30-pad bank) is SOURCED on
+this assembly (LRS-200-12 -> J931/J932 harness on acentry); the
+V33_IF_IN source stays TBD on this board; row-A AP_* signals,
+SOM_PG and VAP_IO/GND_AP are pass-through to the AP section -
+its physical interconnect is undecided until the AP processor
+path is picked. Layout: three sites must land at identical XY on
+both boards (J506 west / J603 north-center / J604 south-center,
+all B.Cu on the main board).
+AP sheet DEFERRED text corrected (no more "SEAM mate to J506").
+check_seaf_pinmap.py extended: J7705 labels verified pad-for-pad
+against seaf_conn1_map(). bom.md connector section updated.
+Verify: regen clean, pinmap check PASS, xcheck PASS,
+ERC 0 errors / 2 known CASB2 warnings.

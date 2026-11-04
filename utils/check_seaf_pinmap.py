@@ -69,8 +69,9 @@ def validate():
 
     ctrl = read_sheet("ctrl.kicad_sch")
     power = read_sheet("power.kicad_sch")
+    prereg = read_sheet("prereg.kicad_sch")
     connector_units = {}
-    for tree, ref in ((ctrl, "J506"), (power, "J603"), (power, "J604")):
+    for tree, ref in ((ctrl, "J506"), (power, "J603"), (power, "J604"), (prereg, "J7705")):
         instances = component_instances(tree, ref)
         assert len(instances) == 6, (ref, len(instances))
         assert {int(value(instance, "unit")) for instance in instances} == set(range(1, 7))
@@ -95,15 +96,15 @@ def validate():
     assert expected_conn1[15] == "AP_IRQ_N"
     assert expected_conn1[17] == "AP_RST_N"
     assert expected_conn1[23] == "SOM_PG"
-    ctrl_labels = global_labels(ctrl)
-    for unit, instance in connector_units["J506"].items():
-        for pin in (pin for pin in pins if pin["unit"] == unit):
-            number = int(pin["num"])
-            actual = ctrl_labels.get(pin_endpoint(instance, pin))
-            assert actual == expected_conn1[number], (
-                "J506 pad %d expected %s, got %s" %
-                (number, expected_conn1[number], actual)
-            )
+    for ref, labels in (("J506", global_labels(ctrl)), ("J7705", global_labels(prereg))):
+        for unit, instance in connector_units[ref].items():
+            for pin in (pin for pin in pins if pin["unit"] == unit):
+                number = int(pin["num"])
+                actual = labels.get(pin_endpoint(instance, pin))
+                assert actual == expected_conn1[number], (
+                    "%s pad %d expected %s, got %s" %
+                    (ref, number, expected_conn1[number], actual)
+                )
 
     def expected_power(a, b, c=None):
         d = {1: "P16A", 2: "GND", 3: "N16A", 4: "GND",

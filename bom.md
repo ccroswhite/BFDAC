@@ -44,8 +44,11 @@ bank with its `GND` perimeter, and a separate `V33_IF_IN` group with a carrier
 `GND` guard. `VAP_IO/GND_AP` remain a separate AP-side domain. The separate
 J507/J508 +12 V terminals are removed from the active design.
 The mating pre-regulator board uses the same SEAF land pattern; its connectors
-(J703/J704) and V4P3 front-end are drawn on the PREREG subsheet of this project
-with `on_board=no` (bom 17o). Its own PCB file remains separate.
+(J7703/J7704 to J603/J604, plus **J7705 to J506** - full 240-pad mirror of the
+Conn1 map; `V12SOM`/`V33_IF_IN` are sourced on that assembly, row-A AP_* +
+`VAP_IO`/`GND_AP` continue to the AP section whose physical interconnect is
+TBD) and V4P3 front-end are drawn on the PREREG subsheet of this project with
+`on_board=no` (bom 17o). Its own PCB file remains separate.
 See `docs/SEAF_PIN_ASSIGNMENTS.md` for the complete Conn1 map and the current
 J603/J604 assignments. Contact derating/current sharing and the local 1.8 V
 LDO implementation remain to be qualified; the source for `V33_IF_IN` on the
