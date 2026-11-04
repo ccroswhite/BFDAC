@@ -4928,3 +4928,37 @@ through G() -> labels join the existing P16A/V8P3/V4P3_* nets.
 Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
 warnings (kicad-cli must run with cwd=hw/kicad or forward-slash
 paths - backslash args get mangled under git-bash).
+
+2026-11-02: XMOS debug connector + JTAG flash path
+-------------------------------------------------
+- J851 upgraded from the 1x8 "TBD debug header" placeholder to a
+  20-pin xSYS2 receptacle (Conn_02x10_Odd_Even, 1.27 mm 2x10 SMD
+  header class, FTSH-110-01-F-DV-K-TR PROPOSED) - XTAG4-cable
+  compatible, JTAG-only subset per XU316 ds App F.2:
+    pin 1 = VAP18 (VREF_JTAG, JTAG sits in the 1.8 V IOB bank)
+    pin 2 = XMOS_TMS   pin 4 = XMOS_TCK   pin 6 = XMOS_TDO
+    pin 8 = XMOS_TDI   pin 10 = XMOS_RST_N
+    pins 3/5/7/9 = GND_AP
+    pins 11-20 = NC (VREF_LINK + xLINK on X1D16-19 left off;
+    X1D16 is already committed to USB_ATTACH and XMOS rates
+    the link advanced-debug-only)
+- FPGA JTAG unchanged: J802 on som.kicad_sch (Xilinx 14-pin
+  2 mm pinout, VREF = V18) verified intact.
+- QSPI flash: YES, flashed over JTAG - XU316 ds sec 12: JTAG
+  programs flash/OTP by loading code that writes it; xflash
+  over XTAG4 writes U853 (IS25LP016D) directly. DFU over USB
+  remains the field path once a valid image is in flash.
+- AP sheet DEFERRED text updated (XTAG no longer deferred) and
+  bom.md item 23 describes the xSYS2 interface.
+- REGRESSION ROOT CAUSE found while debugging 21 ERC violations:
+  the xsys2 Description string contained a raw '"' (0.05" IDC)
+  emitted unescaped into the .kicad_sch property -> string
+  terminated early, parser swallowed the rest of the symbol
+  instance -> the sheet's label-net joining collapsed (all
+  power rails "not driven", input pins "not driven", labels
+  "isolated"). Fix: write "0.05in" not '0.05"'. Bisected by
+  reverting symbol (still failed -> property text, not symbol)
+  then object-level diff of HEAD vs working file.
+Verify: regen clean, xcheck PASS, ERC 0 errors / 2 known CASB2
+warnings (baseline). gen_kicad.py emitter does not escape '"'
+in property strings - keep inch-marks out of emitted text.

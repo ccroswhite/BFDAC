@@ -1422,6 +1422,7 @@ FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_160
           XU316="bfdac:XMOS_QF60_7x7_P0.4", SSOP28="Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
           XTAL3225="Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
           HDR1x8="Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
+          HDR2x10_127="Connector_PinHeader_1.27mm:PinHeader_2x10_P1.27mm_Vertical_SMD",
           SMA="Diode_SMD:D_SMA", SOD323="Diode_SMD:D_SOD-323", CP16="Capacitor_THT:CP_Radial_D16.0mm_P7.50mm",
           SMB="Diode_SMD:D_SMB",
           USBC="Connector_USB:USB_C_Receptacle_GCT_USB4085",
@@ -1558,7 +1559,8 @@ AP_PARTS = {  # AP/base-board sheet 2026-11-01 (bom 23): XMOS + isolated USB fro
                "PLL_AVDD filter bead, 600 R @ 100 MHz, DCR < 1 R per the XMOS schematic checklist"),
     "c10u":   ("10u", FP["C0603"], "GRM188R61A106KE69D (PROPOSED)", ">= 10 uF bulk decoupling per supply, XMOS checklist"),
     "rpu4k7": ("4.7k", FP["R0603"], "CRCW06034K70FKEA", "QSPI CS_N / BOOTSEL strap / RST_N pull-up"),
-    "hdr8":   ("JTAG", FP["HDR1x8"], "TBD - debug header", "XMOS debug placeholder (real XMOS debug = XTAG/XSYS connector, part TBD); IOB bank = 1.8 V"),
+    "xsys2":  ("XSYS2", FP["HDR2x10_127"], "FTSH-110-01-F-DV-K-TR  ** PROPOSED **",
+               "XMOS xSYS2 debug receptacle (XTAG4 20-pin 0.05in IDC ribbon, keyed shroud) - JTAG-only subset per XU316 ds App F.2: pin 1 VREF_JTAG = VAP18 (1.8 V JTAG group), 2 TMS, 4 TCK, 6 TDO, 8 TDI, 10 RST_N, 3/5/7/9 GND_AP; pins 11-20 (VREF_LINK + xLINK on X1D16-19) NC - X1D16 is committed to USB_ATTACH and XMOS rates the link advanced-debug-only. xflash over XTAG4 programs U853 through JTAG (ds sec 12).  ** VERIFY MPN + land pattern **"),
     "host20": ("HOST_SOM", FP["HDR2x10"], "TBD - host SoM mate (SODIMM/module connector, part pick pending)",
                "application-processor link: private SPI (host=master) + IRQ doorbell + I2S slave TX + reset + FPGA clocks"),
     "pwr4":   ("+3V3-DC", FP["MIN4"], "1777099",
@@ -2814,10 +2816,19 @@ def main():
     ap.place("Device:R", "R854", v, 305, 175, {"1": G("VAP18"), "2": ("L", "XMOS_RST_N")}, **k)
     k, v = cp_("c100n")
     ap.place("Device:C", "C861", v, 330, 155, {"1": ("L", "XMOS_RST_N"), "2": GNDAP}, **k)
-    k, v = ap_("hdr8")
-    ap.place("Connector_Generic:Conn_01x08", "J851", v, 370, 165,
-             {"1": G("VAP18"), "2": ("L", "XMOS_TCK"), "3": ("L", "XMOS_TMS"), "4": ("L", "XMOS_TDI"),
-              "5": ("L", "XMOS_TDO"), "6": ("L", "XMOS_RST_N"), "7": GNDAP, "8": GNDAP}, **k)
+    k, v = ap_("xsys2")
+    ap.place("Connector_Generic:Conn_02x10_Odd_Even", "J851", v, 390, 165,
+             {"1": G("VAP18"), "2": ("L", "XMOS_TMS"), "3": GNDAP, "4": ("L", "XMOS_TCK"),
+              "5": GNDAP, "6": ("L", "XMOS_TDO"), "7": GNDAP, "8": ("L", "XMOS_TDI"),
+              "9": GNDAP, "10": ("L", "XMOS_RST_N"),
+              "11": ("NC", ""), "12": ("NC", ""), "13": ("NC", ""), "14": ("NC", ""),
+              "15": ("NC", ""), "16": ("NC", ""), "17": ("NC", ""), "18": ("NC", ""),
+              "19": ("NC", ""), "20": ("NC", "")}, **k)
+    ap.text("J851 = xSYS2 debug connector for the XTAG4 adapter (XMOS-prescribed, JTAG-only subset per XU316 ds App"
+            " F.2): JTAG pins are dedicated IOB-domain pads (TMS 23 / TCK 24 / TDO 20 / TDI 18 / RST_N 21, 1.8 V),"
+            " pin 1 = VAP18 as VREF_JTAG so the XTAG4 level-shifters ride our rail. Pins 11-20 (VREF_LINK + the"
+            " xLINK on X1D16-19) stay NC - X1D16 is USB_ATTACH and XMOS rates the link advanced-debug-only."
+            " xrun/xgdb debug over this port; xflash writes U853 through JTAG (ds sec 12).", 20, 345)
     # --- PLL_AVDD filter (XMOS checklist: ferrite 600 R @ 100 MHz + 10 uF, keep off the noisy supplies)
     k, v = ap_("l600")
     ap.place("Device:L", "L852", v, 330, 190, {"1": G("VAP09"), "2": ("L", "PLL_AVDD")}, **k)
@@ -2934,8 +2945,8 @@ def main():
     tp(ap, "TP859", 170, 310, G("USB_GND"))
     tp(ap, "TP860", 170, 330, G("GND_AP"))
     ap.text("DEFERRED: host SoM + radios, SEAM mate to J506 (net labels above already match the J506 AP pad"
-            " names), XTAG debug connector, S/PDIF front end (isolation transformer or TOSLINK -> X1D22, pin"
-            " currently NC'd), XMOS I2C GPIO expander if pin budget grows.", 20, 320)
+            " names), S/PDIF front end (isolation transformer or TOSLINK -> X1D22, pin currently NC'd),"
+            " XMOS I2C GPIO expander if pin budget grows.", 20, 320)
 
     # ---------------- output-routing sheet (bom 7, RULED 2026-10-07): K4 mute only; level select is digital (K1/K2 struck)
     def op_(key):
