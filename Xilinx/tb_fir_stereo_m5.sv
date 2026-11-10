@@ -1,31 +1,18 @@
 `timescale 1ns / 1ps
 `define SIM
 
-// =============================================================================
-// TB_FIR_STEREO_M5 — Milestone 5 Two-Stage (x2 -> x8) Bit-Exact Verification
-//
-// Verifies fir_polyphase_stereo (TWO_STAGE_EN=1, SYM_FOLD_EN=1, WIN_BRAM_EN=1,
-// QUAD_URAM_EN=0) across:
-//   1. rate_shift = 3 (DXD x2 total, Stage 1B 0-LSB bypass, 520 samples full
-//      forward + reverse DOB_REG=1 BRAM window wrap across group boundaries)
-//   2. rate_shift = 2 (x4 total: Stage 1A x2 -> Stage 1B S3 31t)
-//   3. rate_shift = 1 (x8 total: Stage 1A x2 -> Stage 1B S2 63t -> S3 31t)
-//   4. rate_shift = 0 (x16 total: Stage 1A x2 -> Stage 1B S1 63t -> S2 63t -> S3 31t)
-//   5. Live gapless Bank A -> Bank B coefficient switch at rate_shift = 0
-//   6. >= 16-clock output spacing & zero input_overrun assertions
-// =============================================================================
 module tb_fir_stereo_m5;
 
-    localparam int NUM_MACS       = 16;  // 2 groups of 8 MACs, 8 dual-bank URAMs
-    localparam int TAPS_PER_PHASE = 16;  // S1A_TPP = 128, COEF_DEPTH = 256
+    localparam int NUM_MACS       = 16;
+    localparam int TAPS_PER_PHASE = 16;
     localparam int DATA_WIDTH     = 24;
     localparam int COEF_WIDTH     = 18;
     localparam int ACC_WIDTH      = 48;
 
-    localparam int COEF_DEPTH     = 16 * TAPS_PER_PHASE; // 256
-    localparam int S1A_TPP        = 8 * TAPS_PER_PHASE;  // 128
-    localparam int MAX_HALF_LEN   = NUM_MACS * S1A_TPP;  // 2048
-    localparam int MAX_FULL_LEN   = 2 * MAX_HALF_LEN;    // 4096
+    localparam int COEF_DEPTH     = 16 * TAPS_PER_PHASE;
+    localparam int S1A_TPP        = 8 * TAPS_PER_PHASE;
+    localparam int MAX_HALF_LEN   = NUM_MACS * S1A_TPP;
+    localparam int MAX_FULL_LEN   = 2 * MAX_HALF_LEN;
 
     logic                                clk              = 1'b0;
     logic                                rst_n            = 1'b0;
@@ -47,7 +34,7 @@ module tb_fir_stereo_m5;
     logic                                bank_select      = 1'b0;
     logic                                bank_load_target = 1'b0;
 
-    always #1.65 clk = ~clk; // ~303.03 MHz dsp_clk
+    always #1.65 clk = ~clk;
 
     fir_polyphase_stereo #(
         .NUM_MACS      (NUM_MACS),
@@ -80,9 +67,6 @@ module tb_fir_stereo_m5;
         .bank_load_target    (bank_load_target)
     );
 
-    // -------------------------------------------------------------------------
-    // Independent Golden Reference State (Dual-Bank Stage 1A + Stage 1B S1..S3)
-    // -------------------------------------------------------------------------
     logic signed [COEF_WIDTH-1:0] gold_coef   [0:1][0:NUM_MACS-1][0:COEF_DEPTH-1];
     logic signed [DATA_WIDTH-1:0] gold_hist_l [0:MAX_FULL_LEN-1];
     logic signed [DATA_WIDTH-1:0] gold_hist_r [0:MAX_FULL_LEN-1];
@@ -132,15 +116,15 @@ module tb_fir_stereo_m5;
         endcase
     endfunction
 
+    function automatic logic signed [70:0] sext71(input logic signed [47:0] x);
+        return $signed({{23{x[47]}}, x});
+    endfunction
+
     function automatic logic signed [47:0] sat48_from71(input logic signed [70:0] val);
-        localparam logic signed [47:0] MAX_P = 48'sh7FFF_FFFF_FFFF;
-        localparam logic signed [47:0] MIN_N = 48'sh8000_0000_0000;
-        if (val > 71'(MAX_P))
-            return MAX_P;
-        else if (val < 71'(MIN_N))
-            return MIN_N;
-        else
+        if (val[70:47] == '0 || val[70:47] == '1)
             return val[47:0];
+        else
+            return val[70] ? 48'sh8000_0000_0000 : 48'sh7FFF_FFFF_FFFF;
     endfunction
 
     task automatic clear_golden_history();
@@ -176,9 +160,11 @@ module tb_fir_stereo_m5;
         acc_r  = '0;
         for (int r = 0; r < 8; r++) begin
             logic signed [17:0] c;
+            logic signed [70:0] c71;
             c     = hb31_coef(r);
-            acc_l = acc_l + (71'(s3_dl_l[7 - r]) + 71'(s3_dl_l[8 + r])) * 71'(c);
-            acc_r = acc_r + (71'(s3_dl_r[7 - r]) + 71'(s3_dl_r[8 + r])) * 71'(c);
+            c71   = $signed({{53{c[17]}}, c});
+            acc_l = acc_l + (sext71(s3_dl_l[7 - r]) + sext71(s3_dl_l[8 + r])) * c71;
+            acc_r = acc_r + (sext71(s3_dl_r[7 - r]) + sext71(s3_dl_r[8 + r])) * c71;
         end
         mid_l = sat48_from71((acc_l + 71'sd32768) >>> 16);
         mid_r = sat48_from71((acc_r + 71'sd32768) >>> 16);
@@ -208,9 +194,11 @@ module tb_fir_stereo_m5;
         acc_r  = '0;
         for (int r = 0; r < 16; r++) begin
             logic signed [17:0] c;
+            logic signed [70:0] c71;
             c     = hb63_coef(r);
-            acc_l = acc_l + (71'(s2_dl_l[15 - r]) + 71'(s2_dl_l[16 + r])) * 71'(c);
-            acc_r = acc_r + (71'(s2_dl_r[15 - r]) + 71'(s2_dl_r[16 + r])) * 71'(c);
+            c71   = $signed({{53{c[17]}}, c});
+            acc_l = acc_l + (sext71(s2_dl_l[15 - r]) + sext71(s2_dl_l[16 + r])) * c71;
+            acc_r = acc_r + (sext71(s2_dl_r[15 - r]) + sext71(s2_dl_r[16 + r])) * c71;
         end
         mid_l = sat48_from71((acc_l + 71'sd32768) >>> 16);
         mid_r = sat48_from71((acc_r + 71'sd32768) >>> 16);
@@ -238,9 +226,11 @@ module tb_fir_stereo_m5;
         acc_r  = '0;
         for (int r = 0; r < 16; r++) begin
             logic signed [17:0] c;
+            logic signed [70:0] c71;
             c     = hb63_coef(r);
-            acc_l = acc_l + (71'(s1_dl_l[15 - r]) + 71'(s1_dl_l[16 + r])) * 71'(c);
-            acc_r = acc_r + (71'(s1_dl_r[15 - r]) + 71'(s1_dl_r[16 + r])) * 71'(c);
+            c71   = $signed({{53{c[17]}}, c});
+            acc_l = acc_l + (sext71(s1_dl_l[15 - r]) + sext71(s1_dl_l[16 + r])) * c71;
+            acc_r = acc_r + (sext71(s1_dl_r[15 - r]) + sext71(s1_dl_r[16 + r])) * c71;
         end
         mid_l = sat48_from71((acc_l + 71'sd32768) >>> 16);
         mid_r = sat48_from71((acc_r + 71'sd32768) >>> 16);
@@ -267,7 +257,6 @@ module tb_fir_stereo_m5;
         gold_hist_l[0] = sl;
         gold_hist_r[0] = sr;
 
-        // Stage 1A: 2-phase symmetric half-curve folded convolution
         for (int p = 0; p < 2; p++) begin
             logic signed [ACC_WIDTH-1:0] sum_l, sum_r;
             int p_conj;
@@ -291,12 +280,11 @@ module tb_fir_stereo_m5;
                     ad_fr = $signed(gold_hist_r[k_fwd]) + $signed(gold_hist_r[k_fwd]);
                     ad_rr = $signed(gold_hist_r[k_rev]) + $signed(gold_hist_r[k_rev]);
 
-                    sum_l = sum_l + ACC_WIDTH'(ad_fl * c_fwd) + ACC_WIDTH'(ad_rl * c_rev);
-                    sum_r = sum_r + ACC_WIDTH'(ad_fr * c_fwd) + ACC_WIDTH'(ad_rr * c_rev);
+                    sum_l = sum_l + ad_fl * c_fwd + ad_rl * c_rev;
+                    sum_r = sum_r + ad_fr * c_fwd + ad_rr * c_rev;
                 end
             end
 
-            // Stage 1B routing per rate_shift
             case (rs)
                 0: push_s1_golden(sum_l, sum_r);
                 1: push_s2_golden(sum_l, sum_r);
@@ -353,9 +341,6 @@ module tb_fir_stereo_m5;
         wait (dut.u_l_fir.history_clear == 1'b0);
         repeat (5) @(posedge clk);
 
-        // 1. Populate Bank A (b=0) and Bank B (b=1) in URAM288s
-        //    MAC 0 uses full 18-bit range (testing all 4 parity patterns on coef[17:16]);
-        //    outer MACs use realistic tail magnitudes so sums stay within 48-bit range.
         $display("[TB_M5] Loading dual-bank URAM coefficients (Bank A & Bank B)...");
         for (int b = 0; b < 2; b++) begin
             for (int m = 0; m < NUM_MACS; m++) begin
@@ -380,16 +365,14 @@ module tb_fir_stereo_m5;
         end
         @(posedge clk);
         coef_we <= 1'b0;
-        repeat (10) @(posedge clk); // Drain 3-stage URAM write broadcast tree
+        repeat (10) @(posedge clk);
 
-        // 2. rate_shift = 3 (DXD 0-LSB bypass): 520 frames -> full 512-tap fwd+rev BRAM wrap
         $display("[TB_M5] Testing rate_shift=3 (520 frames, full fwd+rev DOB_REG=1 BRAM wrap)...");
         bank_select <= 1'b0;
         repeat (5) @(posedge clk);
         for (int s = 0; s < 520; s++)
             send_frame_and_wait(3, 0);
 
-        // 3. rate_shift = 2, 1, 0: Multi-rate Kaiser Half-Band Cascade
         for (int rs = 2; rs >= 0; rs--) begin
             $display("[TB_M5] Testing rate_shift=%0d (x%0d total interpolation)...", rs, 16 >> rs);
             clear_golden_history();
@@ -404,11 +387,10 @@ module tb_fir_stereo_m5;
                 send_frame_and_wait(rs, 0);
         end
 
-        // 4. Live Gapless Bank A -> Bank B Switch at rate_shift = 0 (no history flush!)
         $display("[TB_M5] Testing live gapless Bank A -> Bank B switch at rate_shift=0...");
         @(posedge clk);
         bank_select <= 1'b1;
-        repeat (6) @(posedge clk); // Allow 3-stage bank_select_s3 pipeline to settle
+        repeat (6) @(posedge clk);
         for (int s = 0; s < 16; s++)
             send_frame_and_wait(0, 1);
 
@@ -428,7 +410,6 @@ module tb_fir_stereo_m5;
         $finish;
     end
 
-    // Cycle counter & output scoreboard / pacing checker
     always @(posedge clk) begin
         cycle_cnt <= cycle_cnt + 1;
         if (rst_n && (interpolated_l_valid || interpolated_r_valid)) begin

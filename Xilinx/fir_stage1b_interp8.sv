@@ -2,25 +2,8 @@
 
 // =============================================================================
 // FIR_STAGE1B_INTERP8 — Stereo 48-Bit Rate-Selectable x8/x4/x2/x1 Interpolator
-//
-// Milestone 5 Stage 1B companion to Stage 1A (x2 brickwall polyphase FIR):
-//   - Cascaded true-polyphase Kaiser-Bessel half-band x2 stages:
-//       * S1 (63-tap, beta=16.0, >127.3 dB): active for rate_shift == 0 (x8)
-//       * S2 (63-tap, beta=16.0, >127.3 dB): active for rate_shift <= 1 (x8, x4)
-//       * S3 (31-tap, beta=13.5, >140.4 dB): active for rate_shift <= 2 (x8, x4, x2)
-//       * DXD Bypass (0-LSB exact 48-bit):   active for rate_shift == 3 (x1)
-//   - Exact 49x18 wide multiply split across paired 27x18 DSP48E2 slices
-//     (12 DSP48E2s total across stereo S1+S2+S3, 0 BRAM, 0 LUTRAM).
-//   - Emits Phase-0 interpolated midpoint ((sum + 2^15) >>> 16) followed by
-//     Phase-1 exact center passthrough (d[K-1]), preserving 2^41 full-scale
-//     gain and monotonic linear-phase sample ordering.
-//   - Paces outputs at >= OUT_SPACING dsp_clk cycles (default 16) for
-//     downstream dac_peq_engine and halfband_x2 stages.
 // =============================================================================
 
-// -----------------------------------------------------------------------------
-// Helper 1: Pure-Register Synchronous Stereo Elastic FIFO (0 LUTRAM, 0 BRAM)
-// -----------------------------------------------------------------------------
 module fir_s1b_sync_fifo #(
     parameter int WIDTH = 96,
     parameter int DEPTH = 16
@@ -35,14 +18,15 @@ module fir_s1b_sync_fifo #(
     input  logic             out_ready,
     output logic [WIDTH-1:0] out_data
 );
-    localparam int AW = $clog2(DEPTH);
+    localparam int AW    = $clog2(DEPTH);
+    localparam int CNT_W = AW + 1;
 
     (* ram_style = "registers" *)
     logic [WIDTH-1:0] mem [0:DEPTH-1];
     logic [AW-1:0]    wr_ptr, rd_ptr;
-    logic [AW:0]      count;
+    logic [CNT_W-1:0] count;
 
-    wire full    = (count == (AW+1)'(DEPTH));
+    wire full    = (count == CNT_W'(DEPTH));
     wire empty   = (count == '0);
     wire do_push = in_valid && !full;
     wire do_pop  = out_ready && !empty;
@@ -62,8 +46,8 @@ module fir_s1b_sync_fifo #(
             if (do_pop)
                 rd_ptr <= rd_ptr + AW'(1);
             case ({do_push, do_pop})
-                2'b10:   count <= count + (AW+1)'(1);
-                2'b01:   count <= count - (AW+1)'(1);
+                2'b10:   count <= count + CNT_W'(1);
+                2'b01:   count <= count - CNT_W'(1);
                 default: count <= count;
             endcase
         end
@@ -75,9 +59,6 @@ module fir_s1b_sync_fifo #(
     end
 endmodule
 
-// -----------------------------------------------------------------------------
-// Helper 2: Single-Slice DSP48E2 25x18 Pipelined MAC Lane (AREG+BREG+MREG+PREG)
-// -----------------------------------------------------------------------------
 (* use_dsp = "yes" *)
 module fir_s1b_dsp_lane (
     input  logic               clk,
@@ -109,20 +90,17 @@ module fir_s1b_dsp_lane (
 
         if (v_r2) begin
             if (f_r2)
-                p_r3 <= 48'(m_r2);
+                p_r3 <= m_r2;
             else
-                p_r3 <= p_r3 + 48'(m_r2);
+                p_r3 <= p_r3 + m_r2;
         end
     end
 
     assign acc_out = p_r3;
 endmodule
 
-// -----------------------------------------------------------------------------
-// Helper 3: Stereo 48-Bit True-Polyphase Kaiser Half-Band x2 Sub-Stage
-// -----------------------------------------------------------------------------
 module fir_s1b_hb_poly_x2 #(
-    parameter int NUM_TAPS = 63   // Supported: 63 (K=16) or 31 (K=8)
+    parameter int NUM_TAPS = 63
 )(
     input  logic                clk,
     input  logic                rst_n,
@@ -136,8 +114,8 @@ module fir_s1b_hb_poly_x2 #(
     output logic signed [47:0]  out_l,
     output logic signed [47:0]  out_r
 );
-    localparam int K       = (NUM_TAPS + 1) / 4; // 16 for 63-tap, 8 for 31-tap
-    localparam int DL_LEN  = 2 * K;              // 32 or 16 non-zero delay taps
+    localparam int K       = (NUM_TAPS + 1) / 4;
+    localparam int DL_LEN  = 2 * K;
     localparam int R_WIDTH = $clog2(K);
 
     initial begin
@@ -145,36 +123,35 @@ module fir_s1b_hb_poly_x2 #(
             else $fatal(1, "fir_s1b_hb_poly_x2: NUM_TAPS (%0d) must be 63 or 31", NUM_TAPS);
     end
 
-    // Quantized Q1.17 Kaiser-Bessel half-band ROM (sum(c[0..K-1]) == 32768 == 2^15)
     function automatic logic signed [17:0] get_coef(input int idx);
         if (NUM_TAPS == 63) begin
             case (idx)
-                0:       return 18'sh0A1AA; // +41386
-                1:       return 18'sh3CD7C; // -12932
-                2:       return 18'sh01A9D; //  +6813
-                3:       return 18'sh3F065; //  -3995
-                4:       return 18'sh0094C; //  +2380
-                5:       return 18'sh3FA96; //  -1386
-                6:       return 18'sh00303; //   +771
-                7:       return 18'sh3FE6C; //   -404
-                8:       return 18'sh000C4; //   +196
-                9:       return 18'sh3FFAA; //    -86
-                10:      return 18'sh00022; //    +34
-                11:      return 18'sh3FFF5; //    -11
-                12:      return 18'sh00003; //     +3
-                13:      return 18'sh3FFFF; //     -1
-                default: return 18'sh00000; //      0 (idx 14, 15)
+                0:       return 18'sh0A1AA;
+                1:       return 18'sh3CD7C;
+                2:       return 18'sh01A9D;
+                3:       return 18'sh3F065;
+                4:       return 18'sh0094C;
+                5:       return 18'sh3FA96;
+                6:       return 18'sh00303;
+                7:       return 18'sh3FE6C;
+                8:       return 18'sh000C4;
+                9:       return 18'sh3FFAA;
+                10:      return 18'sh00022;
+                11:      return 18'sh3FFF5;
+                12:      return 18'sh00003;
+                13:      return 18'sh3FFFF;
+                default: return 18'sh00000;
             endcase
         end else begin
             case (idx)
-                0:       return 18'sh09E55; // +40533
-                1:       return 18'sh3D636; // -10698
-                2:       return 18'sh00F85; //  +3973
-                3:       return 18'sh3FACB; //  -1333
-                4:       return 18'sh0015D; //   +349
-                5:       return 18'sh3FFC3; //    -61
-                6:       return 18'sh00005; //     +5
-                default: return 18'sh00000; //      0 (idx 7)
+                0:       return 18'sh09E55;
+                1:       return 18'sh3D636;
+                2:       return 18'sh00F85;
+                3:       return 18'sh3FACB;
+                4:       return 18'sh0015D;
+                5:       return 18'sh3FFC3;
+                6:       return 18'sh00005;
+                default: return 18'sh00000;
             endcase
         end
     endfunction
@@ -183,22 +160,17 @@ module fir_s1b_hb_poly_x2 #(
         input logic signed [47:0] acc_hi,
         input logic signed [47:0] acc_lo
     );
-        localparam logic signed [47:0] MAX_POS_48 = 48'sh7FFF_FFFF_FFFF;
-        localparam logic signed [47:0] MIN_NEG_48 = 48'sh8000_0000_0000;
-        logic signed [70:0] full_sum;
-        logic signed [70:0] rounded;
-        logic signed [70:0] scaled;
-
-        full_sum = (71'(acc_hi) <<< 24) + 71'(acc_lo);
+        logic signed [70:0] ext_hi, ext_lo, full_sum, rounded, scaled;
+        ext_hi   = $signed({{23{acc_hi[47]}}, acc_hi});
+        ext_lo   = $signed({{23{acc_lo[47]}}, acc_lo});
+        full_sum = (ext_hi <<< 24) + ext_lo;
         rounded  = full_sum + 71'sd32768;
         scaled   = rounded >>> 16;
 
-        if (scaled > 71'(MAX_POS_48))
-            return MAX_POS_48;
-        else if (scaled < 71'(MIN_NEG_48))
-            return MIN_NEG_48;
-        else
+        if (scaled[70:47] == '0 || scaled[70:47] == '1)
             return scaled[47:0];
+        else
+            return scaled[70] ? 48'sh8000_0000_0000 : 48'sh7FFF_FFFF_FFFF;
     endfunction
 
     typedef enum logic [2:0] {
@@ -269,14 +241,13 @@ module fir_s1b_hb_poly_x2 #(
                 end
 
                 HB_SWEEP: begin
-                    automatic int ri = int'(r_cnt);
                     if (r_cnt == '0) begin
                         pass_l_reg <= d_l[K - 1];
                         pass_r_reg <= d_r[K - 1];
                     end
-                    sum_l_p0 <= 49'(d_l[K - 1 - ri]) + 49'(d_l[K + ri]);
-                    sum_r_p0 <= 49'(d_r[K - 1 - ri]) + 49'(d_r[K + ri]);
-                    coef_p0  <= get_coef(ri);
+                    sum_l_p0 <= d_l[K - 1 - int'(r_cnt)] + d_l[K + int'(r_cnt)];
+                    sum_r_p0 <= d_r[K - 1 - int'(r_cnt)] + d_r[K + int'(r_cnt)];
+                    coef_p0  <= get_coef(int'(r_cnt));
                     vld_p0   <= 1'b1;
                     first_p0 <= (r_cnt == '0);
                     if (r_cnt == R_WIDTH'(K - 1)) begin
@@ -353,27 +324,20 @@ module fir_s1b_hb_poly_x2 #(
     end
 endmodule
 
-// -----------------------------------------------------------------------------
-// Top Module: fir_stage1b_interp8
-// -----------------------------------------------------------------------------
 module fir_stage1b_interp8 #(
     parameter int DATA_WIDTH     = 48,
-    parameter int OUT_SPACING    = 16, // >= 8 clks for dac_peq_engine & halfband_x2
+    parameter int OUT_SPACING    = 16,
     parameter int IN_FIFO_DEPTH  = 16,
     parameter int OUT_FIFO_DEPTH = 32
 )(
     input  logic                         clk,
     input  logic                         rst_n,
     input  tri0 [1:0]                    rate_shift,
-
-    // Stereo 48-bit input from Stage 1A (x2 polyphase brickwall FIR)
     input  logic                         in_valid,
     output logic                         in_ready,
     input  logic signed [DATA_WIDTH-1:0] in_l,
     input  logic signed [DATA_WIDTH-1:0] in_r,
     output logic                         input_overrun,
-
-    // Stereo 48-bit paced output (705.6 / 768 kHz)
     output logic                         out_valid,
     output logic signed [DATA_WIDTH-1:0] out_l,
     output logic signed [DATA_WIDTH-1:0] out_r,
@@ -386,7 +350,6 @@ module fir_stage1b_interp8 #(
             else $fatal(1, "fir_stage1b_interp8: OUT_SPACING (%0d) must be >= 8", OUT_SPACING);
     end
 
-    // Detect dynamic rate_shift changes and flush pipeline cleanly
     logic [1:0] rate_shift_q;
     wire        rate_flush = (rate_shift != rate_shift_q);
 
@@ -404,9 +367,6 @@ module fir_stage1b_interp8 #(
             input_overrun <= 1'b1;
     end
 
-    // -------------------------------------------------------------------------
-    // 1. Elastic Input FIFO (absorbs back-to-back Stage 1A phase pairs)
-    // -------------------------------------------------------------------------
     logic        ififo_valid, ififo_ready;
     logic [95:0] ififo_dout;
     wire signed [47:0] ififo_l = $signed(ififo_dout[95:48]);
@@ -427,9 +387,6 @@ module fir_stage1b_interp8 #(
         .out_data (ififo_dout)
     );
 
-    // -------------------------------------------------------------------------
-    // 2. Rate-Selectable Half-Band Cascade (S1: 63t -> S2: 63t -> S3: 31t)
-    // -------------------------------------------------------------------------
     logic               s1_in_valid,  s1_in_ready;
     logic               s1_out_valid, s1_out_ready;
     logic signed [47:0] s1_out_l,     s1_out_r;
@@ -448,18 +405,15 @@ module fir_stage1b_interp8 #(
     logic signed [47:0] ofifo_in_l,     ofifo_in_r;
 
     always_comb begin
-        // Input FIFO fanout based on rate_shift
         case (rate_shift_q)
             2'd0:    ififo_ready = s1_in_ready;
             2'd1:    ififo_ready = s2_in_ready;
             2'd2:    ififo_ready = s3_in_ready;
-            default: ififo_ready = ofifo_in_ready; // 2'd3: 0-LSB DXD bypass
+            default: ififo_ready = ofifo_in_ready;
         endcase
 
-        // S1 input (active only for rate_shift == 0)
         s1_in_valid = (rate_shift_q == 2'd0) && ififo_valid;
 
-        // S2 input mux (rate_shift == 0: from S1; rate_shift == 1: from ififo)
         if (rate_shift_q == 2'd0) begin
             s2_in_valid  = s1_out_valid;
             s2_in_l      = s1_out_l;
@@ -472,7 +426,6 @@ module fir_stage1b_interp8 #(
             s1_out_ready = 1'b0;
         end
 
-        // S3 input mux (rate_shift <= 1: from S2; rate_shift == 2: from ififo)
         if (rate_shift_q <= 2'd1) begin
             s3_in_valid  = s2_out_valid;
             s3_in_l      = s2_out_l;
@@ -485,7 +438,6 @@ module fir_stage1b_interp8 #(
             s2_out_ready = 1'b0;
         end
 
-        // Output FIFO input mux (rate_shift <= 2: from S3; rate_shift == 3: DXD bypass)
         if (rate_shift_q <= 2'd2) begin
             ofifo_in_valid = s3_out_valid;
             ofifo_in_l     = s3_out_l;
@@ -541,16 +493,13 @@ module fir_stage1b_interp8 #(
         .out_r    (s3_out_r)
     );
 
-    // -------------------------------------------------------------------------
-    // 3. Elastic Output FIFO & Downstream Pacer (>= OUT_SPACING clks)
-    // -------------------------------------------------------------------------
     localparam int PACE_W = $clog2(OUT_SPACING + 1);
     logic        ofifo_valid, ofifo_ready;
     logic [95:0] ofifo_dout;
     logic [PACE_W-1:0] pace_cnt;
     logic [4:0]        frame_out_cnt;
 
-    wire [4:0] out_per_baseband_frame = 5'd16 >> rate_shift_q; // 16, 8, 4, 2
+    wire [4:0] out_per_baseband_frame = 5'd16 >> rate_shift_q;
     assign ofifo_ready = !rate_flush && (pace_cnt == '0);
 
     fir_s1b_sync_fifo #(
@@ -580,7 +529,6 @@ module fir_stage1b_interp8 #(
             out_valid      <= 1'b0;
             out_frame_done <= 1'b0;
 
-            // Pulse out_frame_done 1 cycle after final phase of baseband frame
             if (out_valid) begin
                 if (frame_out_cnt == out_per_baseband_frame - 5'd1) begin
                     out_frame_done <= 1'b1;

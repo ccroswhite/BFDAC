@@ -50,6 +50,10 @@ module fir_polyphase_interpolator #(
     localparam int WIN_AW            = $clog2(TAPS_PER_PHASE);
     localparam int EFF_MIN_TPP       = RATE_SCALE_TPP ? (TAPS_PER_PHASE >> 3) : TAPS_PER_PHASE;
 
+    // force use of local, not global parameter
+    localparam int TPP_W             = WIN_AW + 1;
+
+
     // Track rate_shift changes cleanly in case a testbench flips rate_shift without rst_n
     logic [1:0] rate_shift_q;
     wire        rate_flush = (rate_shift != rate_shift_q);
@@ -64,10 +68,11 @@ module fir_polyphase_interpolator #(
     wire [PHASE_COUNT_WIDTH-1:0] active_phases = RATE_SCALE_TPP
                                                  ? PHASE_COUNT_WIDTH'(NUM_PHASES)
                                                  : PHASE_COUNT_WIDTH'(NUM_PHASES >> rate_shift_q);
-    wire [WIN_AW:0]              active_tpp    = RATE_SCALE_TPP
-                                                 ? ((WIN_AW+1)'(TAPS_PER_PHASE) >> rate_shift_q)
-                                                 : (WIN_AW+1)'(TAPS_PER_PHASE);
-    wire [WIN_AW-1:0]            addr_mask     = WIN_AW'(active_tpp - 1'b1);
+    wire [TPP_W-1:0]             active_tpp    = RATE_SCALE_TPP
+                                                 ? (TPP_W'(TAPS_PER_PHASE) >> rate_shift_q)
+                                                 : TPP_W'(TAPS_PER_PHASE);
+    wire [TPP_W-1:0]             active_tpp_m1 = active_tpp - 1'b1;
+    wire [WIN_AW-1:0]            addr_mask     = active_tpp_m1[WIN_AW-1:0];
 
     logic [PHASE_COUNT_WIDTH-1:0] output_phase_count;
     logic                         sample_accept;
@@ -627,7 +632,8 @@ module fir_polyphase_interpolator #(
                         if (emit_spacing_cnt == '0) begin
                             automatic int p_idx   = int'(emit_phase_idx);
                             automatic int rev_idx = int'(active_phases) - 1 - p_idx;
-                            interpolated_out_reg <= fwd_phase_buf[p_idx] + rev_phase_buf[rev_idx];
+                            interpolated_out_reg <= fwd_phase_buf[emit_phase_idx]
+                                                  + rev_phase_buf[(active_phases - 1'b1) - emit_phase_idx];
                             interpolated_valid   <= 1'b1;
                             if (emit_phase_idx == active_phases - 1'b1) begin
                                 emit_active <= 1'b0;
