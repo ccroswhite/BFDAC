@@ -153,7 +153,7 @@ module tb_fir_interp_m1;
         end
 
         repeat (20) @(posedge clk);
-        if (fail_cnt == 0 && pass_cnt == 60 && exp_queue.size() == 0 && !input_overrun)
+        if (fail_cnt == 0 && pass_cnt == 120 && exp_queue.size() == 0 && !input_overrun)
             $display("[TB_FIR_INTERP_M1] PASS: All %0d polyphase outputs across rate_shift=0..3 bit-exact (0 LSB error)!",
                      pass_cnt);
         else

@@ -1,17 +1,17 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// FIR_POLYPHASE_INTERPOLATOR — Milestone 1 + Milestone 2 (Option B Fold)
+// FIR_POLYPHASE_INTERPOLATOR — Milestones 1 & 2 (Pure Distributed LUTRAM)
 //
-// - SYM_FOLD_EN = 0 (Milestone 1):
-//     Uses phase-end snapshot + 3-tier time-multiplexed polyphase_adder_tree.
-// - SYM_FOLD_EN = 1 (Milestone 2):
-//     Bit-exact Option B polyphase half-curve fold. Doubles effective tap count
-//     (2 * NUM_PHASES * NUM_MACS * TAPS_PER_PHASE) from a half-curve URAM table
-//     using dual systolic windows (win shifting 0 -> NUM_MACS-1 and win_rev
-//     shifting NUM_MACS-1 -> 0). Evaluates Y_fwd[s] and Y_rev[s] during the
-//     sweep and emits y[p] = Y_fwd[p] + Y_rev[P - 1 - p] in chronological order
-//     p = 0..P-1 spaced by EMIT_SPACING = 16 dsp_clk cycles.
+// - Milestone 1: Phase-end snapshot + 3-tier time-multiplexed polyphase_adder_tree
+//   (reclaims 96.2% of adder-tree DSP48E2 slices with 0-LSB bit-exactness).
+// - Milestone 2 (SYM_FOLD_EN = 1): Bit-exact Option B polyphase half-curve fold.
+//   Doubles effective tap count (2 * NUM_PHASES * NUM_MACS * TAPS_PER_PHASE)
+//   from a half-curve URAM table using dual per-lane distributed LUTRAM
+//   systolic windows (win and win_rev).
+// - Pipelined history_clear: Routes clear address & strobe through the 3-stage
+//   s1->s2->s3 group tree so LUTRAM WADR ports have zero local muxing and zero
+//   cross-SLR fanout.
 // =============================================================================
 module fir_polyphase_interpolator #(
     parameter int NUM_MACS       = 4096,
@@ -67,20 +67,29 @@ module fir_polyphase_interpolator #(
     end
 
     // =================================---------------------------------------
-    // 1. Per-MAC Audio Window RAMs (Forward + Reverse Systolic Handoff)
+    // 1. Per-MAC Audio Window LUTRAMs (Forward + Reverse Systolic Handoff)
     // =================================---------------------------------------
     localparam int WIN_AW = $clog2(TAPS_PER_PHASE);
     logic [WIN_AW-1:0] history_clear_addr;
-    logic history_clear;
+    logic              history_clear_sweep;
+    logic [2:0]        history_clear_drain;
+    logic              history_clear;
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            history_clear      <= 1'b1;
-            history_clear_addr <= '0;
-        end else if (history_clear) begin
+            history_clear_sweep <= 1'b1;
+            history_clear_addr  <= '0;
+            history_clear_drain <= 3'd5;
+            history_clear       <= 1'b1;
+        end else if (history_clear_sweep) begin
             if (history_clear_addr == WIN_AW'(TAPS_PER_PHASE - 1))
-                history_clear <= 1'b0;
+                history_clear_sweep <= 1'b0;
             else
                 history_clear_addr <= history_clear_addr + 1'b1;
+        end else if (history_clear_drain != 3'd0) begin
+            history_clear_drain <= history_clear_drain - 3'd1;
+            if (history_clear_drain == 3'd1)
+                history_clear <= 1'b0;
         end
     end
 
@@ -109,8 +118,11 @@ module fir_polyphase_interpolator #(
     logic [WIN_AW-1:0] win_wr_addr;
     logic              cap_bnd;
     logic              win_we;
+    logic              win_clr;
 
-    assign win_wr_addr = hp + WIN_AW'(1);
+    assign win_wr_addr = history_clear_sweep ? history_clear_addr : (hp + WIN_AW'(1));
+    assign win_we      = history_clear_sweep || ((state == ST_SHIFT) && (shift_cnt == 2'd2));
+    assign win_clr     = history_clear_sweep;
 
     // Forward window reads (hp - tap_counter) newest-to-oldest during sweep;
     // Reverse window reads (hp + 1 + tap_counter) oldest-to-newest during sweep.
@@ -122,7 +134,6 @@ module fir_polyphase_interpolator #(
                              : (hp + WIN_AW'(1) + tap_counter);
 
     assign cap_bnd = (state == ST_SHIFT) && (shift_cnt == 2'd1);
-    assign win_we  = (state == ST_SHIFT) && (shift_cnt == 2'd2);
 
     always_ff @(posedge clk) begin
         win_rd_addr_q     <= win_rd_addr;
@@ -130,12 +141,13 @@ module fir_polyphase_interpolator #(
     end
 
     logic [WIN_AW-1:0] win_wr_addr_s1;
-    logic              win_we_s1, cap_bnd_s1, ps_s1;
+    logic              win_we_s1, win_clr_s1, cap_bnd_s1, ps_s1;
 
     (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_addr_s2     [0:NUM_SUPER-1];
     (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_rev_addr_s2 [0:NUM_SUPER-1];
     (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s2     [0:NUM_SUPER-1];
     (* dont_touch = "true" *) logic              we_s2          [0:NUM_SUPER-1];
+    (* dont_touch = "true" *) logic              clr_s2         [0:NUM_SUPER-1];
     (* dont_touch = "true" *) logic              cap_s2         [0:NUM_SUPER-1];
     (* dont_touch = "true" *) logic              ps_s2          [0:NUM_SUPER-1];
 
@@ -143,35 +155,42 @@ module fir_polyphase_interpolator #(
     (* dont_touch = "true" *) logic [WIN_AW-1:0] rd_rev_addr_s3 [0:NUM_GROUPS-1];
     (* dont_touch = "true" *) logic [WIN_AW-1:0] wr_addr_s3     [0:NUM_GROUPS-1];
     (* dont_touch = "true" *) logic              we_s3          [0:NUM_GROUPS-1];
+    (* dont_touch = "true" *) logic              clr_s3         [0:NUM_GROUPS-1];
     (* dont_touch = "true" *) logic              cap_s3         [0:NUM_GROUPS-1];
     (* dont_touch = "true" *) logic              ps_s3          [0:NUM_GROUPS-1];
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             win_we_s1  <= 1'b0;
+            win_clr_s1 <= 1'b0;
             cap_bnd_s1 <= 1'b0;
             ps_s1      <= 1'b0;
             for (int s = 0; s < NUM_SUPER; s++) begin
                 we_s2[s]  <= 1'b0;
+                clr_s2[s] <= 1'b0;
                 cap_s2[s] <= 1'b0;
                 ps_s2[s]  <= 1'b0;
             end
             for (int g = 0; g < NUM_GROUPS; g++) begin
                 we_s3[g]  <= 1'b0;
+                clr_s3[g] <= 1'b0;
                 cap_s3[g] <= 1'b0;
                 ps_s3[g]  <= 1'b0;
             end
         end else begin
             win_we_s1  <= win_we;
+            win_clr_s1 <= win_clr;
             cap_bnd_s1 <= cap_bnd;
             ps_s1      <= phase_sync;
             for (int s = 0; s < NUM_SUPER; s++) begin
                 we_s2[s]  <= win_we_s1;
+                clr_s2[s] <= win_clr_s1;
                 cap_s2[s] <= cap_bnd_s1;
                 ps_s2[s]  <= ps_s1;
             end
             for (int g = 0; g < NUM_GROUPS; g++) begin
                 we_s3[g]  <= we_s2[g / GRP_PER_SUP];
+                clr_s3[g] <= clr_s2[g / GRP_PER_SUP];
                 cap_s3[g] <= cap_s2[g / GRP_PER_SUP];
                 ps_s3[g]  <= ps_s2[g / GRP_PER_SUP];
             end
@@ -256,10 +275,10 @@ module fir_polyphase_interpolator #(
                 win_q2[w] <= win_q[w];
                 if (cap_s3[GRP])
                     boundary_reg[w] <= win_q[w];
-                if (history_clear)
-                    win[history_clear_addr] <= '0;
-                else if (we_s3[GRP])
-                    win[wr_addr_s3[GRP]] <= (w == 0) ? ns_reg : boundary_reg[w-1];
+                if (we_s3[GRP])
+                    win[wr_addr_s3[GRP]] <= clr_s3[GRP]
+                                            ? '0
+                                            : ((w == 0) ? ns_reg : boundary_reg[w-1]);
             end
 
             if (SYM_FOLD_EN) begin : gen_win_rev
@@ -277,12 +296,12 @@ module fir_polyphase_interpolator #(
                     win_rev_q2[w] <= win_rev_q[w];
                     if (cap_s3[GRP])
                         boundary_rev_reg[w] <= win_rev_q[w];
-                    if (history_clear)
-                        win_rev[history_clear_addr] <= '0;
-                    else if (we_s3[GRP])
-                        win_rev[wr_addr_s3[GRP]] <= (w == NUM_MACS - 1)
-                                                    ? boundary_reg[NUM_MACS - 1]
-                                                    : boundary_rev_reg[w + 1];
+                    if (we_s3[GRP])
+                        win_rev[wr_addr_s3[GRP]] <= clr_s3[GRP]
+                                                    ? '0
+                                                    : ((w == NUM_MACS - 1)
+                                                       ? boundary_reg[NUM_MACS - 1]
+                                                       : boundary_rev_reg[w + 1]);
                 end
             end else begin : gen_no_win_rev
                 assign win_rev_q[w]        = '0;

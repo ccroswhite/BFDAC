@@ -4983,3 +4983,260 @@ check_seaf_pinmap.py extended: J7705 labels verified pad-for-pad
 against seaf_conn1_map(). bom.md connector section updated.
 Verify: regen clean, pinmap check PASS, xcheck PASS,
 ERC 0 errors / 2 known CASB2 warnings.
+
+2026-11-03 (cont): AP processor - VAR-SOM-AM62P direction
+-------------------------------------------------------
+User converged on VAR-SOM-AM62P (TI AM62Px, quad A53 1.4G + R5F
+800M) over VAR-SOM-MX93: (a) WiFi needs the P line on current
+Variscite assembly (WiFi6+BT5.4 certified, Murata 2EL/2DL,
+WBD/WBE options); (b) McASP clocks to 50 MHz = real margin on
+the 24.576 MHz BCLK slave-TX edge case vs i.MX SAI ~25 MHz
+boundary; (c) same SODIMM-200 pin2pin socket family (dual-qual
+with MX8M-NANO/MX93 stays possible); (d) $69 vs $59 - irrelevant
+at BOM scale. Inventory is a wash: both ship in 4 working days
+from Variscite direct (stock configs, no MOQ; custom 25+).
+User will request 2 eval modules from Variscite. NO eval kit -
+$400 wrapper declined; validate on our own carrier or a minimal
+jig. Toradex Verdin AM62 WB kept as Mouser-stockable fallback.
+Distro: user accepts owning Yocto (+ Debian images for bench).
+bom.md item 22 has the PROPOSED entry (MX93 - needs rewriting
+to AM62P once user confirms the module pick).
+
+AP board needs (next work):
+- SODIMM-200 socket symbol + footprint (NO stock KiCad SODIMM
+  footprint - custom, socket MPN TBD; VAR-SOM-AM62P datasheet
+  has the full 200-pin list tables - MCSPI0/1/2, McASP0/1/2,
+  UARTs, GPIO/reset, power pins)
+- RGMII1 GbE: PHY is ON the module (EC option) -> carrier needs
+  RJ45 jack w/ magnetics only (MagJack-class); RGMII2 goes to
+  carrier PHY if a second port is ever wanted (NC for now)
+- SoM<->XMOS wiring: private SPI (host=master: MCSPI ->
+  HOST_SCLK/MOSI/MISO/CS_N + HOST_IRQ_N), I2S slave-TX lane
+  (McASP AXR + shared BCLK/LRCLK = AP_I2S_DATA2 path), AP_RST_N,
+  VAP_IO 3.3V in, GND_AP, test points on the interface
+- J853 2x10 host-SoM placeholder becomes redundant once the
+  SODIMM socket lands - fold its net assignments into the SoM
+  connector instead of duplicating
+- U.FL antenna pigtails through chassis for WiFi/BT
+
+2026-11-03 (cont): connectivity + update-architecture RULINGS
+-----------------------------------------------------------
+- Ethernet-only for v1 (user): matches the whole dCS/MSB/
+  Lumin/Nagra reference class - none of them ship WiFi/BT in
+  the DAC. No plastic RF window needed on the aluminum
+  enclosure; SoM may be ordered non-WBD or radio left idle.
+- Single USB face: J852 USB-C = XMOS UAC2 only. SoM's 2x USB
+  unexposed (debug header at most).
+- UPDATE PATH = Ethernet -> AP only (user ruling): the
+  application processor is the command-and-control upgrade
+  manager for the ENTIRE system: itself, the XMOS QSPI (U853),
+  the FPGA QSPI binary storage, and the half-fold stream
+  coefficient storage. DFU on the XMOS USB is REMOVED except
+  as needed for UAC2 operation - not a product update path.
+- Update order: subordinates first, AP self last (a self-
+  reboot kills the orchestrator). AP applies a signed bundle
+  of all payloads, versions/checks each, roll back on failure.
+- Work items created: XMOS flash-write agent over the private
+  SPI link; FPGA in-system QSPI writer (SPI block ingest ->
+  ICAP + MT25QU02G, golden+multiboot for brick-safety); AP
+  update-manager app; JTAG (J851/J802) remains factory+recovery.
+
+2026-11-03 (cont): AP carrier plan - VAR-SOM-AM62P (user: assume
+modules arrive, plan on this being the SoM)
+----------------------------------------------------------------
+Carrier-side BOM (module carries LPDDR4/eMMC/PMIC - nothing else
+needed on our board):
+- SODIMM-200 socket, RIGHT-ANGLE DDR2-class (module lies
+  parallel to carrier) - MPN TBD/PROPOSED (TE/JAE/Foxconn class);
+  custom footprint (no stock KiCad SODIMM land)
+- GbE: RJ45 MagJack only (PHY is on-module, MDI pairs to jack)
+- Power: VAP_IO 3.3 V in + bulk decoupling (SoM PMIC onboard)
+- SoM<->XMOS: MCSPI -> HOST_SCLK/MOSI/MISO/CS_N + HOST_IRQ_N;
+  McASP slave-TX -> AP_I2S_DATA2 + shared BCLK/LRCLK; AP_RST_N;
+  UART console header; test points on all interface nets
+- USB: 2x USB2.0 on header/unexposed (service/dongle escape)
+- RTC battery (opt), boot-mode straps if needed, reset logic
+- NOT needed: SDRAM, eMMC, LDOs, PHYs, radio/antenna parts,
+  exposed USB port
+- J853 2x10 placeholder folds into the SoM connector nets
+Gate: VAR-SOM-AM62P 200-pin pin-list (datasheet tables have it)
+for the connector wiring; socket dimensional drawing for the fp.
+
+2026-11-03 (cont): SODIMM-200 socket + GbE jack DRAWN on ap.kicad_sch
+-------------------------------------------------------------------
+J855 = custom bfdac:VARSOM_SODIMM200 symbol (5 units x 40 flat pins
+1..200) for VAR-SOM-AM62P; footprint bfdac:SODIMM-200_TBD pending
+socket MPN.  Nets from the datasheet pin-list: VCC_SOM 32/34/36/103-
+111 -> VAP_IO, 35x GND + AGND195 -> GND_AP, MCSPI1 75/79/70/77 ->
+HOST_*, McASP0 117/72/69 -> AP_I2S_BCLK/LRCLK/DATA2 (host I2S lane),
+UART0 83/85 -> J857 console header, USB0 -> J858 service header
+(unexposed), 63/65 -> HOST_IRQ_N/AP_RST_N (GPIO VERIFY), 49 HOST_PG,
+98 SOM_RST_N (reset source TBD) on TP861/862, ETH0 MDI pairs 3-12 ->
+J856 RJ45_LED_Shielded (GbE MagJack MPN TBD) + LED 15/16, USB VBUS/DRVVBUS
+NC (USB off in v1).  J853 2x10 placeholder removed - folded into J855.
+xcheck PASS; ERC = 2 CASB2 + 6 TBD-footprint warnings (all expected).
+bom.md item 22 rewritten MX93 -> AM62P with verify list.
+OPEN: SODIMM socket MPN + fp, GbE MagJack MPN + fp, pin-list VERIFY
+items, SOM_RST_N source, McASP slave-TX bench check on eval module.
+
+2026-11-03 (cont): Ethernet port - isolation + ESD drawn
+-------------------------------------------------------
+GbE path complete on ap.kicad_sch (moat model, cable domain floats):
+- J856 SH -> CHASSIS_PE (was GND_AP - shield bonds to chassis at
+  the panel, same rule as USB shell)
+- D860-867 = 8x low-cap TVS (~1-3 pF, RClamp0521-class PROPOSED)
+  on all PHY-side MDI lines -> GND_AP
+- R870/R871 470R series Rs on the MagJack LED pins -> VAP_IO
+- Bob-Smith documented as text requirement (4x75R CT join +
+  1nF/2kV -> CHASSIS_PE) - needs the real jack's CT pins at MPN
+  selection, so it's a note not floating parts
+- Isolation = the MagJack transformer itself (~1.5-2.25 kVrms);
+  Ethernet is its own external barrier like the USB moat
+xcheck PASS; ERC = 2 CASB2 + 6 TBD-footprint warnings.
+OPEN: GbE MagJack MPN (must bring CT pins out or integrate
+bob-smith) + SODIMM socket MPN - both deferred to Variscite reply.
+
+2026-11-03 (cont): mains-select + sequencing ARCHITECTURE RULINGS
+----------------------------------------------------------------
+USER RULINGS (all 2026-11-03):
+- Controller = SMPS-powered (VAP_IO/RS-25-3.3, always-alive
+  universal input), NOT transformer-aux powered. VSEL_AUX's
+  logic-supply role DIES; old LM393+TLC555 aux-sense chain is
+  REPLACED by direct mains sense: mains->bridge->HV R-string->
+  hot-side zener rail->TLV431 WINDOW detector (90-165V band)->
+  opto->comparator. Opto ON = "115V mains positively detected"
+  = energize select relays; dark (high-line/no-mains/dead
+  sensor) = stay TAP230-series = SAFE for every single fault.
+  ~165V boundary + hysteresis (208V services exist).
+- Select = series/parallel on DUAL-PRIMARY coils (user: the
+  purchased R-cores have two SEPARATE primary wire sets, NOT
+  a tapped 0/115/230 winding). 230V=series (NC, safe default):
+  L->P1a, P1b-P2a join, P2b->N. 115V=parallel: L->P1a+P2a,
+  P1b+P2b->N. = 2 switched poles per transformer = 1 DPDT
+  select + 1 SPST stage-enable per xfmr (or pooled 4PDTs).
+  The drawn K901 TAP-select scheme was for tapped primaries
+  and is WRONG for this part - being reworked.
+- Staging: ONE LM3880 6-output sequencer times the transformer
+  energize relays in order (kills simultaneous inrush); R900+
+  K900 soft-start stays, K900 bypass asserts LAST. Order
+  T903->T902->T900->T901 (small->large inrush), all staged
+  equally now that T903's aux isn't the logic supply.
+- UV supervision (option A = LM3880 + TPS3890s, user pick over
+  UCD90120A PMBus telemetry): TPS3890 x8 on pre-reg rails ->
+  wire-AND PREREG_PG; +1 on VAP_IO into XMOS_RST_N chain.
+  Per-rail telemetry = future UCD90120A upgrade, not v1.
+- POWER DOCTRINE REVISED (user): dual-mono lives ONLY at the
+  FINAL LDOs (per-monoblock). Transformers + pre-reg are
+  SHARED so drift tracks channel-to-channel; extra pre-reg
+  LDOs exist ONLY for derating (thermal/PSRR/current). =>
+  T900/T901 consolidate to shared-for-capacity (not L/R);
+  V4P3_L*/R* branch names consolidate to shared V4P3 branches;
+  J603/J604 maps + supervision list shrink (~6 rails).
+RELAY MPN REVIEW PENDING (user wants options before ruling):
+  select DPDT 3V-coil: G2RL-2-DC3 (in design), Finder 40.52,
+    JW2SN-DC3V; pooled 4PDT: MY4-DC3, Finder 55.34;
+  staging SPST 3V-coil: G5LE-1-DC3 (in design), G2RL-1A-E-DC3,
+    Finder 40.61.3. Footprints after MPN ruling.
+
+2026-11-03 (cont): relay set RULED + brick bumped RS-25->RS-50
+-------------------------------------------------------------
+- Relay MPNs (verified vs distributor listings this time -
+  prior suggestions from memory were wrong, flagged by user):
+  select = 8x G5LE-14-DC3 (SPDT 10A/250VAC, 3V coil), stage =
+  4x G5LE-1A-DC3 (SPST-NO 10A/250VAC, 3V coil), K900 bypass =
+  G5LE-14-DC3.  All 3V-coil, all on VAP_IO.
+- Coil load: 13 x ~400 mW @ 3.3V ~= 6.3 W worst-case (115V
+  mode) -> brick bumped RS-25-3.3 (6A) -> RS-50-3.3 (~10A,
+  same chassis-mount/footprint).  BOM + gen_kicad updated.
+- Still open: draw the acentry rework (opto window-sense +
+  LM3880 staging + series/parallel select on dual-primary
+  coils), consolidate V4P3 branch naming, 8+1 TPS3890
+  supervisors -> PREREG_PG.
+
+2026-11-03 (cont): P16A/N16A pre-reg swap COMMITTED
+---------------------------------------------------
+LM317/LM337 REPLACED (user ruling): 6x parallel LT3045EMSE
+(U7801-U7806) = P16A +16.2V; 6x parallel LT3094EMSE (U7807-U7812)
+= N16A -16.2V.  Reason: class-A I/V+V loads ~0.5A continuous ->
+~3.9W/rail spread 6 dies = ~0.65W each, ~39C junction margin;
+0.8uVrms/90dB matches downstream family.  Per ADI parallel
+topology: shared SET node (600uA x 27.0k = 16.2V), ~20mR ballast
+per OUT (MPN TBD PROPOSED), OUTS->common node, shared PGFB
+475k/10k -> PG_ALL, EN/UV->IN.  Old 240/2.87k dividers, ADJ
+caps, bleeders removed.  bom.md 17q rewritten.  Regen + xcheck
+PASS.  OPEN: ballast MPN, ERC re-run.
+
+2026-11-03 (cont): input-UVLO added on all prereg LDOs
+-----------------------------------------------------
+Every prereg regulator now has its own input-UVLO (was autostart
+SHDN/EN->IN - user flagged 2026-11-03):
+- 5x V4P3 TPS7A4501 (U7701-7705): SHDN divider 33.2k/10k ->
+  ~5.6V trip on ~7.5V VRAW6 (SHDN thresh ~1.3V; VERIFY vs the
+  pin's ~3uA pull-up + threshold spread)
+- U7901 V8P3 TPS7A4501: SHDN divider 68k/10k -> ~10.1V trip on
+  ~12V VRAW9
+- 6x LT3045 + 6x LT3094 (U7801-7812): shared EN/UV divider
+  130k/10k -> ~17.2V trip on ~24V VRAW16 (~1.23V thresh)
+Layer split: LDO self-UVLO = input-side self-protection; the
+TPS3890 supervisors (still to draw) = output-side PG reporting
+-> PG_ALL/mute/AP.  Regen + xcheck PASS.
+
+2026-11-03 (cont): MAINS ARCHITECTURE LOCKED (user ruling)
+---------------------------------------------------------
+FINAL topology (user locked): SMPS 3.3V (RS-50-3.3 -> VAP_IO)
+powers ALL control: mains opto window-sense + sequencer + SSR
+drives.  NO R-core ever powers logic - VSEL_AUX chain DELETED.
+- SSR cell = 2x 650V superjunction NMOS back-to-back (common-
+  source) + photovoltaic gate driver (VOM1271/TLP3906 class)
+  + MOV + 100R/10nF snubber + gate bleeder.  ~10mA LED drive,
+  ~40mA total hold on VAP_IO.  Zero coil power.
+- Unified banks: all P1 windings = Bank A, all P2 = Bank B.
+  Select = 3 SSRs: S1 bus_B->N + S2 bus_A->L (115V parallel),
+  S3 bus_A<->bus_B (230V series join).  S4 = R900 bypass.
+  Hardwired: all P1a->feed, all P2b->N.  Interlock: {S1+S2} vs
+  S3 mutually exclusive (cross-conduction = L-N short).
+- Soft start = R900 ALONE in shared feed upstream of select
+  split (covers all legs with 1 element), ~2-5W surge-rated
+  wirewound NOT 25W - bypassed by S4 ~300ms in.  No secondary
+  soft-start needed (primary limit covers cap charge too).
+- Sequencer = MAX34460A PROPOSED (vs UCD90120A - user reviewing;
+  drives 4 SSR LEDs, monitors 8 prereg rails, PMBus to AP,
+  4 remote temp sensors bonus).
+- Transformer symbols: dual-primary P1a/P1b/P2a/P2b replaces
+  tapped P0/P115/P230; J92x primary connectors 4-pin -> 5-pin.
+
+2026-11-03 (cont): SSR acentry rework DRAWN (gen + regen clean)
+----------------------------------------------------------------
+- XFMR_TP4S/TP8S: dual-primary P1A/P1B/P2A/P2B + SCN (tapped
+  P0/P115/P230 deleted); J92x -> Conn_01x05 5-pin primaries.
+- 4x SSR blocks via ssr() helper: S1(SEL_B->AC_N_FILT) S2(SEL_A->
+  AC_L_SS) S3(SEL_A<->SEL_B join) = select; S4 bypasses R900.
+  Each = 2x back-to-back Q_NMOS (mosfet650 PROPOSED) + SSRDRV
+  photovoltaic driver + MOV + 220k gate bleeder + 330R LED set.
+- Opto window-sense: hot-side bridge + HV R-strings + 5.6V
+  zener + 2x TLV431 (90/165Vac window) -> 4N35 opto -> LOWLINE;
+  LM393 (VAP_IO) -> SEL_PAR vs SEL_SER complementary drives.
+- Sequencer U815 = MAX34460A box (PROPOSED, pins TBD): EN1-3 ->
+  SEL_SER/SEL_PAR/BYPS, GPI <- LOWLINE, PMBus + ALERT to AP.
+- VSEL_AUX / TLC555 / tap-select relays / economizers DELETED.
+- Refdes: SSR = Q950+/U950+/RV910+/R9500+ (9xx collisions fixed).
+REMAINING: xcheck annotation warning (likely benign multi-unit
+cell/ap - VERIFY); ERC re-run; J92x 5-pos Phoenix land TBD;
+SSR MPN set (driver + 650V FET) to spec; window trip verify.
+
+2026-11-03 (cont): SSR cell FULLY SPECED + ERC cleanup
+-----------------------------------------------------
+Parts RULED: STP65N045M9 x2/SSR (45mR TO-220), VOM1271 PV driver
+(SOP-4, integrated turn-off), S14K275 MOV, 100nF X2 + 47R snubber,
+220k gate bleeder, ISOM8110 opto-emulator (capacitive, no LED
+aging - replaces 4N35), TLC555 ~300ms BYPS delay + NMOS sink
+buffers w/ 1M pull-downs (PMIC dropped entirely).
+ERC state: all real errors cleared (spacing collisions, bridge
+net types, window-sense topology LO_R/HI_R taps, zener D815
+orientation, PC817 pin swap 3=EMITTER->GND_AP/4=COLLECTOR->LOWLINE,
+HVP/HVN PWR_FLAGs).  REMAINING: 2x multiple_net_names WARNINGS -
+GND_AP/VAP_IO + HVN/LO_N label-attach on shared stubs, likely
+pin-stub overlaps at dense label clusters -> VISUAL CHECK in
+schematic editor needed to confirm no real net merge (VAP_IO to
+GND_AP through LED R + NMOS is the suspicious path - if the PV
+driver LED_A/LED_K stubs touch, that's the short to fix).

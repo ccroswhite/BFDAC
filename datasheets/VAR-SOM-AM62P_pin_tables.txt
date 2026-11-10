@@ -1,0 +1,889 @@
+Pin# Assy      Pin Function     Alt# Notes                                            Ball
+
+161 no DSI     OLDI0_A0N                 LVDS0 Data0 Differential Pair Negative side  AE20
+
+163 no DSI     OLDI0_A0P                 LVDS0 Data0 Differential Pair Positive side  AD20
+160 no DSI     OLDI0_A1N                 LVDS0 Data1 Differential Pair Negative side  AC19
+162 no DSI     OLDI0_A1P                 LVDS0 Data1 Differential Pair Positive side  AD19
+164 no DSI     OLDI0_A2N                 LVDS0 Data2 Differential Pair Negative side  AA19
+166 no DSI     OLDI0_A2P                 LVDS0 Data2 Differential Pair Positive side  AB19
+165 no DSI     OLDI0_A3N                 LVDS0 Data3 Differential Pair Negative side  AD18
+167 no DSI     OLDI0_A3P                 LVDS0 Data3 Differential Pair Positive side  AE19
+168 no DSI     OLDI0_CLK0N               LVDS0 clock Differential Pair Negative side  AE18
+170 no DSI     OLDI0_CLK0P               LVDS0 clock Differential Pair Positive side  AE17
+
+Note: In case of "DSI" and "LD0" configuration, LVDS0 signals will be exported via SOM connector
+pins instead of the default MCU/WKUP signals.
+
+Pin# Assy      Pin Function     Alt# Notes                                            Ball
+140 DSI & LD0  OLDI0_A0N                                                              AE20
+                                         Available in SOM with "DSI" and LD0"         AD20
+142 DSI & LD0 OLDI0_A0P                  configuration;                               AC19
+                                         LVDS0 Data0 Differential Pair Negative side  AD19
+141 DSI & LD0 OLDI0_A1N                  Available in SOM with "DSI" and LD0"         AA19
+                                         configuration;                               AB19
+143 DSI & LD0 OLDI0_A1P                  LVDS0 Data0 Differential Pair Positive side  AD18
+                                         Available in SOM with "DSI" and LD0"         AE19
+145 DSI & LD0 OLDI0_A2N                  configuration;                               AE18
+                                         LVDS0 Data1 Differential Pair Negative side  AE17
+147 DSI & LD0 OLDI0_A2P                  Available in SOM with "DSI" and LD0"
+                                         configuration;
+151 DSI & LD0 OLDI0_A3N                  LVDS0 Data1 Differential Pair Positive side
+                                         Available in SOM with "DSI" and LD0"
+153 DSI & LD0 OLDI0_A3P                  configuration;
+                                         LVDS0 Data2 Differential Pair Negative side
+150 DSI & LD0 OLDI0_CLK0N                Available in SOM with "DSI" and LD0"
+                                         configuration;
+152 DSI & LD0 OLDI0_CLK0P                LVDS0 Data2 Differential Pair Positive side
+                                         Available in SOM with "DSI" and LD0"
+                                         configuration;
+                                         LVDS0 Data3 Differential Pair Negative side
+                                         Available in SOM with "DSI" and LD0"
+                                         configuration;
+                                         LVDS0 Data3 Differential Pair Positive side
+                                         Available in SOM with "DSI" and LD0"
+                                         configuration;
+                                         LVDS0 clock Differential Pair Negative side
+                                         Available in SOM with "DSI" and LD0"
+                                         configuration;
+                                         LVDS0 clock Differential Pair Positive side
+
+VAR-SOM-AM62P_V1.x Datasheet                            Rev. 1.03, 1/2026
+Page 47                                                        Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+8.2.1.2 LVDS1 Signals
+
+Pin# Assy  Pin Function         Table 6: LVDS1 Signals                                        Ball
+
+184        OLDI0_A4N                    Alt# Notes                                            AD17
+                                                 LVDS1 Data0 Differential Pair Negative side
+186        OLDI0_A4P                             LVDS1 Data0 Differential Pair Positive side  AD16
+188        OLDI0_A5N                             LVDS1 Data1 Differential Pair Negative side  AB17
+190        OLDI0_A5P                             LVDS1 Data1 Differential Pair Positive side  AC17
+192        OLDI0_A6N                             LVDS1 Data2 Differential Pair Negative side  AC16
+194        OLDI0_A6P                             LVDS1 Data2 Differential Pair Positive side  AC15
+183        OLDI0_A7N                             LVDS1 Data3 Differential Pair Negative side  AB16
+181        OLDI0_A7P                             LVDS1 Data3 Differential Pair Positive side  AA16
+180        OLDI0_CLK1N                           LVDS1 clock Differential Pair Negative side  AD15
+182        OLDI0_CLK1P                           LVDS1 clock Differential Pair Positive side  AD14
+
+8.2.2 DSI
+
+The VAR-SOM-AM62P exports the AM62Px Sitara's MIPI® DSI with 4 Lane MIPI® D-PHY which
+supports up to 3840 x 1080 at 60 fps (300-MHz Pixel Clock).
+
+Note: In "DSI" configuration, "LD0" configuration can be chosen making it possible to export also
+LVDS0 signals via SOM connector pins instead of the default MCU/WKUP signals.
+
+Pin# Assy  Pin Function         Table 7: DSI Signals                                          Ball
+168 DSI    DSI0_TXCLKN                                                                        AA12
+170 DSI    DSI0_TXCLKP             Alt# Notes                                                 AA13
+161 DSI    DSI0_TXN0                                                                          AD11
+160 DSI    DSI0_TXN1                        Available in SOM with "DSI" configuration;        AB13
+164 DSI    DSI0_TXN2                        DSI0 clock Differential Pair Negative side        AC12
+165 DSI    DSI0_TXN3                        Available in SOM with "DSI" configuration;        AE14
+163 DSI    DSI0_TXP0                        DSI0 clock Differential Pair Positive side        AD12
+162 DSI    DSI0_TXP1                        Available in SOM with "DSI" configuration;        AB14
+166 DSI    DSI0_TXP2                        DSI0 Data0 Differential Pair Negative side        AC13
+167 DSI    DSI0_TXP3                        Available in SOM with "DSI" configuration;        AE15
+                                            DSI0 Data1 Differential Pair Negative side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data2 Differential Pair Negative side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data3 Differential Pair Negative side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data0 Differential Pair Positive side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data1 Differential Pair Positive side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data2 Differential Pair Positive side
+                                            Available in SOM with "DSI" configuration;
+                                            DSI0 Data3 Differential Pair Positive side
+
+VAR-SOM-AM62P_V1.x Datasheet                                                            Rev. 1.03, 1/2026
+Page 48                                                                                        Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+8.3 Camera Interface
+
+8.3.1 MIPI CSI-2
+
+The VAR-SOM-AM62P exports one Camera Serial interface 4 Lane with DPHY provided by the
+AM62Px CSI_RX_IF module.
+
+The CSI_RX_IF deals with the processing of the pixel data coming from an external image sensor
+and supports the following features:
+
+     · Compliant to MIPI CSI-2 v1.3
+     · Supports up to 16 virtual channels per input (partial MIPI CSI v2.0 feature)
+     · Data rate up to 1.5 Gbps per lane
+     · Supports 1, 2, 3, or 4 Data Lane connection to DPHY_RX
+     · Programmable formats including YUV420, YUV422, RGB, Raw, and User Defined (over 25
+
+          different formats supported)
+     · One independent (simultaneous) output stream:
+
+                o One (up to 32 Channels) DMA interface through a 128-bit PSI_L connection to DMSS
+                     for transfers to memory:
+                      Byte packed (32x4) format, elastic buffer mode
+                      Max rate 1 data cycle every 4 main clocks
+                      ByteValid per byte in Last Data Phase (LDP)
+                      32 thread ID's supported (virtual channel & data type combinations); Flexible
+                           number of threads (32 Max)
+                      Virtual channels and data types mapped via mmr to PSI_L thread ID's
+                      Internal FF based FIFO; RAM based buffer (2kx128)
+
+     · Functional and data path error interrupts
+     · ECC support
+
+8.3.1.1 MIPI-CSI2 Signals
+
+                                Table 8: MIPI-CSI2 Signals
+
+Pin# Assy  Pin Function         Alt# Notes                                              Ball
+137        CSI0_RXCLKN                   CSI Clock Differential Pair Negative side      AE12
+135        CSI0_RXCLKP                   CSI Clock Differential Pair Positive side      AE11
+121        CSI0_RXN0                     CSI Data0 Differential Pair Negative side      AB11
+119        CSI0_RXP0                     CSI Data0 Differential Pair Positive side      AB10
+123        CSI0_RXN1                     CSI Data1 Differential Pair Negative side      AC10
+125        CSI0_RXP1                     CSI Data1 Differential Pair Positive side      AC9
+129        CSI0_RXN2                     CSI Data2 Differential Pair Negative side      AA10
+127        CSI0_RXP2                     CSI Data2 Differential Pair Positive side      AA9
+131        CSI0_RXN3                     CSI Data3 Differential Pair Negative side      AD9
+133        CSI0_RXP3                     CSI Data3 Differential Pair Positive side      AD8
+
+8.4 Ethernet Interface
+
+The AM62Px device has an integrated one 3-port Gigabit Ethernet Switch subsystem into device
+MAIN domain named CPSW0. The 3-port Gigabit Ethernet Switch (CPSW0) subsystem provides
+Ethernet packet communication for the device and can be configured as an Ethernet switch.
+
+VAR-SOM-AM62P_V1.x Datasheet                                                        Rev. 1.03, 1/2026
+Page 49                                                                                    Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+The 3-port CPSW0 subsystem provides the following features:
+
+     · Two Ethernet ports (port 1 and 2) with selectable RGMII and RMII interfaces and an internal
+          Communications
+
+     · Port Programming Interface (CPPI) port (port 0)
+     · Synchronous 10/100/1000 Mbit operation
+     · Flexible logical FIFO-based packet buffer structure
+     · Cut through switch support
+     · Eight priority level Quality Of Service (QOS) support (802.1p)
+     · Support for Audio/Video Bridging (P802.1Qav/D6.0)
+     · Support for IEEE 1588 Clock Synchronization (2008 Annex D, Annex E and Annex F)
+
+                o Timestamp module capable of time stamping external timesync events like Pulse-Per-
+                     Second and also generating Pulse-Per-Second outputs
+
+                o CPTS module that supports time stamping for IEEE1588 with support for 4 hardware
+                     push events and generation of compare output pulses
+
+     · DSCP Priority Mapping (IPv4 and IPv6)
+     · Energy Efficient Ethernet (EEE) support (802.3az)
+     · Flow Control Support (802.3x)
+     · Wire rate switching (802.1d)
+     · Non-Blocking switch fabric
+     · Time Sensitive Network Support
+
+                o IEEE P802.3br Interspersing Express Traffic
+                o IEEE 802.1Qbv Enhancements for Scheduled Traffic
+     · Address Lookup Engine (ALE)
+                o 512 ALE table entries
+                o Configurable number of addresses plus VLANs
+                o Wire rate lookup
+                o Host controlled time-based aging and/or auto-aging
+                o Spanning tree support
+                o L2 address lock and L2 filtering support
+                o MAC authentication (802.1x)
+                o Receive-based or destination-based Multicast and Broadcast rate limits
+                o MAC address blocking
+                o Source port locking
+                o OUI (Vendor ID) host accept/deny feature
+                o Configurable number of classifier/policers (32)
+                o VLAN support
+
+                      802.1Q compliant:
+                           Auto add port VLAN for untagged frames on ingress
+                           Auto VLAN removal on egress and auto pad to minimum frame size
+
+     · EtherStats and 802.3Stats Remote Network Monitoring (RMON) statistics gathering (per port
+          statistics)
+
+     · Ethernet Mac transmit to Ethernet Mac receive Loopback mode (digital loopback) supported
+     · CPSGMII Loopback Modes (transmit to receive)
+     · Maximum frame size of 2024 bytes
+     · Management Data Input/Output (MDIO) module for PHY Management with Clause 45 support
+     · Programmable interrupt control with selected interrupt pacing
+     · Host port CPPI Streaming Packet Interface (CPPI_GCLK)
+     · Digital loopback and FIFO loopback modes supported
+     · Emulation support
+
+VAR-SOM-AM62P_V1.x Datasheet  Rev. 1.03, 1/2026
+Page 50                              Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+· Full duplex mode supported in 10/100/1000 Mbps. Half-duplex mode supported only in 10/100
+     Mbps modes only.
+
+· RAM Error Detection and Correction (SECDED)
+
+8.4.1 RGMII1/RMII1
+
+The SOM can be ordered in one of the following configurations:
+
+     · "EC" configuration ­ The VAR-SOM-AM62P includes an on SOM a Gigabit PHY
+          Texas Instruments DP83867IRRGZ connected to RGMII1 interface signals.
+          External connector and magnetics should be implemented on carrier board to complete the
+          interface to the media.
+
+     · "no EC" configuration - The VAR-SOM-AM62P exposes the RGMII1/RMII1 interface signals to
+          the SO-DIMM connector, pins will be referenced to voltage level depending on "RG2CM"
+          configuration:
+                o In "no RG2CM" configuration ­ RGMII1/RMII1 pins will be referenced to 3.3V
+                o In "RG2CM" configuration ­ RGMII1/RMII1 pins will be referenced to 1.8V
+
+8.4.1.1 Ethernet PHY
+
+The on-SOM Texas Instruments DP83867IRRGZ Gigabit PHY in conjunction with the external
+magnetics on carrier board complete the interface to the media.
+PHY LINK LEDs 10/100 and 1000 combined on SOM to one signal 10/100/1000.
+
+The Following External Gigabit magnetics are required to complete the Ethernet PHY interface to
+the media.
+
+                              Table 9: Gigabit Ethernet Magnetics
+
+Vendor  P/N                     Package          Cores             Configuration
+
+Pulse   H5007NL                 Transformer      8                 Auto-MDX
+TDK     TLA-7T101LF             Transformer      8                 Auto-MDX
+Pulse   J0G-0009NL              Integrated RJ45  8                 Auto-MDX
+
+VAR-SOM-AM62P_V1.x Datasheet                                                      Rev. 1.03, 1/2026
+Page 51                                                                                  Variscite Ltd.
+   VAR-SOM-AM62P SYSTEM ON MODULE
+
+Pin# Assy  Pin Function            Table 10: Ethernet PHY Signals              Ball
+15 EC                                                Alt# Notes                DP83867IRRGZ.45
+                                                                               (In "RG2CM"
+           ETH0_LED_ACT               Signal source is Ethernet PHY            configuration -
+                                      Ethernet PHY Activity LED, active low    DP83867IRRGZ.45
+                                                                               Via FET)
+16 EC      ETH0_LED_LINK_10_100_1000  Signal source is Ethernet PHY            DP83867IRRGZ.47
+                                      Ethernet PHY Link LED, active low        (In "RG2CM"
+5  EC      ETH0_MDI_A_M                                                        configuration -
+           ETH0_MDI_A_P               Signal source is Ethernet PHY            DP83867IRRGZ.47
+3  EC      ETH0_MDI_B_M               Differential Pair Positive side          Via FET)
+           ETH0_MDI_B_P               Signal source is Ethernet PHY            DP83867IRRGZ.2
+11 EC      ETH0_MDI_C_M               Signal source is Ethernet PHY
+           ETH0_MDI_C_P                                                        DP83867IRRGZ.1
+9          ETH0_MDI_D_M               Differential Pair Positive side
+           ETH0_MDI_D_P                                                        DP83867IRRGZ.5
+6  EC      NC                         Signal source is Ethernet PHY            DP83867IRRGZ.4
+           NC                         Differential Pair Positive side          DP83867IRRGZ.8
+4  EC                                 Signal source is Ethernet PHY
+                                      Signal source is Ethernet PHY            DP83867IRRGZ.7
+12 EC                                 Differential Pair Positive side
+                                      Signal source is Ethernet PHY            DP83867IRRGZ.11
+10 EC                                 With "EC" configuration this pin is Not
+                                      Connected                                DP83867IRRGZ.10
+1  EC                                 With "EC" configuration this pin is Not
+                                      Connected                                NC
+97 EC
+                                                                               NC
+
+   VAR-SOM-AM62P_V1.x Datasheet                                              Rev. 1.03, 1/2026
+   Page 52                                                                          Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+8.4.1.2 RGMII1/RMII1 Signals
+
+                                Table 11: RGMII1 Signals
+
+Pin# Assy  Pin Function         Alt# Notes                                             Ball
+ 4 no EC   RGMII1_RD0
+                                   Available in SOM without "EC" configuration;
+
+                                0  By default, referenced to 3.3V,                     B15
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMI Data in
+
+                                   Available in SOM without "EC" configuration;
+
+6 no EC    RGMII1_RD1           0  By default, referenced to 3.3V,                     B16
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMI Data in
+
+                                   Available in SOM without "EC" configuration;
+
+10 no EC   RGMII1_RD2           0  By default, referenced to 3.3V,                     A14
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMI Data in
+
+                                   Available in SOM without "EC" configuration;
+
+12 no EC   RGMII1_RD3           0  By default, referenced to 3.3V,                     B14
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMI Data in
+
+                                   Available in SOM without "EC" configuration;
+
+15 no EC   RGMII1_RX_CTL        0  By default, referenced to 3.3V,                     A15
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMII - Receive Control signal
+
+                                   Available in SOM without "EC" configuration;
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+16 no EC   RGMII1_RXC           0 Includes series EMI filter;                          A16
+
+                                   RGMII - Receive Clock: 125MHz @ 1000Mbps /
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples RD[3:0] and RX_CTL;
+
+                                   Available in SOM without "EC" configuration;
+
+11 no EC   RGMII1_TD0           0  By default, referenced to 3.3V,                     A18
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMII Data out
+
+                                   Available in SOM without "EC" configuration;
+
+9 no EC    RGMII1_TD1           0  By default, referenced to 3.3V,                     C17
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMII Data out
+
+                                   Available in SOM without "EC" configuration;
+
+5 no EC    RGMII1_TD2           0  By default, referenced to 3.3V,                     A17
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMII Data out
+
+                                   Available in SOM without "EC" configuration;
+
+3 no EC    RGMII1_TD3           0  By default, referenced to 3.3V,                     C16
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RGMII Data out
+
+                                   Available in SOM without "EC" configuration;
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+1 no EC    RGMII1_TX_CTL        0 On some SOM modules this pin is GND; If placed in B18
+
+                                   such carrier with no "EC" configuration define PAD
+
+                                   as input!
+
+                                   RGMII - Transmit Control signal
+
+                                   Available in SOM without "EC" configuration;
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+97 no EC   RGMII1_TXC           0 Includes series 33R resistor;                        B17
+
+                                   RGMII - Transmit Clock: 125MHz @ 1000Mbps /
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples TD [3:0] and TX_CTL
+
+VAR-SOM-AM62P_V1.x Datasheet                                          Rev. 1.03, 1/2026
+Page 53                                                                      Variscite Ltd.
+   VAR-SOM-AM62P SYSTEM ON MODULE
+
+                                   Table 12: RMII1 Signals
+
+Pin# Assy  Pin Function            Alt# Notes                                             Ball
+           CLKOUT0
+                                      Available in SOM without "EC" configuration;
+           CLKOUT0
+           CLKOUT0                    By default, referenced to 3.3V,
+
+           RMII1_CRS_DV               In "RG2CM" configuration referenced to 1.8V;
+
+3  no EC   RMII1_REF_CLK           1  RMII Clock Output (50 MHz). This pin is             C16
+           RMII1_RX_ER                used for clock source to the external RMII
+           RMII1_RXD0
+           RMII1_RXD1                 PHY and must also be routed back to the
+           RMII1_TX_EN
+           RMII1_TXD0                 respective RMII[x]_REF_CLK pin for proper
+           RMII1_TXD1
+                                      device operation.
+
+                                      RMII Clock Output (50 MHz). This pin is
+
+                                      used for clock source to the external RMII
+
+29                                 5 PHY and must also be routed back to the              C25
+55 no ALP
+                                      respective RMII[x]_REF_CLK pin for proper
+
+                                      device operation.
+
+                                      By default, referenced to 3.3V,
+
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+                                      RMII Clock Output (50 MHz). This pin is
+
+                                   1 used for clock source to the external RMII           A19
+
+                                      PHY and must also be routed back to the
+
+                                      respective RMII[x]_REF_CLK pin for proper
+
+                                      device operation.
+
+                                      Available in SOM without "EC" configuration;
+
+                                      By default, referenced to 3.3V,
+
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+97 no EC                           1 Includes series 33R resistor;                        B17
+
+                                      RGMII - Transmit Clock: 125MHz @ 1000Mbps /
+
+                                      25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                      Samples TD [3:0] and TX_CTL
+
+                                      Available in SOM without "EC" configuration;
+
+                                      By default, referenced to 3.3V,
+
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+16 no EC                           1 Includes series EMI filter;                          A16
+
+                                      RGMII - Receive Clock: 125MHz @ 1000Mbps /
+
+                                      25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                      Samples RD[3:0] and RX_CTL;
+
+                                      Available in SOM without "EC" configuration;
+
+15 no EC                           1  By default, referenced to 3.3V,                     A15
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+                                      RGMII - Receive Control signal
+
+                                      Available in SOM without "EC" configuration;
+
+4  no EC                           1  By default, referenced to 3.3V,                     B15
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+                                      RGMI Data in
+
+                                      Available in SOM without "EC" configuration;
+
+6  no EC                           1  By default, referenced to 3.3V,                     B16
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+                                      RGMI Data in
+
+                                      Available in SOM without "EC" configuration;
+
+                                      By default, referenced to 3.3V,
+
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+1  no EC                           1 On some SOM modules this pin is GND; If placed in B18
+
+                                      such carrier with no "EC" configuration define PAD
+
+                                      as input!
+
+                                      RGMII - Transmit Control signal
+
+                                      Available in SOM without "EC" configuration;
+
+11 no EC                           1  By default, referenced to 3.3V,                     A18
+                                      In "RG2CM" configuration referenced to 1.8V;
+
+                                      RGMII Data out
+
+9  no EC                           1  Available in SOM without "EC" configuration;        C17
+                                      By default, referenced to 3.3V,
+
+   VAR-SOM-AM62P_V1.x Datasheet                                                   Rev. 1.03, 1/2026
+   Page 54                                                                               Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+Pin# Assy  Pin Function         Alt# Notes                                         Ball
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+                                   RGMII Data out
+
+8.4.2 RGMII2/RMII2
+
+RGMII2/RMII2 interface signals are always exported through SO-DIMM connector.
+Signals, in conjunction to MDIO signals exported from SO-DIMM connector, they can be used to
+interface an external Ethernet PHY.
+
+Voltage level depends on "RG2CM" configuration:
+
+     · In "no RG2CM" configuration ­ RGMII2/RMII2 pins will be referenced to 3.3V
+     · In "RG2CM" configuration ­ RGMII2/RMII2 pins will be referenced to 1.8V
+
+8.4.2.1 RGMIII2/RMII2 Signals
+
+                                Table 13: RGMII2 Signals
+
+Pin# Assy  Pin Function         Alt# Notes                                         Ball
+
+                                   By default, referenced to 3.3V,
+
+122        RGMII2_RD0           0 In "RG2CM" configuration referenced to 1.8V;     E19
+81         RGMII2_RD1
+71         RGMII2_RD2              RGMI Data in
+54 no ALP  RGMII2_RD3
+120        RGMII2_RX_CTL           By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     E16
+
+                                   RGMI Data in
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     E17
+
+                                   RGMI Data in
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     C19
+
+                                   RGMI Data in
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     F19
+
+                                   RGMII - Receive Control signal
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+57         RGMII2_RXC           0 RGMII - Receive Clock: 125MHz @ 1000Mbps /       D19
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples RD[3:0] and RX_CTL;
+
+                                   By default, referenced to 3.3V,
+
+73         RGMII2_TD0           0 In "RG2CM" configuration referenced to 1.8V;     B19
+177        RGMII2_TD1
+56 no ALP  RGMII2_TD2              RGMII Data out
+55 no ALP  RGMII2_TD3
+113        RGMII2_TX_CTL           By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     A21
+
+                                   RGMII Data out
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     D17
+
+                                   RGMII Data out
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     A19
+
+                                   RGMII Data out
+
+                                   By default, referenced to 3.3V,
+
+                                0 In "RG2CM" configuration referenced to 1.8V;     A20
+
+                                   RGMII - Transmit Control signal
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+96 no ALP  RGMII2_TXC           0  Includes series 33R resistor;                   D16
+                                   RGMII - Transmit Clock: 125MHz @ 1000Mbps /
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples TD [3:0] and TX_CTL
+
+VAR-SOM-AM62P_V1.x Datasheet                                                       Rev. 1.03, 1/2026
+Page 55                                                                                   Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+                                Table 14: RMII2 Signals
+
+Pin# Assy   Pin Function        Alt# Notes                                       Ball
+ 3 no EC
+                                   Available in SOM without "EC" configuration;
+ 29
+                                   By default, referenced to 3.3V,
+ 55 no ALP
+                                   In "RG2CM" configuration referenced to 1.8V;
+ 96 no ALP
+            CLKOUT0             1  RMII Clock Output (50 MHz). This pin is       C16
+ 57                                used for clock source to the external RMII
+120         CLKOUT0
+122                                PHY and must also be routed back to the
+ 81         CLKOUT0
+113                                respective RMII[x]_REF_CLK pin for proper
+ 73         RMII2_CRS_DV
+177                                device operation.
+            RMII2_REF_CLK
+            RMII2_RX_ER            RMII Clock Output (50 MHz). This pin is
+            RMII2_RXD0
+            RMII2_RXD1             used for clock source to the external RMII
+            RMII2_TX_EN
+            RMII2_TXD0          5 PHY and must also be routed back to the        C25
+            RMII2_TXD1
+                                   respective RMII[x]_REF_CLK pin for proper
+
+                                   device operation.
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                   RMII Clock Output (50 MHz). This pin is
+
+                                1 used for clock source to the external RMII     A19
+
+                                   PHY and must also be routed back to the
+
+                                   respective RMII[x]_REF_CLK pin for proper
+
+                                   device operation.
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                1  Includes series 33R resistor;                 D16
+                                   RGMII - Transmit Clock: 125MHz @ 1000Mbps /
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples TD [3:0] and TX_CTL
+
+                                   By default, referenced to 3.3V,
+
+                                   In "RG2CM" configuration referenced to 1.8V;
+
+                                1 RGMII - Receive Clock: 125MHz @ 1000Mbps /     D19
+
+                                   25MHz @ 100Mbps / 2.5MHz @ 10Mbps
+
+                                   Samples RD[3:0] and RX_CTL;
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   F19
+
+                                   RGMII - Receive Control signal
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   E19
+
+                                   RGMI Data in
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   E16
+
+                                   RGMI Data in
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   A20
+
+                                   RGMII - Transmit Control signal
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   B19
+
+                                   RGMII Data out
+
+                                   By default, referenced to 3.3V,
+
+                                1 In "RG2CM" configuration referenced to 1.8V;   A21
+
+                                   RGMII Data out
+
+8.4.3 RGMII1/RMII1 & RGMIII2/RMII2 Control Signals
+
+            Table 15: RGMII1/RMII1 & RGMIII2/RMII2 control Signals
+
+VAR-SOM-AM62P_V1.x Datasheet                                                   Rev. 1.03, 1/2026
+Page 56                                                                               Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+Pin# Assy  Pin Function         Alt# Notes                                                   Ball
+ 74        MDIO0_MDC
+                                   Pin is referenced to 3.3V.
+
+                                0  In "RG2CM" configuration pin is routed via on SOM         F17
+                                   1.8<->3.3V voltage translator;
+
+                                   Do not alter pinmux with "EC" configuration
+                                   Pin is referenced to 3.3V, and has an internal 1.47K
+
+30         MDIO0_MDIO                  Pull Up.
+                                0 In "RG2CM" configuration pin is routed via on SOM F16
+
+                                       1.8<->3.3V voltage translator.
+
+                                   Do not alter pinmux with "EC" configuration
+
+8.4.4 Common Platform Time Sync (CPTS)
+
+The Common Platform Time Sync (CPTS) module is used to facilitate host control of time sync
+operations. It enables compliance with the IEEE 1588-2008 standard for a precision clock
+synchronization protocol.
+
+Main features of CPTS module are:
+
+     · Supports the selection of multiple external clock sources
+     · Software control of time sync events via interrupt or polling
+     · Supports up to 8 hardware timestamp push inputs
+     · Supports timestamp counter compare output (CPTS_COMP)
+     · Supports timestamp counter bit output (CPTS_SYNC)
+     · Supports a configurable number of timestamp Generator bit outputs (CPTS_GENFn).
+     · Supports Ethernet Enhanced Scheduled Traffic Operations (CPTS_ESTFn).
+     · 32-bit and 64-bit timestamp modes with PPM and nudge adjustment.
+
+                                                              NOTE
+CPTS has one or more signals which can be exported from more than one pin.
+However, only specific pin combinations known as IOSETs are valid.
+These are defined in TI's SysConfig-PinMux Tool.
+The below tables present the valid IOSETs
+
+VAR-SOM-AM62P_V1.x Datasheet                                   Rev. 1.03, 1/2026
+Page 57                                                               Variscite Ltd.
+VAR-SOM-AM62P SYSTEM ON MODULE
+
+                                Table 16: CPTS Signal Signals
+
+Pin# Assy     Pin Function              Alt# Notes                                             Ball
+ 29           CP_GEMAC_CPTS0_RFT_CLK
+ 88           SYNC0_OUT                 6 CPTS Reference Clock Input                           C25
+ 29           SYNC1_OUT
+ 44           SYNC2_OUT                 2  CPTS Time Stamp Generator Bit 0 Output from         B25
+ 46           SYNC3_OUT                    Time Sync Router
+
+                                        1  CPTS Time Stamp Generator Bit 1 Output from         C25
+                                           Time Sync Router
+
+                                        3  CPTS Time Stamp Generator Bit 2 Output from         B23
+                                           Time Sync Router
+
+                                        3  CPTS Time Stamp Generator Bit 3 Output from         F20
+                                           Time Sync Router
+
+                              Table 17: CPTS Signal IOSet_1 Signals
+
+Pin# Assy     Pin Function              Alt# Notes                                               Ball
+              CP_GEMAC_CPTS0_HW1TSPUSH                                                           B20,
+              CP_GEMAC_CPTS0_HW1TSPUSH     CPTS Hardware Time Stamp Push Input to                LBES5PL2xL.6
+              CP_GEMAC_CPTS0_HW2TSPUSH                                                           ("WBE")
+     no TP &  CP_GEMAC_CPTS0_HW2TSPUSH     Time Sync Router
+     no ALP   CP_GEMAC_CPTS0_TS_COMP                                                             B20
+187           CP_GEMAC_CPTS0_TS_SYNC    1 Available in SOM without TP and without ALP
+              CP_GEMAC_CPTS0_TS_SYNC                                                             C21,
+                                           In "WBE" configuration connected also via buffer      LBES5PL2xL.7
+                                                                                                 ("WBE")
+                                           to Murata 2EL/2DL "SPI_RXD" signal.
+                                                                                                 C21
+                                           CPTS Hardware Time Stamp Push Input to
+                                                                                                 E20
+26 ALP                                  1 Time Sync Router
+                                                                                                 B21,
+                                           Available in SOM without TP and without WBE           LBES5PL2xL.8
+                                                                                                 ("WBE")
+                                           CPTS Hardware Time Stamp Push Input to
+                                                                                                 B21
+     no TP &                               Time Sync Router
+     no ALP
+193                                     1 Available in SOM without TP and without ALP
+
+                                           In "WBE" configuration connected also via buffer
+
+                                           to Murata 2EL/2DL "SPI_TXD" signal.
+
+                                           CPTS Hardware Time Stamp Push Input to
+
+24 ALP                                  1 Time Sync Router
+68
+                                           Available in SOM without TP and without WBE
+
+                                        1  CPTS Time Stamp Counter Compare Output
+                                           from CPSW3G0 CPTS
+
+                                           CPTS Time Stamp Counter Bit Output from
+
+     no TP &                               CPSW3G0 CPTS
+     no ALP
+189                                     1 Available in SOM without TP and without ALP
+
+                                           In "WBE" configuration connected also via buffer
+
+                                           to Murata 2EL/2DL "SPI_CLK" signal.
+
+                                           CPTS Time Stamp Counter Bit Output from
+
+25 ALP                                  1 CPSW3G0 CPTS
+
+                                           Available in SOM without TP and without WBE
+
+                              Table 18: CPTS Signal IOSet_2 Signals
+
+Pin# Assy     Pin Function              Alt# Notes                                               Ball
+ 63
+                                           CPTS Hardware Time Stamp Push Input to
+
+                                           Time Sync Router.
+
+                                           Pin resides on the CPU's VDDSHV5 power domain,
+
+              CP_GEMAC_CPTS0_HW1TSPUSH  1  Bank voltage set on SOM 1.8V/3.3V. Do not drive       H23
+                                           until after SYS_NRSTIN_3V3 rise +1ms;
+
+                                           Pin cannot be used externally if SOM pin 22 is
+
+                                           used for any function other than GPIO for external
+
+                                           SD card (MMC1) reset control.
+
+                                           CPTS Hardware Time Stamp Push Input to

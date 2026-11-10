@@ -128,6 +128,21 @@ module tb_dac_peq_m4;
         wait (exp_q_l.size() == 0);
         repeat (25) @(posedge clk);
 
+        // Flush per-band state with 2 zero inputs at unity so the phase-3
+        // impulse response sees clean x1/x2/y1/y2 history (state is preserved
+        // across bank swap for glitch-free EQ, so the TB must drain it).
+        for (int i = 0; i < 2; i++) begin
+            @(posedge clk);
+            in_data_l <= '0;
+            in_data_r <= '0;
+            in_valid  <= 1'b1;
+            exp_q_l.push_back(48'sh0);
+            exp_q_r.push_back(48'sh0);
+            @(posedge clk);
+            in_valid  <= 1'b0;
+            wait (exp_q_l.size() == 0);
+        end
+
         // 3. Program Shadow Bank Band 0 with IIR filter:
         //    b0 = +0.5 (0x2000_0000), b1 = +0.25 (0x1000_0000), a1 = -0.5 (0xE000_0000)
         //    Transfer eq: y[n] = 0.5*x[n] + 0.25*x[n-1] + 0.5*y[n-1]
