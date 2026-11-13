@@ -35,7 +35,8 @@ puts "========================================================================="
 write_checkpoint -force "build_8m/post_route_closed.dcp"
 report_timing_summary -max_paths 20 -file "build_8m/post_route_closed_timing.rpt"
 
-if {$final_wns >= 0.000 && $final_whs >= 0.000} {
+set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
+if {$WRITE_BIT && $final_wns >= 0.000 && $final_whs >= 0.000} {
     puts "INFO: Timing CLOSED! Writing build_8m/vu13p_dac_8m.bit..."
     write_bitstream -force "build_8m/vu13p_dac_8m.bit"
 }

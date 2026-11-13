@@ -3,7 +3,7 @@
 # =============================================================================
 
 set OUT_DIR   [expr {[info exists ::env(OUT_DIR)]   ? $::env(OUT_DIR)   : "build_8m"}]
-set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 1}]
+set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
 
 set_param general.maxThreads 8
 

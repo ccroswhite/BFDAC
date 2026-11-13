@@ -39,7 +39,8 @@ write_checkpoint -force "$OUT_DIR/post_route_signoff2.dcp"
 report_timing_summary -max_paths 25 -warn_on_violation -file "$OUT_DIR/post_route_signoff2_timing.rpt"
 report_bus_skew -file "$OUT_DIR/post_route_bus_skew2.rpt"
 
-if {$failed_nets == 0 && $final_wns >= 0.000 && $final_whs >= 0.000} {
+set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
+if {$WRITE_BIT && $failed_nets == 0 && $final_wns >= 0.000 && $final_whs >= 0.000} {
     puts "INFO: Timing CLOSED with 0 failed nets! Writing $OUT_DIR/vu13p_dac_8m.bit..."
     write_bitstream -force "$OUT_DIR/vu13p_dac_8m.bit"
 } else {
