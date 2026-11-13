@@ -599,10 +599,6 @@ module fir_polyphase_interpolator #(
 
             always_ff @(posedge clk) begin
                 if (!rst_n || rate_flush) begin
-                    for (int p = 0; p < NUM_PHASES; p++) begin
-                        fwd_phase_buf[p] <= '0;
-                        rev_phase_buf[p] <= '0;
-                    end
                     cap_phase_idx        <= '0;
                     emit_phase_idx       <= '0;
                     emit_active          <= 1'b0;
@@ -618,8 +614,6 @@ module fir_polyphase_interpolator #(
                         emit_active      <= 1'b0;
                         emit_spacing_cnt <= '0;
                     end else if (tree_valid) begin
-                        fwd_phase_buf[cap_phase_idx] <= tree_sum;
-                        rev_phase_buf[cap_phase_idx] <= tree_sum_rev;
                         if (cap_phase_idx == active_phases - 1'b1) begin
                             cap_phase_idx    <= '0;
                             emit_active      <= 1'b1;
@@ -645,6 +639,18 @@ module fir_polyphase_interpolator #(
                             emit_spacing_cnt <= emit_spacing_cnt - EMIT_CNT_W'(1);
                         end
                     end
+                end
+            end
+
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    for (int p = 0; p < NUM_PHASES; p++) begin
+                        fwd_phase_buf[p] <= '0;
+                        rev_phase_buf[p] <= '0;
+                    end
+                end else begin
+                    if (tree_valid)     fwd_phase_buf[cap_phase_idx] <= tree_sum;
+                    if (tree_valid_rev) rev_phase_buf[cap_phase_idx] <= tree_sum_rev;
                 end
             end
         end

@@ -29,7 +29,7 @@ xelab tb_fir_interp_m2 -s sim_interp_m2
 run_sim sim_interp_m2
 
 echo "=== [4/6] Milestone 3: Stereo Wrapper + Quad-MAC URAM288 + Half-Curve Fold ==="
-xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_polyphase_stereo.sv tb_fir_stereo_m3.sv
+xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv tb_fir_stereo_m3.sv
 xelab tb_fir_stereo_m3 -s sim_stereo_m3
 run_sim sim_stereo_m3
 
@@ -39,6 +39,6 @@ xelab tb_dac_peq_m4 -s sim_peq_m4
 run_sim sim_peq_m4
 
 echo "=== [6/6] Full DSP Core Compilation Check (Milestones 1..4 Integrated) ==="
-xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_polyphase_stereo.sv dac_peq_engine.sv halfband_x2.sv noise_shaper_ef3.sv dpd_engine.sv dem_sort.sv dac_dsp_core.sv
+xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv dac_peq_engine.sv halfband_x2.sv noise_shaper_ef3.sv dpd_engine.sv dem_sort.sv dac_dsp_core.sv
 
 echo "=== ALL MILESTONES (1..4) VERIFIED BIT-EXACT ==="

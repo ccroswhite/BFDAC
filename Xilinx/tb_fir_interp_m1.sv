@@ -131,6 +131,9 @@ module tb_fir_interp_m1;
 
         for (int rs = 0; rs <= 3; rs++) begin
             rate_shift <= 2'(rs);
+            repeat (3) @(posedge clk);   // let rate_flush re-raise history_clear
+            wait (dut.history_clear == 1'b0);
+            for (int k = 0; k < HIST_LEN; k++) gold_hist[k] = '0;
             repeat (5) @(posedge clk);
 
             // Feed 4 consecutive baseband samples at this rate_shift

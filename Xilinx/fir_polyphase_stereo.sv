@@ -87,7 +87,11 @@ module fir_polyphase_stereo #(
     // -------------------------------------------------------------------------
     //  Read/Write super-group -> group broadcast tree (64 MACs per URAM group)
     // -------------------------------------------------------------------------
-    logic [$clog2(COEF_DEPTH)-1:0] coef_addr;
+    // Per-channel read-address roots: each FIR drives its own URAM bank so the
+    // 2,304-wire coef_out bus never leaves its channel's SLR.  Only the small
+    // registered write bus crosses the SLR boundary.
+    logic [$clog2(COEF_DEPTH)-1:0] coef_addr_l;
+    logic [$clog2(COEF_DEPTH)-1:0] coef_addr_r;
 
     localparam int TARGET_GRP_U = QUAD_URAM_EN ? 16 : 32;
     localparam int URAM_GRP_SZ  = (NUM_URAMS < TARGET_GRP_U) ? NUM_URAMS : TARGET_GRP_U;
@@ -104,62 +108,71 @@ module fir_polyphase_stereo #(
             else $fatal(1, "COEF_DEPTH (%0d) exceeds URAM288 depth 4096", COEF_DEPTH);
     end
 
-    (* dont_touch = "true" *) logic [$clog2(COEF_DEPTH)-1:0] coef_addr_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic [$clog2(COEF_DEPTH)-1:0] coef_addr_s3 [0:NUM_UGROUPS-1];
+    // -------------------------------------------------------------------------
+    //  Coefficient output to Stage 1A FIR engines: [channel][MAC]
+    // -------------------------------------------------------------------------
+    logic                            bank_select_r1;
+    logic signed [COEF_WIDTH-1:0]    coef_out [0:1][0:NUM_MACS-1];
 
-    always_ff @(posedge clk) begin
-        for (int s = 0; s < NUM_USUPER; s++)
-            coef_addr_s2[s] <= coef_addr;
-        for (int g = 0; g < NUM_UGROUPS; g++)
-            coef_addr_s3[g] <= coef_addr_s2[g / UGRP_PER_SUP];
-    end
-
-    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s2       [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s3       [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s2       [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s3       [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic                         bank_load_target_s2 [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic                         bank_load_target_s3 [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s2        [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s3        [0:NUM_UGROUPS-1];
-    (* dont_touch = "true" *) logic                         coef_we_s2          [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic                         coef_we_s3          [0:NUM_UGROUPS-1];
-
-    logic                                                   bank_select_r1;
-    (* dont_touch = "true" *) logic                         bank_select_s2      [0:NUM_USUPER-1];
-    (* dont_touch = "true" *) logic                         bank_select_s3      [0:NUM_UGROUPS-1];
-
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk)
         bank_select_r1 <= bank_select;
-        for (int s = 0; s < NUM_USUPER; s++) begin
-            coef_waddr_s2[s]       <= coef_waddr_r;
-            coef_wdata_s2[s]       <= coef_wdata_r;
-            bank_load_target_s2[s] <= bank_load_target_r;
-            coef_wmac_s2[s]        <= coef_wmac_r;
-            coef_we_s2[s]          <= coef_we_r;
-            bank_select_s2[s]      <= bank_select_r1;
-        end
-        for (int g = 0; g < NUM_UGROUPS; g++) begin
-            coef_waddr_s3[g]       <= coef_waddr_s2[g / UGRP_PER_SUP];
-            coef_wdata_s3[g]       <= coef_wdata_s2[g / UGRP_PER_SUP];
-            bank_load_target_s3[g] <= bank_load_target_s2[g / UGRP_PER_SUP];
-            coef_wmac_s3[g]        <= coef_wmac_s2[g / UGRP_PER_SUP];
-            coef_we_s3[g]          <= coef_we_s2[g / UGRP_PER_SUP];
-            bank_select_s3[g]      <= bank_select_s2[g / UGRP_PER_SUP];
-        end
-    end
 
     // -------------------------------------------------------------------------
-    //  Coefficient output to Stage 1A FIR engines
+    //  Per-channel broadcast trees + URAM288 coefficient storage.
+    //  gen_ch[0] serves u_l_fir, gen_ch[1] serves u_r_fir; each bank is placed
+    //  inside its channel's pblock SLR so all URAM -> DSP_B routes stay local.
+    //  Latency is identical to the old shared bank (s2 -> s3 -> OREG_B).
     // -------------------------------------------------------------------------
-    logic signed [COEF_WIDTH-1:0] coef_out [0:NUM_MACS-1];
-
-    // -------------------------------------------------------------------------
-    //  URAM288 coefficient storage (PARITY_INTERLEAVED byte+parity mapping)
-    // -------------------------------------------------------------------------
-    genvar u;
+    genvar ch;
     generate
-        for (u = 0; u < NUM_URAMS; u++) begin : gen_uram_coef
+    for (ch = 0; ch < 2; ch++) begin : gen_ch
+        wire [$clog2(COEF_DEPTH)-1:0] coef_addr =
+                                       (ch == 0) ? coef_addr_l : coef_addr_r;
+
+        (* dont_touch = "true" *) logic [$clog2(COEF_DEPTH)-1:0] coef_addr_s2 [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic [$clog2(COEF_DEPTH)-1:0] coef_addr_s3 [0:NUM_UGROUPS-1];
+
+        always_ff @(posedge clk) begin
+            for (int s = 0; s < NUM_USUPER; s++)
+                coef_addr_s2[s] <= coef_addr;
+            for (int g = 0; g < NUM_UGROUPS; g++)
+                coef_addr_s3[g] <= coef_addr_s2[g / UGRP_PER_SUP];
+        end
+
+        (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s2       [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic [URAM_AW-1:0]           coef_waddr_s3       [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s2       [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s3       [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic                         bank_load_target_s2 [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic                         bank_load_target_s3 [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s2        [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s3        [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic                         coef_we_s2          [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic                         coef_we_s3          [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic                         bank_select_s2      [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic                         bank_select_s3      [0:NUM_UGROUPS-1];
+
+        always_ff @(posedge clk) begin
+            for (int s = 0; s < NUM_USUPER; s++) begin
+                coef_waddr_s2[s]       <= coef_waddr_r;
+                coef_wdata_s2[s]       <= coef_wdata_r;
+                bank_load_target_s2[s] <= bank_load_target_r;
+                coef_wmac_s2[s]        <= coef_wmac_r;
+                coef_we_s2[s]          <= coef_we_r;
+                bank_select_s2[s]      <= bank_select_r1;
+            end
+            for (int g = 0; g < NUM_UGROUPS; g++) begin
+                coef_waddr_s3[g]       <= coef_waddr_s2[g / UGRP_PER_SUP];
+                coef_wdata_s3[g]       <= coef_wdata_s2[g / UGRP_PER_SUP];
+                bank_load_target_s3[g] <= bank_load_target_s2[g / UGRP_PER_SUP];
+                coef_wmac_s3[g]        <= coef_wmac_s2[g / UGRP_PER_SUP];
+                coef_we_s3[g]          <= coef_we_s2[g / UGRP_PER_SUP];
+                bank_select_s3[g]      <= bank_select_s2[g / UGRP_PER_SUP];
+            end
+        end
+
+        // URAM288 coefficient storage (PARITY_INTERLEAVED byte+parity mapping)
+        for (genvar u = 0; u < NUM_URAMS; u++) begin : gen_uram_coef
             localparam int UGRP = u / URAM_GRP_SZ;
 
             wire uram_sel = QUAD_URAM_EN
@@ -269,19 +282,20 @@ module fir_polyphase_stereo #(
 `endif
 
             if (QUAD_URAM_EN) begin : gen_quad_dout
-                assign coef_out[4*u + 0] = signed'({uram_dout[65:64], uram_dout[15: 0]});
-                assign coef_out[4*u + 1] = signed'({uram_dout[67:66], uram_dout[31:16]});
-                assign coef_out[4*u + 2] = signed'({uram_dout[69:68], uram_dout[47:32]});
-                assign coef_out[4*u + 3] = signed'({uram_dout[71:70], uram_dout[63:48]});
+                assign coef_out[ch][4*u + 0] = signed'({uram_dout[65:64], uram_dout[15: 0]});
+                assign coef_out[ch][4*u + 1] = signed'({uram_dout[67:66], uram_dout[31:16]});
+                assign coef_out[ch][4*u + 2] = signed'({uram_dout[69:68], uram_dout[47:32]});
+                assign coef_out[ch][4*u + 3] = signed'({uram_dout[71:70], uram_dout[63:48]});
             end else begin : gen_dual_dout
-                assign coef_out[2*u]   = bank_select_s3[UGRP]
+                assign coef_out[ch][2*u]   = bank_select_s3[UGRP]
                                          ? signed'({uram_dout[67:66], uram_dout[31:16]})
                                          : signed'({uram_dout[65:64], uram_dout[15: 0]});
-                assign coef_out[2*u+1] = bank_select_s3[UGRP]
+                assign coef_out[ch][2*u+1] = bank_select_s3[UGRP]
                                          ? signed'({uram_dout[71:70], uram_dout[63:48]})
                                          : signed'({uram_dout[69:68], uram_dout[47:32]});
             end
         end
+    end
     endgenerate
 
     // -------------------------------------------------------------------------
@@ -291,7 +305,6 @@ module fir_polyphase_stereo #(
     logic                        s1a_frame_done_l, s1a_frame_done_r;
     logic signed [ACC_WIDTH-1:0] s1a_out_l, s1a_out_r;
     logic                        s1a_valid_l, s1a_valid_r;
-    logic [$clog2(COEF_DEPTH)-1:0] coef_addr_r_unused;
 
     fir_polyphase_interpolator #(
         .NUM_MACS       (NUM_MACS),
@@ -314,8 +327,8 @@ module fir_polyphase_stereo #(
         .interpolated_out   (s1a_out_l),
         .interpolated_valid (s1a_valid_l),
         .input_frame_done   (s1a_frame_done_l),
-        .coef_in            (coef_out),
-        .coef_addr_out      (coef_addr)
+        .coef_in            (coef_out[0]),
+        .coef_addr_out      (coef_addr_l)
     );
 
     fir_polyphase_interpolator #(
@@ -339,8 +352,8 @@ module fir_polyphase_stereo #(
         .interpolated_out   (s1a_out_r),
         .interpolated_valid (s1a_valid_r),
         .input_frame_done   (s1a_frame_done_r),
-        .coef_in            (coef_out),
-        .coef_addr_out      (coef_addr_r_unused)
+        .coef_in            (coef_out[1]),
+        .coef_addr_out      (coef_addr_r)
     );
 
     // -------------------------------------------------------------------------

@@ -16,7 +16,7 @@
 //  Implementation: counting rank, 2 comparison lanes per cycle.
 //    rank_i = #{ j : M_j < M_i  or  (M_j == M_i and j < i) }
 //    sel_i  = rank_i < c
-//  Loop is 32 cycles (j pairs) + 3 overhead = 35 dsp_clk per sample; the
+//  Loop is 32 cycles (j pairs) + 4 overhead = 36 dsp_clk per sample; the
 //  6.144 MHz sample period is 56-65 dsp_clk at 350-400 MHz.
 //
 //  Accumulator bounds (python-verified, dem_sort_gen.py): |A1| <= 63,
@@ -50,7 +50,7 @@ module dem_sort #(
     logic signed [ACC_WIDTH-1:0] msnap [ARRAY_SIZE];  // frozen metric for this sample
     logic [RW-1:0]               rank  [ARRAY_SIZE];
 
-    typedef enum logic [1:0] {IDLE, PRIME, RANK, UPDATE} state_t;
+    typedef enum logic [2:0] {IDLE, PRIME, RANK, UPDATE, COMMIT} state_t;
     state_t                 state;
     logic [AMP_WIDTH-1:0]   amp_q;
     logic [JW-2:0]          jpair;      // 0..31 (pairs of j) — FETCH index
@@ -127,15 +127,22 @@ module dem_sort #(
                         jpair <= jpair + 1'b1;
                 end
                 UPDATE: begin
+                    // a1n only: acc1 holds the pipeline reg for the COMMIT add
+                    // (was acc2 <= acc2 + (acc1 + 64*sel - amp_q), two cascaded
+                    // 24-bit CARRY8 chains in one cycle, ~8 logic levels).
                     for (int i = 0; i < ARRAY_SIZE; i++) begin
                         automatic logic signed [ACC_WIDTH-1:0] a1n;
                         a1n = acc1[i]
                             + (sel_comb[i] ? ACC_WIDTH'(signed'(ARRAY_SIZE)) : ACC_WIDTH'(0))
                             - ACC_WIDTH'(signed'({1'b0, amp_q}));
                         acc1[i] <= a1n;
-                        acc2[i] <= acc2[i] + a1n;
                     end
                     resistor_out <= sel_comb;
+                    state        <= COMMIT;
+                end
+                COMMIT: begin
+                    for (int i = 0; i < ARRAY_SIZE; i++)
+                        acc2[i] <= acc2[i] + acc1[i];
                     valid_out    <= 1'b1;
                     state        <= IDLE;
                 end

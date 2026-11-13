@@ -264,18 +264,20 @@ module dac_dsp_core #(
 
     logic signed [47:0] vol_a_l_r1;
     logic        [31:0] vol_b_r1;
-    (* use_dsp = "yes" *) logic signed [79:0] vol_m_l_r2, vol_m_r_r2;
+    (* use_dsp = "yes" *) logic signed [79:0] vol_mlo_l_r2, vol_mhi_l_r2;
+    (* use_dsp = "yes" *) logic signed [79:0] vol_mlo_r_r2, vol_mhi_r_r2;
     (* use_dsp = "yes" *) logic signed [79:0] vol_p_l_r3, vol_p_r_r3;
     logic signed [47:0] vol_a_r_r1;
     logic signed [63:0] volumed_l, volumed_r;
-    logic        [4:0]  vol_valid_pipe;
+    logic        [5:0]  vol_valid_pipe;
     logic               volumed_valid;
 
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             vol_a_l_r1     <= '0;  vol_a_r_r1  <= '0;
             vol_b_r1       <= '0;
-            vol_m_l_r2     <= '0;  vol_m_r_r2  <= '0;
+            vol_mlo_l_r2   <= '0;  vol_mhi_l_r2 <= '0;
+            vol_mlo_r_r2   <= '0;  vol_mhi_r_r2 <= '0;
             vol_p_l_r3     <= '0;  vol_p_r_r3  <= '0;
             volumed_l      <= '0;  volumed_r   <= '0;
             vol_valid_pipe <= '0;
@@ -283,17 +285,21 @@ module dac_dsp_core #(
             vol_a_l_r1 <= hb3_l;
             vol_a_r_r1 <= hb3_r;
             vol_b_r1   <= combined_volume;
-            vol_m_l_r2 <= vol_a_l_r1 * $signed({1'b0, vol_b_r1});
-            vol_m_r_r2 <= vol_a_r_r1 * $signed({1'b0, vol_b_r1});
-            vol_p_l_r3 <= vol_m_l_r2;
-            vol_p_r_r3 <= vol_m_r_r2;
+            // 48x32 split into two registered 48x16 partial products — each fits
+            // a shallow DSP cascade (~7 levels) instead of one 14-level cone.
+            vol_mlo_l_r2 <= vol_a_l_r1 * $signed({1'b0, vol_b_r1[15:0]});
+            vol_mhi_l_r2 <= vol_a_l_r1 * $signed({1'b0, vol_b_r1[31:16]});
+            vol_mlo_r_r2 <= vol_a_r_r1 * $signed({1'b0, vol_b_r1[15:0]});
+            vol_mhi_r_r2 <= vol_a_r_r1 * $signed({1'b0, vol_b_r1[31:16]});
+            vol_p_l_r3 <= vol_mlo_l_r2 + (vol_mhi_l_r2 <<< 16);
+            vol_p_r_r3 <= vol_mlo_r_r2 + (vol_mhi_r_r2 <<< 16);
             volumed_l  <= vol_p_l_r3[79:16];
             volumed_r  <= vol_p_r_r3[79:16];
-            vol_valid_pipe <= {vol_valid_pipe[3:0], hb3_l_valid};
+            vol_valid_pipe <= {vol_valid_pipe[4:0], hb3_l_valid};
         end
     end
 
-    assign volumed_valid = vol_valid_pipe[4];
+    assign volumed_valid = vol_valid_pipe[5];
 
     // =========================================================================
     // 6. Sample pacer (Round 30) — elastic FIFO + cell_clk/8 tick.

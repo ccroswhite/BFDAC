@@ -1,16 +1,15 @@
 # =============================================================================
-# vu13p_dac_top.xdc ? Vivado Timing & Physical Constraints
+# vu13p_dac_top.xdc -- Vivado Timing & Physical Constraints
 # Target : XCVU13P-2FHGB2104I on Alinx ACVU13 SOM
 #
-# Clock, SPI, I2S, relay pins assigned. Cascode outputs (128 pins) need
-# baseboard connector assignment before implementation.
+# Clock, SPI, I2S, relay, DDR4, flash, and 128 cascode output constraints.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # 1. Primary Clocks
 # -----------------------------------------------------------------------------
 
-# 200 MHz SOM system clock (differential) ? drives SPI control plane (clk_200m domain)
+# 200 MHz SOM system clock (differential) -- drives SPI control plane (clk_200m domain)
 # Uses C1_DDR4_CLKREF on bank 73 GC pins (C1 DDR4 controller unused).
 # C0_DDR4_CLKREF (AD33/AE33) remains dedicated to C0 MIG on banks 61/62/63.
 create_clock -name clk_200m -period 5.000 [get_ports clk_200m_p]
@@ -23,7 +22,7 @@ set_property PACKAGE_PIN G19     [get_ports clk_200m_n]
 # at the faster 49.152 MHz rate so both families are timing-covered.
 # Bank 65 TRUE GC pair B65_L12 (J6-C30/C29) - moved from B71_L12 (J1-A17/A16,
 # J28/J29) on 2026-10-08: the clock block sits on the analog/right edge next to
-# J6, J1 is the noisy/left edge.  Carrier drives mclk_p single-ended LVCMOS18
+# J6, J1 is the noisy/left edge. Carrier drives mclk_p single-ended LVCMOS18
 # and leaves mclk_n reserved/no-connect. RTL uses IBUF on mclk_p.
 create_clock -name clk_mclk -period 20.345 [get_ports mclk_p]
 set_property IOSTANDARD LVCMOS18 [get_ports {mclk_p mclk_n}]
@@ -48,7 +47,7 @@ set_false_path -to [get_ports clk_sel]
 set_property IOSTANDARD LVCMOS18 [get_ports i2s_bclk]
 
 # -----------------------------------------------------------------------------
-# 2. Generated Clocks (MMCM outputs ? Vivado auto-derives these;
+# 2. Generated Clocks (MMCM outputs -- Vivado auto-derives these;
 #    explicit declarations improve reporting clarity)
 # -----------------------------------------------------------------------------
 
@@ -57,83 +56,103 @@ set_property IOSTANDARD LVCMOS18 [get_ports i2s_bclk]
 #   44.1k family: 903.168/3.25 = 277.898 MHz  (3.599 ns)
 #   48k   family: 983.04 /3.25 = 302.474 MHz  (3.306 ns)
 # clk_mclk is constrained at the faster (48k) rate, so dsp_clk timing covers both.
-# NOTE (Step 5.1 synth fix): the previous form used -master_clock/-divide_by
-# without -add, which Vivado rejects (CRITICAL WARNING 12-672) -- the clock
-# kept its auto-derived name (dsp_clk_unbuf) and every exception referencing
-# dsp_clk matched nothing. Name-only create_generated_clock on the MMCM output
+# NOTE (Step 5.1 synth fix): name-only create_generated_clock on the MMCM output
 # pin RENAMES the auto-derived clock; all other properties are inherited.
 create_generated_clock -name dsp_clk [get_pins u_clk_gen/u_mmcm/CLKOUT0]
 
-# cell_clk ? MMCM CLKOUT1 = VCO/20 = mclk frequency (45.1584/49.152 MHz),
+# cell_clk -- MMCM CLKOUT1 = VCO/20 = mclk frequency (45.1584/49.152 MHz),
 # phase-aligned to mclk by the MMCM feedback loop. Launches ONLY the 128
 # cascode IOB registers (Round 29, todo #13).
 create_generated_clock -name cell_clk [get_pins u_clk_gen/u_mmcm/CLKOUT1]
 
 # -----------------------------------------------------------------------------
-# 3. Clock Domain Crossing ? False Paths
+# 3. Clock Domain Crossing -- Synchronizers & Qualified Multi-Bit Buses
 #
-# All CDC signals use 2-stage (* ASYNC_REG = "TRUE" *) synchronizer chains.
-# Vivado must not attempt multi-cycle or single-cycle timing across these.
+# All single-bit CDC signals use 2- or 3-stage (* ASYNC_REG = "TRUE" *) chains.
+# Do not blanket-false-path clk_200m <-> dsp_clk: held multi-bit buses use
+# explicit datapath-only max delays below so multi-SLR skew stays bounded.
 # -----------------------------------------------------------------------------
 
 # clk_200m (SPI control plane) -> dsp_clk single-bit synchronizer first stages.
-# Do not blanket-false-path this clock pair: held multi-bit buses use explicit
-# datapath-only max delays below and must remain constrained.
 set_false_path -to [get_pins {
-    unmute_sync_chain_reg[0]/D rate_sel_sync_chain_reg[0]/D
+    unmute_sync_chain_reg[0]/D
+    rate_sel_sync_chain_reg[0]/D
     level_req_sync_chain_reg[0]/D
-    outsel_req_sync_chain_reg[0]/D outsel_target_sync_chain_reg[0]/D
+    outsel_req_sync_chain_reg[0]/D
+    outsel_target_sync_chain_reg[0]/D
     vol_tog_sync_reg[0]/D
+    stream_automute_sync_reg[0]/D
+    u_coef_subsys/boot_ok_sync_reg[0]/D
+    u_coef_subsys/legacy_req_sync_reg[0]/D
+    u_coef_subsys/filter_req_sync_reg[0]/D
 }]
+
+# clk_200m -> dsp_clk held multi-bit control buses (sampled after sync edge).
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {u_ctrl_plane/level_target_reg[*]}] \
+    -from [get_cells -hierarchical -filter {NAME =~ u_ctrl_plane/cmd_level_reg*}] \
     -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {sys_volume_q_reg[*]}] \
+    -from [get_cells -hierarchical -filter {NAME =~ sys_volume_q_reg*}] \
     -to   [get_cells {sys_volume_dsp_reg[*]}]
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {u_ctrl_plane/i2s_rx_trim_reg[*]}] \
+    -from [get_cells -hierarchical -filter {NAME =~ u_ctrl_plane/i2s_rx_trim_reg*}] \
     -to   [get_cells {u_i2s_ingress/trim_meta_reg[*]}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_clocks clk_200m] \
+    -to   [get_cells {u_coef_subsys/req_data_dsp_reg[*]}]
 
 # The applied interpolation/rate-shift bus changes only while the MMCM path
 # reset is asserted, and remains static until the DSP and cell domains relock.
+# Scope -to the destination clocks (2 objects instead of 226k sequential cells).
 set_false_path \
     -from [get_cells {u_stream_rate/applied_rate_reg[1] u_stream_rate/applied_rate_reg[2]}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/* && IS_SEQUENTIAL}]
-set_false_path \
-    -from [get_cells {u_stream_rate/applied_rate_reg[1] u_stream_rate/applied_rate_reg[2]}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ u_i2s_ingress/* && IS_SEQUENTIAL}]
+    -to   [get_clocks {dsp_clk cell_clk}]
 
-# dsp_clk -> clk_200m single-bit status synchronizer first stages.
+# dsp_clk -> clk_200m single-bit status synchronizer first stages + status readback FFs.
 set_false_path -to [get_pins {
-    u_ctrl_plane/i2s_err_sync[0]/D
-    u_ctrl_plane/switch_busy_sync[0]/D
-    u_ctrl_plane/line_mute_sync[0]/D
-    u_ctrl_plane/hp_mute_sync[0]/D
+    u_ctrl_plane/i2s_err_sync_reg[0]/D
+    u_ctrl_plane/switch_busy_sync_reg[0]/D
+    u_ctrl_plane/line_mute_sync_reg[0]/D
+    u_ctrl_plane/hp_mute_sync_reg[0]/D
 }]
+set_max_delay -datapath_only 5.0 \
+    -from [get_clocks dsp_clk] \
+    -to   [get_cells {
+        u_ctrl_plane/mgr_busy_r_reg
+        u_ctrl_plane/bank_valid_r_reg
+        u_ctrl_plane/coef_load_done_r_reg
+        u_ctrl_plane/current_bank_id_r_reg[*]
+    }]
 
-# Serial DATA synchronizer and tagged launch-event crossing.
-set_false_path -from [get_ports i2s_data] -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
+# Serial DATA synchronizer (covers i2s_data, i2s_data2, and i2s_src_sel mux)
+# and tagged launch-event crossing.
+set_false_path -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
 set_false_path -to [get_pins {u_i2s_ingress/enable_cell_reg[0]/D u_i2s_ingress/enable_sync_reg[0]/D u_i2s_ingress/valid_sync_reg[0]/D}]
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_i2s_ingress/launch_toggle_reg u_i2s_ingress/launch_bit_reg[*]}] \
-    -to [get_cells {u_i2s_ingress/launch_sync_reg[0] u_i2s_ingress/tag_pipe_reg[0][*]}]
+    -to   [get_cells {u_i2s_ingress/launch_sync_reg[0] u_i2s_ingress/tag_pipe_reg[0][*]}]
 
 # cell_clk -> dsp_clk (CDC audit, Step 4C.2)
 # pace_tgl (cell_clk /8 tick toggle in dac_dsp_core section 6) crosses to the
-# 3-FF pace_sync chain in dsp_clk. cell_clk and dsp_clk are related MMCM
-# clocks (89 ps worst-case edge alignment) so without this constraint Vivado
-# times the raw edge-to-edge path. Toggle protocol tolerates 1 cycle of
+# 3-FF pace_sync chain in dsp_clk. Toggle protocol tolerates 1 cycle of
 # skew/metastability by construction -> datapath-only, one dsp_clk period.
 set_max_delay -datapath_only 3.5 \
     -from [get_cells u_dsp_core/pace_tgl_reg] \
     -to   [get_cells {u_dsp_core/pace_sync_reg[0]}]
 
-# Asynchronous external reset ? reset synchronizers handle the CDC
+# Asynchronous external reset -- reset synchronizers handle the CDC
 set_false_path -from [get_ports ext_rst_n]
 
 # Async reset assertion; release is synchronized in DSP and serial cell domains.
-set_false_path -to [get_pins -hierarchical -filter {NAME =~ *dsp_reset_sync_reg*/CLR || NAME =~ *cell_reset_reg*/CLR}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *dsp_reset_sync_reg*/CLR || NAME =~ *dsp_rst_lvl1_n_reg*/CLR || NAME =~ *dsp_rst_tree_n_reg*/CLR || NAME =~ *cell_reset_reg*/CLR}]
+
+# dsp_clk reset tree -> cell_clk reset pins (asserted for ~100 us while MMCM relocks).
+set_false_path \
+    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst_tree_n_reg*}] \
+    -to   [get_pins -hierarchical -filter {NAME =~ u_i2s_ingress/* && (REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
+set_false_path \
+    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst_tree_n_reg*}] \
+    -to   [get_pins {u_dsp_core/pace_div_reg[*]/R u_dsp_core/pace_tgl_reg/R}]
 
 # -----------------------------------------------------------------------------
 # 4. SPI Control Bus (ARM SPI master -> FPGA slave, clk_200m domain)
@@ -180,13 +199,13 @@ set_property DRIVE 4 [get_ports {i2s_bclk i2s_lrclk}]
 set_property SLEW SLOW [get_ports {i2s_bclk i2s_lrclk}]
 set_property IOB TRUE [get_cells {u_i2s_ingress/i2s_bclk_reg u_i2s_ingress/i2s_lrclk_reg}]
 create_generated_clock -name i2s_bclk -source [get_pins u_clk_gen/u_mmcm/CLKOUT1] -divide_by 2 [get_ports i2s_bclk]
-set_max_delay -datapath_only 5.0 -to [get_ports {i2s_bclk i2s_lrclk}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_clocks cell_clk] \
+    -to   [get_ports {i2s_bclk i2s_lrclk}]
 set_false_path -to [get_pins {u_stream_rate/lock_sync_reg[0]/D stream_fault_sync_reg[0]/D}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_stream_rate/applied_rate_reg[*]}] \
-    -to [get_cells {u_coef_subsys/u_coef_loader/rate_r_reg[*]}]
-
-# Review capture delay against the complete clock/AP/DATA round-trip budget.
+    -to   [get_cells {u_coef_subsys/u_coef_loader/rate_r_reg[*]}]
 
 # -----------------------------------------------------------------------------
 # 7. Hardware Relay Outputs (slow, relay coil drive)
@@ -225,20 +244,15 @@ set_false_path -to [get_ports {relay_line_mute relay_hp_mute relay_hp_rails rela
 # Timing (todo #13, closed Round 29; hold fix 2026-08-14):
 #   - IOB FFs are clocked by cell_clk (MMCM CLKOUT1 = mclk rate, CLKOUT1_PHASE
 #     = 90 deg -> launch edge 5.09 ns after the mclk/ff_clk edge; same selected
-#     XOCLK through the LMK1C1108 fanout). The 90 deg shift exists because at 0 deg the MMCM-compensated
-#     launch was coincident with the ff_clk edge and violated the budgeted
-#     hold pad by -1.74 ns (f9wb route). See sys_clock_gen.sv.
+#     XOCLK through the LMK1C1108 fanout).
 #   - ff_clk below is a VIRTUAL clock representing the MC100EP52 clock pin.
 #     Launch on cell_clk edge N (t = 5.09 ns), capture on ff_clk edge N+1
 #     (t = 20.345 ns): 15.26 ns setup budget, 5.09 ns of real hold margin
 #     against edge N.
 #   - Output delay numbers DATASHEET-VERIFIED (Round 30, bom.md 1.4):
-#     MC10EP52/D rev 7: setup 50 ps min, hold 0 ps min. Exact oscillator/
-#     fanout/board skew still needs physical verification. Constraints below
-#     retain a conservative 1.0 ns skew budget; do not relax without routed evidence:
 #       max = board flight 1.0 + shift network 0.1 + EP52 setup 0.2
-#             + fanout skew margin 1.0                      = 2.3  -> 2.5 pad
-#       min = -(EP52 hold 0.2 + fanout skew margin 1.0)     = -1.2 -> -1.5 pad
+#             + fanout skew margin 1.0                       = 2.3  -> 2.5 pad
+#       min = -(EP52 hold 0.2 + fanout skew margin 1.0)      = -1.2 -> -1.5 pad
 #   - dsp_clk -> cell_clk crossing uses a toggle-handshake CDC in
 #     dac_dsp_core (staging bus stable ~8 cell_clk per 6.144 MHz DEM update);
 #     constrain datapath-only so Vivado does not chase the 89 ps related-clock
@@ -258,21 +272,15 @@ set_max_delay -datapath_only 3.5 \
 # by the 2-FF synchronizer itself)
 set_false_path -to [get_pins -hierarchical -filter {NAME =~ *cell_rst_sync_reg*/CLR}]
 
-# Virtual clock: external MC100EP52 clock pin (same rate/phase as mclk; the
-# XOCLK fanout/board skew between the FPGA copy and FF CLK pins is budgeted in
-# the +-1.0 ns output-delay values above).
+# Virtual clock: external MC100EP52 clock pin (same rate/phase as mclk)
 create_clock -name ff_clk -period 20.345
 
 set_output_delay -clock ff_clk -max  2.500 [get_ports {cascode_l[*] cascode_r[*]}]
 set_output_delay -clock ff_clk -min -1.500 [get_ports {cascode_l[*] cascode_r[*]}]
 
 # Package pins: banks 64+65 = LEFT channel (J6), banks 67+66 = RIGHT channel
-# (J5 + J6).  cascode_r[48..63] moved from bank 69 (J1, the carrier's noisy
+# (J5 + J6). cascode_r[48..63] moved from bank 69 (J1, the carrier's noisy
 # left edge) to bank 66 L15-L21/L24 (J6, analog edge) on 2026-10-08.
-# Generated from Alinx ACVU13P-Pin-Assignment-20260703.csv (L-pair pins only,
-# no T/VREF sites; conflict-checked against all other XDC assignments).
-# Bit ordering within a bank follows the LA-pair number; final per-cell
-# ordering is free to be remapped at layout (DEM decorrelates cell position).
 set_property PACKAGE_PIN BF24 [get_ports {cascode_l[0]}] ;# B64_L1_P
 set_property PACKAGE_PIN BF23 [get_ports {cascode_l[1]}] ;# B64_L1_N
 set_property PACKAGE_PIN BD23 [get_ports {cascode_l[2]}] ;# B64_L2_P
@@ -406,12 +414,13 @@ set_property PACKAGE_PIN AM20 [get_ports {cascode_r[63]}] ;# B66_L24_N
 # 9. DDR4 Interface
 # C0 controller pin LOCs from "ACVU13P FPGA Onboard Part Pin Assignment -
 # DDR4 Modules.csv" (Alinx SOM). 64-bit config: bytes 0-7 (D0-D63).
-# Bytes 8/9 (D64-D79, DQS8/9, DM8/9 — the SOM's 5th x16 device) are
+# Bytes 8/9 (D64-D79, DQS8/9, DM8/9 -- the SOM's 5th x16 device) are
 # UNCONNECTED: DDR4 MIG maxes at 72-bit, we run 64-bit (2026-08-11 note).
 # IOSTANDARD / DCI / output impedance are set by the ddr4_0 IP (PG150);
 # only PACKAGE_PIN is constrained here.
 # addr[16:14] carry RAS/CAS/WE per DDR4 command encoding: A14=WE_B,
 # A15=CAS_B, A16=RAS_B.
+# -----------------------------------------------------------------------------
 set_property PACKAGE_PIN AD33 [get_ports ddr4_clkref_p]
 set_property PACKAGE_PIN AE33 [get_ports ddr4_clkref_n]
 
@@ -542,12 +551,9 @@ set_property PACKAGE_PIN AH29 [get_ports {ddr4_dqs_c[7]}]
 set_property PACKAGE_PIN AJ27 [get_ports {ddr4_dm_dbi_n[7]}]
 
 # --- ui_clk <-> dsp_clk CDC (dac_coef_subsys) ---------------------------------
-# ENABLED 2026-08-14 (f9wb route review): these were staged before the MIG
-# merge and never uncommented — the f9wb route timed the crossings against the
-# raw 2 ps ui_clk/dsp_clk edge alignment (WNS -4.31). CDC audit (Step 4C.2):
 # dac_coef_subsys has two toggle synchronizers (load_start, load_done) and one
 # async FIFO (coef write bus) crossing between ui_clk (MIG user clock
-# mmcm_clkout0, 3.332 ns = 300 MHz) and dsp_clk (3.875 ns).
+# mmcm_clkout0, 3.332 ns = 300 MHz) and dsp_clk.
 
 # 1) load_start  dsp_clk -> ui_clk  (toggle sync)
 set_max_delay -datapath_only 5.0 \
@@ -559,93 +565,67 @@ set_max_delay -datapath_only 3.5 \
     -from [get_cells u_coef_subsys/load_done_toggle_ui_reg] \
     -to   [get_cells {u_coef_subsys/load_done_sync_dsp_reg[0]}]
 
-# 3+4) coef write bus ui_clk -> dsp_clk: ASYNC FIFO (2026-09-04, replaces the
-#    per-write toggle sync + qualified bus, which lost writes at ui_clk 300 MHz
-#    > dsp_clk 258 MHz — found by tb_vu13p_mig on the real MIG). Gray pointers
-#    2-FF ASYNC_REG each way; LUTRAM written in ui_clk, read in dsp_clk after
-#    the synced pointer guarantees stability. Same pattern/aliases as the
-#    qspi_boot_loader FIFO below (gray MSB merges into the binary pointer).
+# 3+4) coef write bus ui_clk -> dsp_clk: ASYNC FIFO (Gray pointers 2-FF
+#      ASYNC_REG each way; LUTRAM written in ui_clk, read in dsp_clk).
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_coef_subsys/cf_wptr_gray_reg[*] u_coef_subsys/cf_wptr_bin_reg[*]}] \
     -to   [get_cells {u_coef_subsys/cf_wptr_gray_d1_reg[*]}]
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_coef_subsys/cf_rptr_gray_reg[*] u_coef_subsys/cf_rptr_bin_reg[*]}] \
     -to   [get_cells {u_coef_subsys/cf_rptr_gray_u1_reg[*]}]
-#    f17 lesson (2026-09-05): synth merged the {wmac,waddr,wdata} FIFO output
-#    registers into ONE vector named coef_waddr0_reg[*]; a -to on the RTL names
-#    matched nothing and the 38 LUTRAM->register paths were timed at the raw
-#    0.002 ns ui_clk/dsp_clk edge alignment (WNS -5.15). The LUTRAM's only
-#    readers are those registers, so constrain -from the memory with no -to.
 set_max_delay -datapath_only 3.3 \
     -from [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/cfifo_mem*}]
 
-# 5) load request dsp_clk -> ui_clk (2026-09-02, directory lookup): the bank
-#    manager latches {by_id, id[15:0]} in target_bank_reg at load_start and
-#    holds it until load_done; the loader samples it only on its synced
-#    load_start pulse (>= 3 ui_clk later). The SPI-side registers now enter
-#    dsp_clk first (3-FF request sync in dac_coef_subsys, covered by the
-#    blanket clk_200m -> dsp_clk false path above).
-#    f15 lesson (2026-09-02): synth retimes the bank_base add into registers
-#    named burst_addr__N (no _reg suffix) and the FSM extractor renames
-#    state_reg -> FSM_sequential_state_reg; match on IS_SEQUENTIAL, not names.
+# 5) load request dsp_clk -> ui_clk (directory lookup): bank manager latches
+#    {by_id, id[15:0]} in target_bank_reg at load_start and holds until load_done.
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_coef_subsys/u_coef_mgr/target_bank_reg[*]}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_loader/* && IS_SEQUENTIAL}]
 
-# 5b) failed-load flag ui_clk -> dsp_clk: load_err is a level set >= 1 ui_clk
-#     before the load_done toggle and sampled by the manager only on the
-#     synced toggle edge.
+# 5b) failed-load flag ui_clk -> dsp_clk: level set >= 1 ui_clk before load_done toggle.
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_reg}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_mgr/* && IS_SEQUENTIAL}]
 
-# 5c) failed-load flag + code ui_clk -> clk_200m: level into a 2-FF sync in
-#     dac_ctrl_plane; the 2-bit code is stable one ui_clk before the level
-#     rises and is sampled on the synced rising edge.
+# 5c) failed-load flag + code ui_clk -> clk_200m: level into 2-FF sync in dac_ctrl_plane.
 set_false_path -to [get_pins {u_ctrl_plane/load_err_sync_reg[0]/D}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_code_reg[*]}] \
-    -to   [get_cells {u_ctrl_plane/err_info_reason_reg[*]}]
+    -to   [get_cells {u_ctrl_plane/err_info_reason_reg[*] u_ctrl_plane/err_info_filter_axi_reg}]
 
-# 6) MIG calibration-complete ui_clk -> clk_200m: monotonic level into the
-#    2-FF synchronizer in dac_ctrl_plane (added f9wc route review 2026-08-15).
+# 6) MIG calibration-complete ui_clk -> clk_200m: monotonic level into 2-FF sync.
 set_false_path -to [get_pins {u_ctrl_plane/ddr4_calib_sync_reg[0]/D}]
 
+# Cell test & bench stimulus crossings (clk_200m <-> dsp_clk)
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {u_ctrl_plane/cell_test_req_reg[*] u_ctrl_plane/cell_test_cfg_reg[*]}] \
-    -to [get_cells {u_dsp_core/cell_test_req_meta_reg[*] u_dsp_core/cell_test_applied_reg[*]}]
+    -from [get_cells -hierarchical -filter {NAME =~ u_ctrl_plane/cell_test_req_reg* || NAME =~ u_ctrl_plane/cell_test_cfg_reg*}] \
+    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/cell_test_* && IS_SEQUENTIAL}]
 set_false_path -to [get_pins {u_ctrl_plane/cell_test_ack_meta_reg[*]/D}]
 set_false_path -to [get_pins {u_bench_ctrl/ack_meta_reg/D bench_ctrl_meta_reg[*]/D}]
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {u_bench_ctrl/cmd_reg[*]}] \
-    -to [get_cells {u_dsp_core/u_bench_stimulus/applied_reg[*]}]
+    -from [get_cells -hierarchical -filter {NAME =~ u_bench_ctrl/cmd_reg*}] \
+    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_bench_stimulus/* && IS_SEQUENTIAL}]
 set_false_path -to [get_pins {u_dsp_core/u_bench_stimulus/req_meta_reg/D}]
 
 # --- clk_200m <-> dsp_clk CDC (cal_coef_store, Step 6.3/6.7 Aug 2026) ---------
-# ARM-computed temperature-corrected cal coefficients: toggle-synchronized
-# write/commit into dsp_clk, quasi-static readback and status coming back.
 
 # 7) cal write + commit toggles clk_200m -> dsp_clk (3-FF chains in the store)
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/cal_wr_toggle_reg u_ctrl_plane/cal_commit_toggle_reg}] \
     -to   [get_cells {u_cal_store/wr_tg_sync_dsp_reg[0] u_cal_store/commit_tg_sync_dsp_reg[0]}]
 
-# 8) cal write bus clk_200m -> dsp_clk: cal_wr_addr/wr_data are stable when the
-#    toggle flips (one word per SPI frame, microseconds apart) and sampled only
-#    on the synced wr_pulse 2-3 dsp_clk later — same pattern as the coef bus.
+# 8) cal write bus clk_200m -> dsp_clk: stable when toggle flips
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/cal_wr_addr_reg[*] u_ctrl_plane/cal_wr_data_reg[*]}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_cal_store/mem*_reg*}]
 set_false_path -to [get_pins {u_ctrl_plane/cal_write_reject_sync_reg[0]/D}]
 
 # 9) cal readback address clk_200m -> dsp_clk: quasi-static SPI register
-#    (written frames before the readback frame), resampled through 2 FFs.
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/cal_rd_addr_reg[*]}] \
     -to   [get_cells {u_cal_store/rd_addr_meta_reg[*]}]
 
-# 10) cal readback data + status dsp_clk -> clk_200m: rd_data_dsp is
-#     quasi-static after commit; active/pending are single-bit into 2-FF syncs.
+# 10) cal readback data + status dsp_clk -> clk_200m
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_cal_store/rd_data_dsp_reg[*]}] \
     -to   [get_cells {u_cal_store/rd_data_reg[*]}]
@@ -659,30 +639,21 @@ set_max_delay -datapath_only 3.3 \
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_boot_loader/rptr_gray_reg[*]}] \
     -to   [get_cells {u_boot_loader/rptr_gray_c1_reg[*]}]
-# gray[4] == bin[4] (bin2gray MSB), so synthesis merges the gray MSB register
-# into the binary pointer register — the -from *gray_reg patterns miss that
-# bit (f13b: last failing endpoint wptr_bin_reg[4] -> wptr_gray_ui1_reg[4]).
-# Cover the alias with the sync FFs as tight -to scope (2026-08-24).
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_boot_loader/wptr_bin_reg[*]}] \
     -to   [get_cells {u_boot_loader/wptr_gray_ui1_reg[*]}]
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_boot_loader/rptr_bin_reg[*]}] \
     -to   [get_cells {u_boot_loader/rptr_gray_c1_reg[*]}]
-# FIFO memory read: LUTRAM written in clk_200m, read in ui_clk after the gray
-# pointer guarantees stability (datapath-only). SCOPE FIX (2026-08-23, f13):
-# m_axi_wdata = fifo_rdata is combinational out of the module, so the real
-# CDC endpoints are the AXI upsizer's ui_clk WDATA registers — the old
-# "-to u_boot_loader/*wdata*" matched nothing and 513 endpoints were timed
-# against the 0.336 ns unrelated-edge requirement (f12/f13 WNS -2.05 group).
+# FIFO memory read: LUTRAM written in clk_200m, read in ui_clk after gray pointer sync
 set_max_delay -datapath_only 3.3 \
     -from [get_cells -hierarchical -filter {NAME =~ u_boot_loader/fifo_mem*}]
-# Job toggle + stable job bus (addr/words set before the toggle flips)
+# Job toggle + stable job bus (addr/words/rec_len set before toggle flips)
 set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_boot_loader/job_toggle_reg}] \
     -to   [get_cells {u_boot_loader/job_sync_ui_reg[0]}]
 set_max_delay -datapath_only 3.3 \
-    -from [get_cells {u_boot_loader/job_addr_reg[*] u_boot_loader/job_words_reg[*]}] \
+    -from [get_cells {u_boot_loader/job_addr_reg[*] u_boot_loader/job_words_reg[*] u_boot_loader/rec_len_reg[*]}] \
     -to   [get_cells {u_boot_loader/w_addr_reg[*] u_boot_loader/w_words_left_reg[*]}]
 # Done toggle + quasi-static job_err back to clk_200m
 set_max_delay -datapath_only 5.0 \
@@ -696,23 +667,18 @@ set_false_path -to [get_pins {calib_sync_boot_reg[0]/D eos_sync_boot_reg[0]/D}]
 set_false_path -to [get_pins {dpd_en_sync_ff_reg[0]/D}]
 
 # Halfband product -> accumulator is a true 2-cycle path (2026-08-24, f13d):
-# products/center_product load on valid_pipe[0], acc_filtered captures on
-# valid_pipe[2] — exactly 2 clocks later — and halfband input spacing is
-# hundreds of dsp_clk cycles (audio-rate in_valid), so no intermediate
-# capture exists. f13b-d left 25 of these endpoints at -0.031 (11 levels:
-# DSP_OUTPUT + 7xCARRY8 48-bit adder tree).
+# products/center_product load on valid_pipe[0], acc_filtered captures on valid_pipe[2].
 set_multicycle_path 2 -setup \
-    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* || NAME =~ u_dsp_core/u_hb*/center_product_reg*}] \
+    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* && IS_SEQUENTIAL || NAME =~ u_dsp_core/u_hb*/center_product_reg* && IS_SEQUENTIAL}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/acc_filtered_reg*}]
 set_multicycle_path 1 -hold \
-    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* || NAME =~ u_dsp_core/u_hb*/center_product_reg*}] \
+    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* && IS_SEQUENTIAL || NAME =~ u_dsp_core/u_hb*/center_product_reg* && IS_SEQUENTIAL}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/acc_filtered_reg*}]
 
 # -----------------------------------------------------------------------------
 # 10. User LED (debug / status indicator)
 # -----------------------------------------------------------------------------
 # BC33 is in bank 61, which the SOM powers at VCCO=1.2 V for DDR4 (C0).
-# The user LED must therefore be LVCMOS12 (BIVC-1 DRC otherwise).
 set_property IOSTANDARD LVCMOS12 [get_ports led_status]
 set_property DRIVE       4       [get_ports led_status]
 set_property SLEW        SLOW    [get_ports led_status]
@@ -743,71 +709,119 @@ set_property PACKAGE_PIN AM26    [get_ports {qspi1_dq[0]}]
 set_property PACKAGE_PIN AN26    [get_ports {qspi1_dq[1]}]
 set_property PACKAGE_PIN AL25    [get_ports {qspi1_dq[2]}]
 set_property PACKAGE_PIN AM25    [get_ports {qspi1_dq[3]}]
-# QSPI1 clock is shared CCLK via STARTUPE3 (no dedicated pin assignment needed)
 
 # -----------------------------------------------------------------------------
 # 11b. Carrier coefficient flash (bom item 18b, Macronix selection)
 #      Four MX66UM2G45GXRI00 2-Gb devices on one x1 SPI bus, bank 70 (J1,
-#      VCCIO_70 = V18). All four CS populated. The 1-Gb MX66UM1G45GXDI00 uses
-#      the same land pattern/pin map; set CFLASH_DEVICE_ADDR_BITS=27 and limit
-#      the library to 44 full-size records. SCK is a
-#      user-IO forwarded copy of the engine clock, driven from an IOB
-#      register together with CS/MOSI (vu13p_dac_top cf_*_q).
-#      Engine rate for this target: clk_200m/2 = 100 MHz x1 SPI (qspi_flash_ctrl
-#      CF_CKDIV_LOG2 = 1). Reads use Macronix FAST READ4B (0Ch) + 8 dummy clocks.
-#      Series 33 R on CF_CLK, 10k pull-ups on CS_n and unused x8 SIO2/SIO3.
+#      VCCIO_70 = V18). All four CS populated. Engine rate: clk_200m/2 =
+#      100 MHz x1 SPI (CF_CKDIV_LOG2 = 1).
 # -----------------------------------------------------------------------------
 set_property IOSTANDARD LVCMOS18 [get_ports {cf_sck cf_cs_n[*] cf_dq[*]}]
 set_property DRIVE       8       [get_ports {cf_sck cf_cs_n[*] cf_dq[*]}]
 set_property SLEW        FAST    [get_ports {cf_sck cf_dq[*]}]
 set_property SLEW        SLOW    [get_ports {cf_cs_n[*]}]
-set_property PACKAGE_PIN J35     [get_ports cf_sck]         ;# B70_L3_P  J1-A20
-set_property PACKAGE_PIN J36     [get_ports {cf_cs_n[0]}]   ;# B70_L3_N  J1-A19
-set_property PACKAGE_PIN H37     [get_ports {cf_cs_n[1]}]   ;# B70_L1_P  J1-A26
-set_property PACKAGE_PIN H38     [get_ports {cf_cs_n[2]}]   ;# B70_L1_N  J1-A25
-set_property PACKAGE_PIN G37     [get_ports {cf_cs_n[3]}]   ;# B70_L2_P  J1-B29
+set_property PACKAGE_PIN J35     [get_ports cf_sck]        ;# B70_L3_P  J1-A20
+set_property PACKAGE_PIN J36     [get_ports {cf_cs_n[0]}]  ;# B70_L3_N  J1-A19
+set_property PACKAGE_PIN H37     [get_ports {cf_cs_n[1]}]  ;# B70_L1_P  J1-A26
+set_property PACKAGE_PIN H38     [get_ports {cf_cs_n[2]}]  ;# B70_L1_N  J1-A25
+set_property PACKAGE_PIN G37     [get_ports {cf_cs_n[3]}]  ;# B70_L2_P  J1-B29
 set_property PACKAGE_PIN H36     [get_ports {cf_dq[0]}]     ;# B70_L4_P  J1-A23  MOSI
 set_property PACKAGE_PIN G36     [get_ports {cf_dq[1]}]     ;# B70_L4_N  J1-A22  MISO
 set_property PACKAGE_PIN H34     [get_ports {cf_dq[2]}]     ;# B70_L5_P  J1-B20  SIO2 (unused in x1)
 set_property PACKAGE_PIN G34     [get_ports {cf_dq[3]}]     ;# B70_L5_N  J1-B19  SIO3 (unused in x1)
 
-# Timing: SCK/CS/MOSI are registered outputs on clk_200m. The carrier x1
-# engine samples MISO once per SCK period (two clk_200m cycles at 100 MHz).
-# Keep the conservative 13 ns external MISO delay; the resulting path and
-# board return delay must be checked after placement/routing before release.
-set_input_delay  -clock [get_clocks clk_200m] \
-    -max 13.0 [get_ports {cf_dq[1]}]
-set_input_delay  -clock [get_clocks clk_200m] \
-    -min  1.0 [get_ports {cf_dq[1]}]
-# Carrier SCK is 100 MHz (10 ns period = 2 clk_200m cycles). The SoM targets
-# retain their own STARTUPE3 timing and are not constrained by this carrier path.
-set_multicycle_path 2 -setup -from [get_ports {cf_dq[1]}] \
-    -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*]}]
-set_multicycle_path 1 -hold  -from [get_ports {cf_dq[1]}] \
-    -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*]}]
-# Outputs: SCK has a 10 ns carrier period; keep SCK/CS/MOSI registered in IOBs.
-set_output_delay -clock [get_clocks clk_200m] \
-    -max 2.0 [get_ports {cf_sck cf_cs_n[*] cf_dq[0]}]
-set_output_delay -clock [get_clocks clk_200m] \
-    -min 0.0 [get_ports {cf_sck cf_cs_n[*] cf_dq[0]}]
+# Timing: forwarded-clock source-synchronous model. clk_200m reaches the
+# Bank-70 IOB FFs through ~3.6 ns of uncompensated IBUFDS -> BUFGCE insertion
+# delay -- but that delay is common-mode at the flash pins because cf_sck
+# launches from the same clock tree as cf_cs_n_q/cf_mosi_q. Model SCK as a
+# generated clock so I/O delays are measured against it, not clk_200m.
+create_generated_clock -name cf_sck_ext \
+    -source [get_pins cf_sck_q_reg/C] \
+    -divide_by 2 [get_ports cf_sck]
+
+# Outputs: CS_n and MOSI launch on clk_200m IOB FFs alongside cf_sck_q_reg.
+set_output_delay -clock [get_clocks cf_sck_ext] -max  2.0 [get_ports {cf_cs_n[*] cf_dq[0]}]
+set_output_delay -clock [get_clocks cf_sck_ext] -min -1.0 [get_ports {cf_cs_n[*] cf_dq[0]}]
+
+# Input: MISO launches on the cf_sck falling edge (t_CLQV <= 6.5 ns +
+# ~1.0 ns trace) and is sampled 3 clk_200m edges (15 ns) later due to the
+# cf_sck_q IOB register + rx_skip_left = 1.
+set_input_delay -clock [get_clocks cf_sck_ext] -clock_fall -max 7.5 [get_ports {cf_dq[1]}]
+set_input_delay -clock [get_clocks cf_sck_ext] -clock_fall -min 1.5 [get_ports {cf_dq[1]}]
+set_multicycle_path 3 -setup -end -from [get_ports {cf_dq[1]}] \
+    -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*] || NAME =~ u_flash_ctrl/rd_byte_reg[*] || (NAME =~ u_flash_ctrl/read_buffer_reg* && IS_SEQUENTIAL)}]
+set_multicycle_path 2 -hold  -end -from [get_ports {cf_dq[1]}] \
+    -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*] || NAME =~ u_flash_ctrl/rd_byte_reg[*] || (NAME =~ u_flash_ctrl/read_buffer_reg* && IS_SEQUENTIAL)}]
 # SIO2/SIO3 are static-high unused data lanes in x1 mode.
 set_false_path -to [get_ports {cf_dq[2] cf_dq[3]}]
 
+# SPI Mode 0 hold: MOSI/CS_n toggle on the cf_sck FALLING edge (clk_200m +5 ns),
+# never on the rising edge. Shifts the output-min hold requirement off the
+# SCK rising edge so the ~1.6 ns BUFGCE insertion skew cannot false-trigger.
+set_multicycle_path 1 -hold -start \
+    -from [get_clocks clk_200m] \
+    -to   [get_ports {cf_cs_n[*] cf_dq[0]}]
+
 # -----------------------------------------------------------------------------
-# 12. Bitstream / Configuration
+# 12. Stage-1A SLR Floorplan (post-route timing closure, 8.39M-tap build)
+#
+# Post-route analysis showed ~14.5k dsp_clk paths at ~-0.5 ns dominated by the
+# s3 broadcast tree (cap/clr/we/addr) fanning across the die, plus ~487 SLL
+# crossings of the SLR0/SLR1 boundary.  Each stereo channel fits inside one
+# SLR (~400 BRAM tiles, 364 DSPs), and the coefficient URAM banks are now
+# duplicated per channel (gen_ch[0]/gen_ch[1]) so the 2,304-wire URAM->DSP_B
+# bus never crosses the interposer.
+#
+# SLR1 owns the cascode_l outputs (Banks 64/65); SLR2 owns cascode_r
+# (Banks 66/67) and was nearly empty.  SLR0 stays open for the DDR4 MIG
+# (Banks 61-63), u_boot_loader, and u_coef_subsys.
+# -----------------------------------------------------------------------------
+create_pblock pb_stereo_fir_l
+add_cells_to_pblock pb_stereo_fir_l \
+    [get_cells {u_dsp_core/u_stereo_fir/u_l_fir \
+                u_dsp_core/u_stereo_fir/gen_ch[0].gen_uram_coef[*].u_uram}]
+resize_pblock pb_stereo_fir_l -add {SLR1}
+
+create_pblock pb_stereo_fir_r
+add_cells_to_pblock pb_stereo_fir_r \
+    [get_cells {u_dsp_core/u_stereo_fir/u_r_fir \
+                u_dsp_core/u_stereo_fir/gen_ch[1].gen_uram_coef[*].u_uram}]
+resize_pblock pb_stereo_fir_r -add {SLR2}
+
+# Reset release relaxation, scoped strictly to u_stereo_fir.  Release skew is
+# benign here: history_clear_sweep re-zeroes all window BRAMs after reset and
+# clr_s3 clears accumulators while serial_enable is low for thousands of
+# clocks, so a 1-2 cycle spread of release across the MAC array cannot corrupt
+# state.  ~6.6 ns = 2 dsp_clk cycles.  Keeps synchronous reset recovery active
+# on u_automute, u_coef_mgr, u_peq, and the FIFO Gray pointers.
+# Bucketed per channel/family: a single >10k-object -to filter is dropped
+# entirely at XDC read time (Constraints 18-929), so keep each group small.
+set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]
+# Unrolled per-channel/family (foreach/if are not supported in XDC).
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/*boundary*/R}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/*boundary*/R}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/* && REF_PIN_NAME =~ RST*}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/* && REF_PIN_NAME =~ RST*}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/*snap*/R}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/*snap*/R}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/* && REF_PIN_NAME == R && NAME !~ *boundary* && NAME !~ *snap*}]
+set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/* && REF_PIN_NAME == R && NAME !~ *boundary* && NAME !~ *snap*}]
+
+# rate_shift_q is quasi-static: it only changes while the MMCM is in reset /
+# stream is stopped, so its fanout inside the FIR cannot race live data.
+set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/rate_shift_q_reg[*]}]
+set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/rate_shift_q_reg[*]}]
+
+# -----------------------------------------------------------------------------
+# 13. Bitstream / Configuration
 # -----------------------------------------------------------------------------
 set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4       [current_design]
-set_property BITSTREAM.CONFIG.CONFIGRATE   31.9     [current_design]
-set_property BITSTREAM.GENERAL.COMPRESS    TRUE     [current_design]
-set_property CONFIG_VOLTAGE                1.8      [current_design]
-set_property CFGBVS                        GND      [current_design]
+set_property BITSTREAM.CONFIG.CONFIGRATE   31.9    [current_design]
+set_property BITSTREAM.GENERAL.COMPRESS    TRUE    [current_design]
+set_property CONFIG_VOLTAGE                1.8     [current_design]
+set_property CFGBVS                        GND     [current_design]
 
-# Multiboot / golden fallback (2026-08-22 — field bin updates over ARM SPI):
-# Flash 0 layout: golden image at 0x0000_0000 (write-protected by ARM policy,
-# never field-updated), update image at 0x0400_0000. The GOLDEN build sets
-# NEXT_CONFIG_ADDR to the update image; a corrupted/incomplete update image
-# falls back to the golden image automatically (CONFIGFALLBACK). The UPDATE
-# image (this build class) enables fallback only.
+# Multiboot / golden fallback (2026-08-22 -- field bin updates over ARM SPI):
 set_property BITSTREAM.CONFIG.CONFIGFALLBACK ENABLE [current_design]
 # Golden-build only (leave commented for update builds):
 # set_property BITSTREAM.CONFIG.NEXT_CONFIG_ADDR 0x04000000 [current_design]

@@ -1,25 +1,25 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// vu13p_dac_top — Wire-only top level for XCVU13P stereo DAC
+// vu13p_dac_top -- Wire-only top level for XCVU13P stereo DAC
 //
 // Platform : Xilinx XCVU13P on Alinx ACVU13 SOM
-//   - 10 GB DDR4 (C0, banks 61/62/63), C1 unused — its 200 MHz CLKREF used as clk_200m
+//   - 10 GB DDR4 (C0, banks 61/62/63), C1 unused -- its 200 MHz CLKREF used as clk_200m
 //   - QSPI Flash on-module
 //   - 377 HP IOs exposed via Samtec connectors
 // Single-FPGA design
 //
 // Sub-modules:
-//   dac_ddr4_if      : DDR4 MIG wrapper (uses on-module DDR4)
-//   dac_coef_subsys  : Coefficient loading + bank management + CDC
-//   dac_ctrl_plane   : SPI register file + relays
+//   dac_ddr4_if       : DDR4 MIG wrapper (uses on-module DDR4)
+//   dac_coef_subsys   : Coefficient loading + bank management + CDC
+//   dac_ctrl_plane    : SPI register file + relays
 //   i2s_master_ingress: FPGA-master serial clocks and tagged return-data capture
-//   dac_dsp_core     : FIR×16 + HB1/2/3 + volume + dither + 7th-order NS
-//                      + 64-element DEM + IOB-registered cascode outputs
-//                        (1 pin per cell, 128 total; complement generated at
-//                        the external reclock stage, Fig. 1b)
+//   dac_dsp_core      : FIRx16 + PEQ + HB1/2/3 + volume + dither + NS
+//                       + 64-element DEM + IOB-registered cascode outputs
+//                         (1 pin per cell, 128 total; complement generated at
+//                         the external reclock stage, Fig. 1b)
 //
-// Target: XCVU13P-2FHGB2104I, 278/302 MHz DSP clock, 1024 MACs, 1M taps
+// Target: XCVU13P-2FHGB2104I, 278/302 MHz DSP clock
 //
 // Clock architecture (dual oscillator enables, Round 30):
 //   Two CCHD-957 oscillators feed the shared XOCLK network through their
@@ -93,29 +93,29 @@ module vu13p_dac_top #(
     output logic        led_status,
     output logic [3:0]  led_debug,     // [3]=clk_locked [2]=ddr4_calib [1]=i2s_err [0]=force_zero
 
-    // QSPI Flash 1 — coefficient storage (bank 65, directly accessible)
+    // QSPI Flash 1 -- coefficient storage (bank 65, directly accessible)
     // Flash 0 accessed via STARTUPE3 (config pins, bitstreams)
     output logic        qspi1_cs_n,
     inout  wire  [3:0]  qspi1_dq,
 
     // Carrier coefficient flash (bom item 18b): four Macronix MX66UM NORs
-    // on one x1 SPI bus, bank-70 pins (XDC §11b). All four CS sites are active.
+    // on one x1 SPI bus, bank-70 pins (XDC s11b). All four CS sites are active.
     // CFLASH_DEVICE_ADDR_BITS selects 2-Gb (28) vs 1-Gb (27) local addressing.
     // SCK is a user-IO forwarded copy of the engine clock.
     output logic        cf_sck,
     output logic [3:0]  cf_cs_n,
     inout  wire  [3:0]  cf_dq,
 
-    // Direct cascode cell outputs — IOB-registered on cell_clk, < 50 ps
-    // inter-cell skew. 1 pin per cell, 64 per channel, 128 total (pins: XDC §8,
+    // Direct cascode cell outputs -- IOB-registered on cell_clk, < 50 ps
+    // inter-cell skew. 1 pin per cell, 64 per channel, 128 total (pins: XDC s8,
     // banks 64+65 = L, 67+69 = R); external MC100EP52 reclock FFs generate the
     // complementary base-drive pair (Fig. 1b)
     output logic [63:0] cascode_l,
     output logic [63:0] cascode_r,
 
-    // DDR4 Interface — C0 controller, banks 61/62/63
-    // TOPOLOGY (2026-08-11): SOM has 5× MT40A1G16KD (80 DQ) but the DDR4
-    // MIG controller maxes at 72-bit → 64-bit config (4 chips, 8 GB);
+    // DDR4 Interface -- C0 controller, banks 61/62/63
+    // TOPOLOGY (2026-08-11): SOM has 5x MT40A1G16KD (80 DQ) but the DDR4
+    // MIG controller maxes at 72-bit -> 64-bit config (4 chips, 8 GB);
     // 5th chip unused. 8 byte lanes.
     input  wire         ddr4_clkref_p,   // on-module 200 MHz C0_DDR4_CLKREF
     input  wire         ddr4_clkref_n,
@@ -139,7 +139,7 @@ module vu13p_dac_top #(
     // Clocks & Reset
     // ==============================================================
     logic clk_200m;       // Single-ended after IBUFDS
-    logic mclk;           // Single-ended after IBUFDS (externally-muxed OCXO)
+    logic mclk;           // Single-ended after IBUF (externally-muxed OCXO)
     logic dsp_clk;
     logic clk_locked;
     logic sys_rst_n;
@@ -199,13 +199,29 @@ module vu13p_dac_top #(
     logic outsel_target;
     logic outsel_target_sync;
 
+    // Reset synchronizer + 2-stage replicable fanout tree across SLRs.
+    // Async assertion ensures immediate flush even while dsp_clk is stopped
+    // during MMCM oscillator-switch resets; non-ASYNC_REG tree stages allow
+    // Vivado to replicate sys_rst_n per SLR / DSP column.
     wire dsp_reset_release = ext_rst_n && clk_locked && !stream_path_reset;
     (* ASYNC_REG = "TRUE" *) logic [1:0] dsp_reset_sync;
     always_ff @(posedge dsp_clk or negedge dsp_reset_release) begin
-        if (!dsp_reset_release) dsp_reset_sync <= 0;
-        else dsp_reset_sync <= {dsp_reset_sync[0], 1'b1};
+        if (!dsp_reset_release) dsp_reset_sync <= 2'b00;
+        else                    dsp_reset_sync <= {dsp_reset_sync[0], 1'b1};
     end
-    assign sys_rst_n = dsp_reset_sync[1];
+
+    (* MAX_FANOUT = 64 *) logic dsp_rst_lvl1_n;
+    (* MAX_FANOUT = 64 *) logic dsp_rst_tree_n;
+    always_ff @(posedge dsp_clk or negedge dsp_reset_release) begin
+        if (!dsp_reset_release) begin
+            dsp_rst_lvl1_n <= 1'b0;
+            dsp_rst_tree_n <= 1'b0;
+        end else begin
+            dsp_rst_lvl1_n <= dsp_reset_sync[1];
+            dsp_rst_tree_n <= dsp_rst_lvl1_n;
+        end
+    end
+    assign sys_rst_n = dsp_rst_tree_n;
 
     // CDC: SPI control signals from clk_200m to dsp_clk domain.
     // level_target / outsel_target are quasi-static: they are written by SPI
@@ -234,8 +250,8 @@ module vu13p_dac_top #(
             outsel_target_sync_chain <= {outsel_target_sync_chain[0], outsel_target};
         end
     end
-    assign spi_unmute_sync       = unmute_sync_chain[1];
-    assign base_rate_sel_sync    = rate_sel_sync_chain[1];
+    assign spi_unmute_sync        = unmute_sync_chain[1];
+    assign base_rate_sel_sync     = rate_sel_sync_chain[1];
     assign level_switch_req_sync  = level_req_sync_chain[1] && !level_req_sync_chain[0]; // edge pulse
     assign level_target_sync      = level_target_sync_chain[5:3];
     assign outsel_switch_req_sync = outsel_req_sync_chain[1] && !outsel_req_sync_chain[0]; // edge pulse
@@ -328,8 +344,8 @@ module vu13p_dac_top #(
     // dsp_clk atomically; a torn capture across a carry boundary would put a
     // wrong operand into the volume multiplier for one sample. Toggle
     // handshake: clk_200m flips vol_tog when the word changes, dsp_clk syncs
-    // the toggle and captures the (now stable) word. Consecutive SPI frames
-    // are >= 40 SCLK apart, far longer than the 3-cycle capture latency.
+    // the toggle and captures the held sys_volume_q word. Consecutive SPI
+    // frames are >= 40 SCLK apart, far longer than the 3-cycle capture latency.
     logic        vol_tog;
     logic [31:0] sys_volume_q;
     (* ASYNC_REG = "TRUE" *) logic [2:0] vol_tog_sync;
@@ -348,7 +364,7 @@ module vu13p_dac_top #(
             sys_volume_dsp <= 32'h0;
         end else begin
             vol_tog_sync <= {vol_tog_sync[1:0], vol_tog};
-            if (vol_tog_sync[2] ^ vol_tog_sync[1]) sys_volume_dsp <= sys_volume;
+            if (vol_tog_sync[2] ^ vol_tog_sync[1]) sys_volume_dsp <= sys_volume_q;
         end
     end
 
@@ -368,7 +384,7 @@ module vu13p_dac_top #(
         case (level_relay_drive)
             3'b000:  level_gain <= 16'd21845;  // 2 Vrms   (x1/3,  -9.54 dB)
             3'b001:  level_gain <= 16'd43691;  // 4 Vrms   (x2/3,  -3.52 dB)
-            3'b010:  level_gain <= 16'hFFFF;   // 6 Vrms   (x1,     0 dB)
+            3'b010:  level_gain <= 16'hFFFF;   // 6 Vrms   (x1,      0 dB)
             3'b011:  level_gain <= 16'd6554;   // 0.6 Vrms (x1/10, -20.0 dB)
             3'b100:  level_gain <= 16'd2185;   // 0.2 Vrms (x1/30, -29.5 dB)
             default: level_gain <= 16'd21845;  // reserved codes -> 2 V (safe)
@@ -461,13 +477,13 @@ module vu13p_dac_top #(
     );
 
     // ==============================================================
-    // 1b. QSPI Flash Subsystem (2026-08-22 — Steps 2+3 of flash/DDR4 wiring)
+    // 1b. QSPI Flash Subsystem (2026-08-22 -- Steps 2+3 of flash/DDR4 wiring)
     //   - qspi_flash_ctrl: shared x1-SPI engine, three targets
     //       target 0 = SoM Flash 1 (coefficients, bank-65 pins)
-    //       target 1 = SoM Flash 0 (bitstream, via STARTUPE3 — ARM bin updates)
+    //       target 1 = SoM Flash 0 (bitstream, via STARTUPE3 -- ARM bin updates)
     //       target 2 = carrier coefficient flash (bank-70 pins, 100 MHz)
-    //   - qspi_boot_loader: autonomous at EOS+calib — stages coefficient
-    //     records QSPI → CRC32 → DDR4; no ARM involvement (user ruling).
+    //   - qspi_boot_loader: autonomous at EOS+calib -- stages coefficient
+    //     records QSPI -> CRC32 -> DDR4; no ARM involvement (user ruling).
     //     Tries the carrier flash first, falls back to SoM Flash 1 (18a).
     //   - ARM update path: ctrl-plane regs 0x10-0x14 / 0x1A-0x1B
     // ==============================================================
@@ -568,7 +584,7 @@ module vu13p_dac_top #(
         .PREQ      (),
         .DI        (startup_di),
         .DO        ({2'b11, 1'b0, qspi_mosi}),
-        .DTS       (4'b0110),                    // D1 (MISO) + D2 inputs
+        .DTS       (4'b0110),                     // D1 (MISO) + D2 inputs
         .FCSBO     (qspi_sel_flash0 ? qspi_cs_n : 1'b1),
         .FCSBTS    (1'b0),
         .GSR       (1'b0),
@@ -581,11 +597,11 @@ module vu13p_dac_top #(
         .USRDONETS (1'b1)
     );
 
-    // Flash 1 (coefficients) — dedicated bank-65 pins, x1 mode:
+    // Flash 1 (coefficients) -- dedicated bank-65 pins, x1 mode:
     //   dq[0] = MOSI, dq[1] = MISO, dq[2]/dq[3] = WP/HOLD held high
     assign qspi1_cs_n  = (qspi_sel_target == 2'd0) ? qspi_cs_n : 1'b1;
     assign qspi1_dq[0] = qspi_mosi;
-    assign qspi1_dq[1] = 1'bz;                   // MISO input
+    assign qspi1_dq[1] = 1'bz;                    // MISO input
     assign qspi1_dq[2] = 1'b1;
     assign qspi1_dq[3] = 1'b1;
 
@@ -608,9 +624,9 @@ module vu13p_dac_top #(
     assign cf_sck   = cf_sck_q;
     assign cf_cs_n  = cf_cs_n_q;
     assign cf_dq[0] = cf_mosi_q;
-    assign cf_dq[1] = 1'bz;                      // MISO input
-    assign cf_dq[2] = 1'b1;                      // unused SIO2 in x1 mode
-    assign cf_dq[3] = 1'b1;                      // unused SIO3 in x1 mode
+    assign cf_dq[1] = 1'bz;                       // MISO input
+    assign cf_dq[2] = 1'b1;                       // unused SIO2 in x1 mode
+    assign cf_dq[3] = 1'b1;                       // unused SIO3 in x1 mode
 
     always_comb begin
         case (qspi_sel_target)
@@ -674,10 +690,10 @@ module vu13p_dac_top #(
     // DPD engines (dsp_clk): cal-store read buses + enable
     logic [3:0][8:0]  dpd_cal_addr;
     logic [3:0][23:0] dpd_cal_data;
-    logic             dpd_enable;        // ctrl plane, clk_200m
+    logic             dpd_enable;         // ctrl plane, clk_200m
     logic             dpd_enable_sync;
-    logic [1:0][7:0]   cell_test_cfg;
-    logic [1:0]        cell_test_req, cell_test_ack;
+    logic [1:0][7:0]  cell_test_cfg;
+    logic [1:0]       cell_test_req, cell_test_ack;
     logic [10:0] bench_cmd;
     logic bench_req, bench_ack, bench_ready, bench_busy, bench_available;
     logic [31:0] bench_status;
@@ -839,10 +855,24 @@ module vu13p_dac_top #(
     // ==============================================================
     // 3a. Mute / Output Relay Controller
     // ==============================================================
+    // Register u_stream_rate's clk_200m unmute-permit decode and synchronize
+    // into dsp_clk before driving u_automute's one-hot FSM.
+    logic stream_unmute_ok_200m;
+    always_ff @(posedge clk_200m) begin
+        if (!ext_rst_n) stream_unmute_ok_200m <= 1'b0;
+        else            stream_unmute_ok_200m <= !stream_busy && stream_clock_ready;
+    end
+
+    (* ASYNC_REG = "TRUE" *) logic [1:0] stream_automute_sync;
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) stream_automute_sync <= 2'b00;
+        else            stream_automute_sync <= {stream_automute_sync[0], stream_unmute_ok_200m};
+    end
+
     automute_controller u_automute (
         .clk              (dsp_clk),
         .rst_n            (sys_rst_n),
-        .spi_unmute       (spi_unmute_sync && !stream_busy && stream_clock_ready && bank_valid),
+        .spi_unmute       (spi_unmute_sync && stream_automute_sync[1] && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
         .i2s_err          (i2s_err || core_stream_fault),
         .level_switch_req (level_switch_req_sync),
@@ -877,7 +907,7 @@ module vu13p_dac_top #(
     );
 
     // ==============================================================
-    // 5. DSP Core (FIR×16 + HB1/2/3 + volume + dither + 7th-NS + DEM + cascode)
+    // 5. DSP Core (FIRx16 + PEQ + HB1/2/3 + volume + dither + NS + DEM + cascode)
     // ==============================================================
     dac_dsp_core #(
         .NUM_MACS               (NUM_MACS),

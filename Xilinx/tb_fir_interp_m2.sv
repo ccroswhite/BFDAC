@@ -131,6 +131,8 @@ module tb_fir_interp_m2;
         // 1. Feed 300 samples at rate_shift=3 to push samples completely through
         //    win (256 deep) and into win_rev (256 deep)
         rate_shift <= 2'd3;
+        repeat (3) @(posedge clk);   // let rate_flush re-raise history_clear
+        wait (dut.history_clear == 1'b0);
         repeat (5) @(posedge clk);
         for (int s = 0; s < 300; s++) begin
             automatic logic signed [DATA_WIDTH-1:0] samp =
@@ -148,6 +150,9 @@ module tb_fir_interp_m2;
         // 2. Verify all four rate_shift modes (0, 1, 2, 3) with full history active
         for (int rs = 0; rs <= 3; rs++) begin
             rate_shift <= 2'(rs);
+            repeat (3) @(posedge clk);   // let rate_flush re-raise history_clear
+            wait (dut.history_clear == 1'b0);
+            for (int k = 0; k < FULL_HIST_LEN; k++) gold_hist[k] = '0;
             repeat (5) @(posedge clk);
             for (int s = 0; s < 4; s++) begin
                 automatic logic signed [DATA_WIDTH-1:0] samp =

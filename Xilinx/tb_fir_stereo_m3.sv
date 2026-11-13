@@ -48,7 +48,8 @@ module tb_fir_stereo_m3;
         .COEF_WIDTH     (COEF_WIDTH),
         .ACC_WIDTH      (ACC_WIDTH),
         .SYM_FOLD_EN    (1'b1),
-        .QUAD_URAM_EN   (1'b1)
+        .QUAD_URAM_EN   (1'b1),
+        .TWO_STAGE_EN   (1'b0)
     ) dut (
         .clk                  (clk),
         .rst_n                (rst_n),
@@ -145,6 +146,12 @@ module tb_fir_stereo_m3;
         // 2. Test stereo samples across rate_shift = 2, 1, 0
         for (int rs = 2; rs >= 0; rs--) begin
             rate_shift <= 2'(rs);
+            repeat (3) @(posedge clk);   // let rate_flush re-raise history_clear
+            wait (dut.u_l_fir.history_clear == 1'b0);
+            for (int k = 0; k < FULL_HIST_LEN; k++) begin
+                gold_hist_l[k] = '0;
+                gold_hist_r[k] = '0;
+            end
             repeat (5) @(posedge clk);
             for (int s = 0; s < 4; s++) begin
                 automatic logic signed [DATA_WIDTH-1:0] sl =
