@@ -777,13 +777,19 @@ and into the flow scripts (write the routed DCP BEFORE report_cdc/report_design_
 - [ ] TODO-21: **DPD lag-tuple ROM swap** (from TODO-9): regenerate `dpd_lag_rom.svh`
   with the frozen cosim80c3j tuples once Step 6.4 tooling exports them, re-run
   `tb_dpd_engine` bit-exact gate, resynth. Tooling-gated.
-- [ ] TODO-22: **Host/tooling dependencies that gate RTL bring-up (not RTL work):**
-  (a) staging tool must build the DDR4 directory at `DIR_BASE_ADDR` (32-byte entries,
-  zero terminator, `payload_bytes` == NUM_MACS*COEF_DEPTH*4 exactly or every load fails
-  FILT_SIZE) — without it FILTER_SELECT always returns FILT_NOTFOUND on hardware;
-  (b) ratify the 4 open questions in `coef_format_v2.md`; (c) plan Step 4D.5 e2e analog
-  gate needs Step 6.4 kernel export. Optional RTL: `coef_bank_loader` AR/R pipelining
-  (header note) — ~20% latency gain only; the drain bus is the bottleneck (TODO-24).
+- [~] TODO-22: **Host/tooling dependencies that gate RTL bring-up (not RTL work):**
+  (a) DONE 2026-10: `utils/bfd_staging.py` — `pack` wraps raw payloads in v2
+  .bfc containers (256B header, dual CRC-32); `image` lays payloads out in DDR4
+  space, emits the BFDC boot-record chain (payload records + directory record
+  at `DIR_BASE_ADDR`, 32B entries, zero terminator, `payload_bytes` validated
+  against NUM_MACS*COEF_DEPTH per packing, >16 MiB payloads split into
+  consecutive records), a JSON id↔name manifest, and optional $readmemh .hex;
+  `verify`/`self-test` re-parse images against the `coef_bank_loader` dir
+  equations. Tested end-to-end with `stage1a_coef_packer` payloads (3 filters,
+  3.6 MB chain). (b) ratify the 4 open questions in `coef_format_v2.md`;
+  (c) plan Step 4D.5 e2e analog gate needs Step 6.4 kernel export. Optional
+  RTL: `coef_bank_loader` AR/R pipelining (header note) — ~20% latency gain
+  only; the drain bus is the bottleneck (TODO-24).
 - [x] TODO-23: **Filter list: 16 → 32 entries + direct select-by-ID — DONE 2026-09-03.**
   `dac_ctrl_plane.sv`: `FLIST_MAX=32` localparam (5-bit index, 6-bit len), shared
   `filter_adv_index`/`filter_sel_in_range` comb logic replaces the old ==16 special
