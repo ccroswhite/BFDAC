@@ -155,19 +155,26 @@ set_false_path \
     -to   [get_pins {u_dsp_core/pace_div_reg[*]/R u_dsp_core/pace_tgl_reg/R}]
 
 # -----------------------------------------------------------------------------
-# 4. SPI Control Bus (ARM SPI master -> FPGA slave, clk_200m domain)
+# 4. SPI Control Bus — XMOS port (XMOS SPI master -> FPGA slave, clk_200m domain)
 # -----------------------------------------------------------------------------
-set_property IOSTANDARD LVCMOS18 [get_ports {spi_sclk spi_cs_n spi_mosi spi_miso}]
-set_property SLEW       SLOW     [get_ports spi_miso]
+set_property IOSTANDARD LVCMOS18 [get_ports {spi_xmos_sclk spi_xmos_cs_n spi_xmos_mosi spi_xmos_miso}]
+set_property SLEW       SLOW     [get_ports spi_xmos_miso]
 # J1 connector, bank 71 single-ended pins
-set_property PACKAGE_PIN T26     [get_ports spi_sclk]
-set_property PACKAGE_PIN R26     [get_ports spi_cs_n]
-set_property PACKAGE_PIN H29     [get_ports spi_mosi]
-set_property PACKAGE_PIN G29     [get_ports spi_miso]
+set_property PACKAGE_PIN T26     [get_ports spi_xmos_sclk]
+set_property PACKAGE_PIN R26     [get_ports spi_xmos_cs_n]
+set_property PACKAGE_PIN H29     [get_ports spi_xmos_mosi]
+set_property PACKAGE_PIN G29     [get_ports spi_xmos_miso]
 
 # SPI signals are asynchronous to clk_200m; captured by 3-stage synchronizer
-set_false_path -from [get_ports {spi_sclk spi_cs_n spi_mosi}]
-set_false_path -to   [get_ports spi_miso]
+set_false_path -from [get_ports {spi_xmos_sclk spi_xmos_cs_n spi_xmos_mosi}]
+set_false_path -to   [get_ports spi_xmos_miso]
+
+# 4b. SPI Control Bus — AP port (host AP SPI master, isolated on ACKU15S carrier)
+#     VU13P dev build: no dedicated carrier pins — auto-placed.
+set_property IOSTANDARD LVCMOS18 [get_ports {spi_ap_sclk spi_ap_cs_n spi_ap_mosi spi_ap_miso spi_ap_irq_n}]
+set_property SLEW       SLOW     [get_ports {spi_ap_miso spi_ap_irq_n}]
+set_false_path -from [get_ports {spi_ap_sclk spi_ap_cs_n spi_ap_mosi}]
+set_false_path -to   [get_ports {spi_ap_miso spi_ap_irq_n}]
 
 # -----------------------------------------------------------------------------
 # 5. FPGA IRQ (active-low, slow control signal to ARM)

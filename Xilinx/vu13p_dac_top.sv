@@ -77,11 +77,19 @@ module vu13p_dac_top #(
     input  logic        i2s_data2,
 
     // ARM SPI Interface (Control Plane)
-    input  logic        spi_sclk,
-    input  logic        spi_cs_n,
-    input  logic        spi_mosi,
-    output logic        spi_miso,
-    output logic        fpga_irq_n,    // Active-low IRQ to ARM (sticky errors)
+    // Dual host SPI — XMOS audio bridge + host AP (isolated on carrier).
+    // Both read the full register map; write access is partitioned inside
+    // dac_ctrl_plane (XMOS = audio-path subset, AP = full).
+    input  logic        spi_xmos_sclk,
+    input  logic        spi_xmos_cs_n,
+    input  logic        spi_xmos_mosi,
+    output logic        spi_xmos_miso,
+    input  logic        spi_ap_sclk,
+    input  logic        spi_ap_cs_n,
+    input  logic        spi_ap_mosi,
+    output logic        spi_ap_miso,
+    output logic        spi_ap_irq_n,  // Active-low IRQ to AP
+    output logic        fpga_irq_n,    // Active-low IRQ to XMOS (sticky errors)
 
     // Hardware Control Plane (Fig. 4d relay set)
     output logic        relay_line_mute,      // energized = line XLR unmuted
@@ -728,10 +736,15 @@ module vu13p_dac_top #(
     dac_ctrl_plane u_ctrl_plane (
         .clk                    (clk_200m),
         .ext_rst_n              (ext_rst_n),
-        .spi_sclk               (spi_sclk),
-        .spi_cs_n               (spi_cs_n),
-        .spi_mosi               (spi_mosi),
-        .spi_miso               (spi_miso),
+        .spi_xmos_sclk          (spi_xmos_sclk),
+        .spi_xmos_cs_n          (spi_xmos_cs_n),
+        .spi_xmos_mosi          (spi_xmos_mosi),
+        .spi_xmos_miso          (spi_xmos_miso),
+        .spi_ap_sclk            (spi_ap_sclk),
+        .spi_ap_cs_n            (spi_ap_cs_n),
+        .spi_ap_mosi            (spi_ap_mosi),
+        .spi_ap_miso            (spi_ap_miso),
+        .spi_ap_irq_n           (spi_ap_irq_n),
         .fpga_irq_n             (fpga_irq_n),
         .level_switch_req       (level_switch_req),
         .level_target           (level_target),

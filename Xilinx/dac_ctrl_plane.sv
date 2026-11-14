@@ -11,11 +11,19 @@ module dac_ctrl_plane (
     input  logic        clk,        // Control-plane clock (200 MHz on VU13P)
     input  logic        ext_rst_n,
 
-    // SPI interface
-    input  logic        spi_sclk,
-    input  logic        spi_cs_n,
-    input  logic        spi_mosi,
-    output logic        spi_miso,
+    // SPI interfaces — two independent slaves sharing one register file.
+    //   spi_xmos_* : XMOS audio bridge (restricted write subset, draft ACL
+    //                below; access review TODO pending)
+    //   spi_ap_*   : host application processor (full access; SPI lines are
+    //                digitally isolated on the carrier)
+    input  logic        spi_xmos_sclk,
+    input  logic        spi_xmos_cs_n,
+    input  logic        spi_xmos_mosi,
+    output logic        spi_xmos_miso,
+    input  logic        spi_ap_sclk,
+    input  logic        spi_ap_cs_n,
+    input  logic        spi_ap_mosi,
+    output logic        spi_ap_miso,
 
     // Relay control (to automute controller, Fig. 4d set)
     output logic        level_switch_req,   // Single-cycle pulse (legacy; sequencer now acts on target != applied)
@@ -51,7 +59,8 @@ module dac_ctrl_plane (
     output logic        filter_load_req,  // Single-cycle pulse on select/advance
     output logic        video_mode,       // Status flag (host-enforced eligibility)
     output logic        spi_unmute,       // Raw clk_49m-domain unmute command (CDC in top)
-    output logic        fpga_irq_n,       // Active-low IRQ to ARM (sticky errors)
+    output logic        fpga_irq_n,       // Active-low IRQ to XMOS (sticky errors)
+    output logic        spi_ap_irq_n,     // Active-low IRQ to AP (same sticky source)
 
     // Calibration coefficient store (regs 0x0C-0x0F, 0x18-0x19; Step 6.3/6.7
     // DECIDED Aug 2026: ARM computes the temperature-corrected values, FPGA
@@ -114,12 +123,49 @@ module dac_ctrl_plane (
     // itself auto-increments immediately for the next 0x0D frame.
     logic [8:0] cal_wr_ptr;
 
+    // ---- Dual-SPI front end --------------------------------------------------
+    // Each port owns an independent spi_slave + readback path (reads never
+    // collide: each port tracks its own read address). WRITE frames enter a
+    // one-slot pending queue per port and drain serially through a fixed-
+    // priority arbiter (XMOS first) into the shared ctrl_bus_* decode below.
+    // ctrl_bus_src tags the originating port for the write-access gate and
+    // the last-writer debug bit in CTRL_STATE.
+    localparam logic SRC_XMOS = 1'b0, SRC_AP = 1'b1;
     logic [31:0] ctrl_bus_data;
     logic        ctrl_bus_valid;
-    logic [6:0]  read_addr_reg;
+    logic        ctrl_bus_src;
+
+    logic [31:0] x_bus_data, a_bus_data;
+    logic        x_bus_valid, a_bus_valid;
+    logic        x_crc_err, x_frame_err, a_crc_err, a_frame_err;
+
+    // Pending write/read slots — depth 1 per port is sufficient: an SPI frame
+    // spans >=40 host-SCLK periods while a slot drains in one clk cycle.
+    logic        x_pend, a_pend;
+    logic [31:0] x_frame, a_frame;
+    always_ff @(posedge clk) begin
+        if (!ext_rst_n) begin
+            x_pend <= 1'b0; a_pend <= 1'b0;
+            ctrl_bus_valid <= 1'b0; ctrl_bus_src <= SRC_XMOS;
+        end else begin
+            ctrl_bus_valid <= 1'b0;
+            if (x_pend)      begin ctrl_bus_valid <= 1'b1; ctrl_bus_data <= x_frame; ctrl_bus_src <= SRC_XMOS; x_pend <= 1'b0; end
+            else if (a_pend) begin ctrl_bus_valid <= 1'b1; ctrl_bus_data <= a_frame; ctrl_bus_src <= SRC_AP;   a_pend <= 1'b0; end
+            // Latch AFTER drain-clear so a same-cycle arrival re-arms the slot
+            if (x_bus_valid) begin x_pend <= 1'b1; x_frame <= x_bus_data; end
+            if (a_bus_valid) begin a_pend <= 1'b1; a_frame <= a_bus_data; end
+        end
+    end
+    logic spi_crc_error, spi_frame_error;
+    assign spi_crc_error   = x_crc_err   | a_crc_err;
+    assign spi_frame_error = x_frame_err | a_frame_err;
+
+    logic [6:0]  read_addr_reg;   // XMOS port read-address latch
+    logic [6:0]  read_addr_reg_a; // AP port read-address latch
+    logic        last_wr_src;     // SRC_* of most recent accepted write frame
     logic [31:0] spi_tx_data;
-    logic        spi_crc_error;
-    logic        spi_frame_error;
+    logic [31:0] spi_tx_data_a;   // AP port readback register
+    logic        spi_crc_err_d;
     logic [2:0]  cmd_level;
     logic        cmd_outsel;
     logic        cmd_unmute;
@@ -198,7 +244,6 @@ module dac_ctrl_plane (
     // bit [6]: command rejected (reason in CMD_ERR_INFO, read 0x1C)
     // bit [7]: boot / flash error (boot CRC/AXI fail, flash watchdog abort)
     logic [7:0] sticky_err;
-    logic       spi_crc_err_d;
     logic       boot_err_d;
 
     // ---- Write decode for error detection --------------------------------
@@ -227,6 +272,28 @@ module dac_ctrl_plane (
             default:                                    wr_addr_invalid = 1'b1;
         endcase
     end
+
+    // ---- Per-port write access gate -----------------------------------------
+    // DRAFT partition (access-review TODO pending): the XMOS may only write
+    // the audio-path registers it owns. Filter/bank selection, calibration,
+    // flash/update and bench/cell-test registers are AP-only — they do not
+    // exist in the XMOS view, so a denied write is reported exactly like an
+    // invalid address (sticky[5] + CMD_ERR_INFO BAD_ADDR).
+    logic wr_denied;
+    always_comb begin
+        wr_denied = 1'b0;
+        if (ctrl_bus_src == SRC_XMOS) begin
+            case (wr_addr)
+                `SPI_W_NOP,           `SPI_W_VOLUME,        `SPI_W_LEVEL,
+                `SPI_W_RATE,          `SPI_W_UNMUTE,        `SPI_W_OUTSEL,
+                `SPI_W_DAC_MODE,      `SPI_W_STICKY_W1C,
+                `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID,  `SPI_W_I2S_RX_TRIM:
+                    wr_denied = 1'b0;
+                default: wr_denied = 1'b1;
+            endcase
+        end
+    end
+    wire wr_exec = wr_stb && !wr_denied;   // gates the register write-decode
 
     // CMD_ERR_INFO reason codes (read 0x1C [3:0])
     localparam logic [3:0] ERR_NONE       = `SPI_ERR_NONE;
@@ -435,7 +502,7 @@ module dac_ctrl_plane (
             if (!ddr4_calib_sync[1])             sticky_err[2] <= 1'b1;
             if (!clk_locked)                     sticky_err[3] <= 1'b1;
             if (spi_frame_error)                 sticky_err[4] <= 1'b1;
-            if (wr_stb && wr_addr_invalid)       sticky_err[5] <= 1'b1;
+            if (wr_stb && (wr_addr_invalid || wr_denied)) sticky_err[5] <= 1'b1;
             if ((wr_stb && wr_rejected) || load_err_evt)
                                                  sticky_err[6] <= 1'b1;
             if (cal_write_reject_evt)
@@ -458,9 +525,9 @@ module dac_ctrl_plane (
                 err_info_addr   <= `SPI_W_CAL_DATA;
                 err_info_reason <= `SPI_ERR_TEST_BUSY;
                 err_info_filter_axi <= 1'b0;
-            end else if (wr_stb && (wr_addr_invalid || wr_rejected)) begin
+            end else if (wr_stb && (wr_addr_invalid || wr_denied || wr_rejected)) begin
                 err_info_addr   <= wr_addr;
-                err_info_reason <= wr_addr_invalid ? ERR_BAD_ADDR : wr_rej_reason;
+                err_info_reason <= (wr_addr_invalid || wr_denied) ? ERR_BAD_ADDR : wr_rej_reason;
                 err_info_filter_axi <= 1'b0;
             end else if (spi_frame_error) begin
                 err_info_addr   <= 7'd0;
@@ -469,7 +536,7 @@ module dac_ctrl_plane (
             end
             // Clear on write to register 0x16 (write-1-to-clear;
             // moved from 0x11, which is FLASH_ADDR_HI)
-            if (wr_stb && (wr_addr == `SPI_W_STICKY_W1C)) begin
+            if (wr_exec && (wr_addr == `SPI_W_STICKY_W1C)) begin
                 sticky_err      <= sticky_err & ~ctrl_bus_data[7:0];
                 err_info_addr   <= 7'd0;
                 err_info_reason <= ERR_NONE;
@@ -480,7 +547,8 @@ module dac_ctrl_plane (
         end
     end
 
-    assign fpga_irq_n = (sticky_err != 8'b0) ? 1'b0 : 1'b1;
+    assign fpga_irq_n   = (sticky_err != 8'b0) ? 1'b0 : 1'b1;
+    assign spi_ap_irq_n = fpga_irq_n;   // AP sees the same sticky-error IRQ
 
     // Level / output-select relays: pulse the automute controller on change.
     // The actual relays are driven by the sequencer in the dsp_clk domain.
@@ -494,29 +562,43 @@ module dac_ctrl_plane (
             outsel_target     <= 1'b0;
             outsel_switch_req <= 1'b0;
         end else begin
-            level_switch_req <= wr_stb && (wr_addr == `SPI_W_LEVEL) &&
+            level_switch_req <= wr_exec && (wr_addr == `SPI_W_LEVEL) &&
                                 (ctrl_bus_data[2:0] != cmd_level);
-            if (wr_stb && (wr_addr == `SPI_W_LEVEL))
+            if (wr_exec && (wr_addr == `SPI_W_LEVEL))
                 level_target <= ctrl_bus_data[2:0];
-            outsel_switch_req <= wr_stb && (wr_addr == `SPI_W_OUTSEL) &&
+            outsel_switch_req <= wr_exec && (wr_addr == `SPI_W_OUTSEL) &&
                                  (ctrl_bus_data[0] != cmd_outsel);
-            if (wr_stb && (wr_addr == `SPI_W_OUTSEL))
+            if (wr_exec && (wr_addr == `SPI_W_OUTSEL))
                 outsel_target <= ctrl_bus_data[0];
         end
     end
 
-    spi_slave u_spi_slave (
+    spi_slave u_spi_slave_xmos (
         .clk            (clk),
         .rst_n          (ext_rst_n),
-        .spi_sclk       (spi_sclk),
-        .spi_cs_n       (spi_cs_n),
-        .spi_mosi       (spi_mosi),
-        .spi_miso       (spi_miso),
+        .spi_sclk       (spi_xmos_sclk),
+        .spi_cs_n       (spi_xmos_cs_n),
+        .spi_mosi       (spi_xmos_mosi),
+        .spi_miso       (spi_xmos_miso),
         .tx_data_in     (spi_tx_data),
-        .data_out       (ctrl_bus_data),
-        .data_valid     (ctrl_bus_valid),
-        .crc_err_pulse  (spi_crc_error),
-        .frame_err_pulse(spi_frame_error)
+        .data_out       (x_bus_data),
+        .data_valid     (x_bus_valid),
+        .crc_err_pulse  (x_crc_err),
+        .frame_err_pulse(x_frame_err)
+    );
+
+    spi_slave u_spi_slave_ap (
+        .clk            (clk),
+        .rst_n          (ext_rst_n),
+        .spi_sclk       (spi_ap_sclk),
+        .spi_cs_n       (spi_ap_cs_n),
+        .spi_mosi       (spi_ap_mosi),
+        .spi_miso       (spi_ap_miso),
+        .tx_data_in     (spi_tx_data_a),
+        .data_out       (a_bus_data),
+        .data_valid     (a_bus_valid),
+        .crc_err_pulse  (a_crc_err),
+        .frame_err_pulse(a_frame_err)
     );
 
     always_ff @(posedge clk) begin
@@ -537,6 +619,8 @@ module dac_ctrl_plane (
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
             read_addr_reg   <= `SPI_W_NOP;
+            read_addr_reg_a <= `SPI_W_NOP;
+            last_wr_src     <= SRC_XMOS;
             filter_list_len  <= '0;
             filter_cur_index <= '0;
             filter_id        <= 16'd0;
@@ -573,8 +657,10 @@ module dac_ctrl_plane (
             if (flash_buf_we) flash_buf_waddr <= flash_buf_waddr + 8'd1;
             if (ctrl_bus_valid) begin
                 if (ctrl_bus_data[31] == 1'b0) begin
-                    // WRITE
-                    case (ctrl_bus_data[30:24])
+                    // WRITE — gated by the per-port access mask (wr_denied):
+                    // a denied XMOS frame lands as BAD_ADDR, never executes.
+                    if (wr_exec) last_wr_src <= ctrl_bus_src;
+                    case (wr_exec ? ctrl_bus_data[30:24] : `SPI_W_NOP)
                         // AP Q0.24 normalized amplitude -> internal Q16.16
                         // NS code gain; 0xFFFFFF maps to 28.0 code units.
                         `SPI_W_VOLUME: sys_volume <= volume_q24_to_gain_q16(ctrl_bus_data[23:0]);
@@ -688,8 +774,9 @@ module dac_ctrl_plane (
                         default: ;
                     endcase
                 end else begin
-                    // READ
-                    read_addr_reg <= ctrl_bus_data[30:24];
+                    // READ — per-port latch; readback muxes are independent
+                    if (ctrl_bus_src == SRC_XMOS) read_addr_reg   <= ctrl_bus_data[30:24];
+                    else                          read_addr_reg_a <= ctrl_bus_data[30:24];
                 end
             end
         end
@@ -701,57 +788,66 @@ module dac_ctrl_plane (
     // Registering here is free: spi_slave samples tx_data_in only on the
     // synchronized cs_n falling edge, and read_addr_reg is written by the
     // PREVIOUS SPI frame, so spi_tx_data is stable many cycles before use.
-    logic [31:0] spi_tx_data_c;
-    always_comb begin
-        case (read_addr_reg)
+    logic [31:0] spi_tx_data_c, spi_tx_data_c_a;
+    // Shared readback function — both ports read the SAME register view; the
+    // per-port write-access gate (wr_denied) is the only partition. last_wr_src
+    // rides CTRL_STATE[6] so a master can see who touched control last.
+    function automatic logic [31:0] reg_read(input logic [6:0] a);
+        case (a)
             // 0x10: Magic ID
-            `SPI_R_MAGIC: spi_tx_data_c = `SPI_MAGIC_ID;
+            `SPI_R_MAGIC: reg_read = `SPI_MAGIC_ID;
             // 0x11: Sticky error register (readback; W1C via WRITE addr 0x16)
-            `SPI_R_STICKY_ERR: spi_tx_data_c = {24'd0, sticky_err};
+            `SPI_R_STICKY_ERR: reg_read = {24'd0, sticky_err};
             // 0x12: Control state
-            `SPI_R_CTRL_STATE: spi_tx_data_c = {26'd0, clk_source_sel, base_rate_sel, cmd_outsel, cmd_level};
+            `SPI_R_CTRL_STATE: reg_read = {25'd0, last_wr_src, clk_source_sel, base_rate_sel, cmd_outsel, cmd_level};
             // 0x13: Coefficient loader status
             //       {bank_valid[12], mgr_busy[11], load_done[10], clk_src[9],
             //        base_rate[8], current_bank_id[7:4], coef_bank_id[3:0]}
-            `SPI_R_COEF_STATUS: spi_tx_data_c = {19'd0, bank_valid_r, mgr_busy_r, coef_load_done_r,
+            `SPI_R_COEF_STATUS: reg_read = {19'd0, bank_valid_r, mgr_busy_r, coef_load_done_r,
                                     clk_source_sel, base_rate_sel, current_bank_id_r[3:0],
                                     coef_bank_id};
             // 0x14: Mute / relay status
-            `SPI_R_MUTE_STATUS: spi_tx_data_c = {27'd0, i2s_err_r, switch_busy_r,
+            `SPI_R_MUTE_STATUS: reg_read = {27'd0, i2s_err_r, switch_busy_r,
                                     hp_mute_r, line_mute_r, cmd_unmute};
             // 0x15: Clock / PLL status (+ DPD enable readback, bit 2)
-            `SPI_R_CLK_STATUS: spi_tx_data_c = {29'd0, dpd_enable, ddr4_calib_sync[1], clk_locked};
+            `SPI_R_CLK_STATUS: reg_read = {29'd0, dpd_enable, ddr4_calib_sync[1], clk_locked};
             // 0x16: Filter list status {video_mode[11], list_len[10:5], cur_index[4:0]}
-            `SPI_R_FILTER_LIST_STAT: spi_tx_data_c = {20'd0, video_mode, filter_list_len, filter_cur_index};
+            `SPI_R_FILTER_LIST_STAT: reg_read = {20'd0, video_mode, filter_list_len, filter_cur_index};
             // 0x17: Current + next-in-list filter IDs (next is informational only)
-            `SPI_R_FILTER_IDS: spi_tx_data_c = {filter_next_id, filter_id};
+            `SPI_R_FILTER_IDS: reg_read = {filter_next_id, filter_id};
             // 0x18: Cal store status
-            `SPI_R_CAL_STATUS: spi_tx_data_c = {20'd0, calibration_valid, cal_wr_ptr,
+            `SPI_R_CAL_STATUS: reg_read = {20'd0, calibration_valid, cal_wr_ptr,
                                                 cal_commit_pending, cal_active_bank};
             // 0x19: Cal active-bank readback (address set via 0x0F)
-            `SPI_R_CAL_RDDATA: spi_tx_data_c = {8'd0, cal_rd_data};
+            `SPI_R_CAL_RDDATA: reg_read = {8'd0, cal_rd_data};
             // 0x1A: Flash / boot-loader status
-            `SPI_R_BOOT_STATUS: spi_tx_data_c = {18'd0, boot_src, boot_record_count, boot_axi_fail,
+            `SPI_R_BOOT_STATUS: reg_read = {18'd0, boot_src, boot_record_count, boot_axi_fail,
                                     boot_crc_fail, boot_ok, boot_done, flash_cmd_busy};
             // 0x1B: Flash read-buffer byte (pointer set via 0x14 [15:8];
             //       no auto-inc — set pointer, then read, per byte)
-            `SPI_R_FLASH_RDDATA: spi_tx_data_c = {24'd0, flash_buf_rdata};
+            `SPI_R_FLASH_RDDATA: reg_read = {24'd0, flash_buf_rdata};
             // 0x1C: CMD_ERR_INFO — {addr[6:0], reason[3:0]} of the most
             //       recent sticky[4..7] event; cleared by the W1C (0x16)
-            `SPI_R_CMD_ERR_INFO: spi_tx_data_c = {20'd0, err_info_filter_axi,
+            `SPI_R_CMD_ERR_INFO: reg_read = {20'd0, err_info_filter_axi,
                                                    err_info_addr, err_info_reason};
-            `SPI_R_BENCH_STATUS: spi_tx_data_c = bench_status;
-            `SPI_R_STREAM_STATUS: spi_tx_data_c = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
+            `SPI_R_BENCH_STATUS: reg_read = bench_status;
+            `SPI_R_STREAM_STATUS: reg_read = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
                 stream_clocks_ready, stream_busy};
-            `SPI_R_CELL_TEST_L: spi_tx_data_c = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
-            `SPI_R_CELL_TEST_R: spi_tx_data_c = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
-            default: spi_tx_data_c = `SPI_READ_UNMAPPED;
+            `SPI_R_CELL_TEST_L: reg_read = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
+            `SPI_R_CELL_TEST_R: reg_read = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
+            default: reg_read = `SPI_READ_UNMAPPED;
         endcase
-    end
+    endfunction
 
-    always_ff @(posedge clk)
-        spi_tx_data <= spi_tx_data_c;
+    always_comb begin
+        spi_tx_data_c   = reg_read(read_addr_reg);
+        spi_tx_data_c_a = reg_read(read_addr_reg_a);
+    end
+    always_ff @(posedge clk) begin
+        spi_tx_data   <= spi_tx_data_c;
+        spi_tx_data_a <= spi_tx_data_c_a;
+    end
 
     // Single-register clock control: the LMK00304 mux select is the same
     // register as the DSP base-rate select. The top-level switch sequencer

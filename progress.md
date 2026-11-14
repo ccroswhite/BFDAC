@@ -5376,3 +5376,37 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   mirrored column positions = symmetric carrier fan-out + equal
   length per channel. Spares: J4 rows 8-12 (8/side) + bank-94
   remainder. Final sign-off still requires P&R (IOB packing + skew).
+
+2026-11-14: Dual-SPI host access — XMOS + AP independent slave ports
+-------------------------------------------------------------------
+- USER DECISION: AP gets direct SPI access to the FPGA (was: XMOS is
+  the sole SPI master, AP forwards through XMOS). The AP SPI bus is
+  digitally isolated on the carrier (3 fwd + 2 rev channels: sclk/
+  mosi/cs_n fwd, miso + spi_ap_irq_n back — MAX22445-class 3/1 + a
+  single-channel part for IRQ; isolator doubles as the 1.8V<->3.3V
+  level shifter, no 8T245 needed on the AP path).
+- RTL (dac_ctrl_plane): renamed spi_* -> spi_xmos_*; added spi_ap_*
+  + spi_ap_irq_n. Two spi_slave instances -> per-port pending-slot
+  write arbiter (XMOS wins ties, drains into shared ctrl_bus
+  decode); per-port read_addr latches; shared reg_read() function
+  feeds both readback registers.
+- DRAFT per-port write ACL (access-review TODO pending): XMOS may
+  write only {NOP, VOLUME, LEVEL, RATE, UNMUTE, OUTSEL, DAC_MODE,
+  STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; filter/bank/
+  cal/flash/bench/cell-test writes are AP-only. Denied XMOS write =
+  BAD_ADDR (sticky[5] + CMD_ERR_INFO), does NOT execute.
+- CTRL_STATE[6] = last_wr_src (0=XMOS, 1=AP) — bring-up debug for
+  ownership fights.
+- Pinmap: spi_xmos_* on J1 bank 90 (sclk moved GND-adjacent: cs A7,
+  mosi A8, sclk A9, miso A11, irq A12); spi_ap_* on bank 91 col A
+  (cs A17, mosi A18, sclk A19, miso A21, irq A22 — sclk/miso flank
+  GND A20). Both on the AP-facing J1 end, opposite cascode J4.
+- TB (tb_dac_ctrl_plane): existing spi_* tasks now drive the AP
+  port; new xmos_* driver; T10-T13 verify XMOS deny (no execute +
+  BAD_ADDR), XMOS-allowed write, dual readback, last_wr_src — ALL
+  PASS.
+- VU13P XDC: spi_* -> spi_xmos_* renamed; spi_ap_* gets IOSTANDARD/
+  false-path only (auto-placed on VU13P dev builds; real pins on
+  ACKU15S J1).
+- TODO added: SPI register access review — finalize the XMOS/AP
+  write partition + ownership policy for the firmware protocol doc.

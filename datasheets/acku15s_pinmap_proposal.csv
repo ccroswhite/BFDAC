@@ -146,10 +146,10 @@ relay_hp_mute,E5,J1,A14,B90_L1_P
 relay_hp_rails,A6,J1,B1,B90_L12_N
 relay_level[0],B6,J1,B2,B90_L12_P
 relay_line_mute,E4,J1,A13,B90_L1_N
-spi_cs_n,E1,J1,A8,B90_L4_N
-spi_miso,D5,J1,A11,B90_L5_N
-spi_mosi,F1,J1,A9,B90_L4_P
-spi_sclk,C2,J1,A7,B90_L9_P
+spi_xmos_cs_n,C2,J1,A7,B90_L9_P
+spi_xmos_miso,D5,J1,A11,B90_L5_N
+spi_xmos_mosi,E1,J1,A8,B90_L4_N
+spi_xmos_sclk,F1,J1,A9,B90_L4_P
 test_led,A9,J1,A16,B91_L11_N
 test_select_n,E3,J1,B13,B90_L2_N
 test_step_n,F4,J1,B14,B90_L2_P
@@ -163,3 +163,8 @@ led_debug[2],D1,J1,B8,B90_L6_N
 cf_cs_n[3],AR14,J2,A19,B65_L11_P
 cf_dq[3],AV15,J2,A25,B65_L9_P
 led_debug[3],D2,J1,B9,B90_L6_P
+spi_ap_cs_n,B10,J1,A17,B91_L11_P
+spi_ap_mosi,A11,J1,A18,B91_L12_N
+spi_ap_sclk,B11,J1,A19,B91_L12_P
+spi_ap_miso,C7,J1,A21,B91_L7_N
+spi_ap_irq_n,C8,J1,A22,B91_L7_P

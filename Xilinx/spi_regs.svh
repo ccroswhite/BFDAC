@@ -8,6 +8,15 @@
 //  address can mean different things per R/W bit). Unknown read -> 0xDEADBEEF;
 //  unknown write -> sticky[5] + CMD_ERR_INFO BAD_ADDR.
 //
+//  DUAL-PORT (2026-11): two independent SPI slaves share this register file —
+//  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
+//  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
+//  XMOS owns the audio-path subset {NOP, VOLUME, LEVEL, RATE, UNMUTE, OUTSEL,
+//  DAC_MODE, STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
+//  write registers (filter/bank, cal, flash/update, bench/cell-test) are
+//  AP-only — a denied XMOS write reports BAD_ADDR and does not execute.
+//  DRAFT partition pending the SPI access-review TODO.
+//
 //  Keep this file in sync with progress.md "SPI Register Map" and
 //  docs/coef_format_v2.md. TBs may keep numeric literals (they document the
 //  wire protocol) but RTL decode must use these names.

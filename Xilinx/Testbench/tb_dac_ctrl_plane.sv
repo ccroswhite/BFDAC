@@ -13,8 +13,13 @@ module tb_dac_ctrl_plane;
     logic ext_rst_n = 0;
     always #2.5 clk = ~clk;   // 200 MHz
 
+    // Dual SPI ports: existing spi_* tasks drive the AP (full-access) port;
+    // xmos_* tasks drive the XMOS (restricted) port.
     logic spi_sclk = 0, spi_cs_n = 1, spi_mosi = 0;
     logic spi_miso;
+    logic xmos_sclk = 0, xmos_cs_n = 1, xmos_mosi = 0;
+    logic xmos_miso;
+    wire  spi_ap_irq_n;
 
     // DUT status inputs (benign defaults)
     logic mgr_busy = 0, bank_valid = 0, coef_load_done = 1, i2s_err = 0, switch_busy = 0;
@@ -50,8 +55,11 @@ module tb_dac_ctrl_plane;
 
     dac_ctrl_plane dut (
         .clk(clk), .ext_rst_n(ext_rst_n),
-        .spi_sclk(spi_sclk), .spi_cs_n(spi_cs_n),
-        .spi_mosi(spi_mosi), .spi_miso(spi_miso),
+        .spi_xmos_sclk(xmos_sclk), .spi_xmos_cs_n(xmos_cs_n),
+        .spi_xmos_mosi(xmos_mosi), .spi_xmos_miso(xmos_miso),
+        .spi_ap_sclk(spi_sclk), .spi_ap_cs_n(spi_cs_n),
+        .spi_ap_mosi(spi_mosi), .spi_ap_miso(spi_miso),
+        .spi_ap_irq_n(spi_ap_irq_n),
         .level_switch_req(level_switch_req), .level_target(level_target),
         .outsel_switch_req(outsel_switch_req), .outsel_target(outsel_target),
         .mgr_busy(mgr_busy), .bank_valid(bank_valid), .coef_load_done(coef_load_done),
@@ -131,6 +139,40 @@ module tb_dac_ctrl_plane;
         logic [31:0] dc;
         spi_frame({1'b1, addr, 24'd0}, dc);
         spi_frame({1'b1, addr, 24'd0}, data);
+    endtask
+
+    // XMOS-port frame driver (identical timing, xmos_* signals)
+    task automatic xmos_frame(input [31:0] payload, output [31:0] miso_data);
+        logic [39:0] tx;
+        logic [39:0] rx;
+        tx = {payload, crc8_32(payload)};
+        rx = '0;
+        xmos_cs_n = 0;
+        #100;
+        for (int i = 39; i >= 0; i--) begin
+            xmos_mosi = tx[i];
+            #50 xmos_sclk = 1;
+            rx = {rx[38:0], xmos_miso};
+            if (i == 0) begin
+                #1 xmos_cs_n = 1;
+                #49 xmos_sclk = 0;
+            end else begin
+                #50 xmos_sclk = 0;
+            end
+        end
+        #200;
+        miso_data = rx[39:8];
+    endtask
+
+    task automatic xmos_write(input [6:0] addr, input [23:0] data);
+        logic [31:0] dc;
+        xmos_frame({1'b0, addr, data}, dc);
+    endtask
+
+    task automatic xmos_read(input [6:0] addr, output [31:0] data);
+        logic [31:0] dc;
+        xmos_frame({1'b1, addr, 24'd0}, dc);
+        xmos_frame({1'b1, addr, 24'd0}, data);
     endtask
 
     task automatic check(input string name, input [31:0] got, input [31:0] exp);
@@ -387,6 +429,47 @@ module tb_dac_ctrl_plane;
         spi_write(7'h1B, 24'd0);
         spi_write(7'h15, 24'd0);
         check("DPD disables while muted and source stopped", dpd_enable, 0);
+
+        // ---- Dual-port SPI: XMOS restricted subset vs AP full access --------
+        // T10: XMOS write to an AP-only register (FILTER_SELECT) must NOT
+        //      execute — filter_id unchanged, sticky[5] BAD_ADDR flagged.
+        begin
+            logic [15:0] fid_before;
+            fid_before = filter_id;
+            spi_write(7'h16, 24'h0000FF);         // clear sticky via AP
+            xmos_write(7'h0A, 24'h000001);        // XMOS tries filter select
+            check("T10 denied write leaves filter_id", filter_id, fid_before);
+            spi_read (7'h11, rd);
+            check("T10 sticky[5] on denied write", rd[5], 1'b1);
+            spi_read (7'h1C, rd);
+            check("T10 CMD_ERR_INFO BAD_ADDR", rd[10:0], {7'h0A, 4'h1});
+            spi_write(7'h16, 24'h0000FF);         // clean up
+        end
+
+        // T11: XMOS write to an allowed register (VOLUME) executes normally.
+        begin
+            xmos_write(7'h01, 24'h400000);
+            check("T11 XMOS volume write executes", sys_volume, 32'h00070000);
+            spi_write(7'h01, 24'h000000);         // restore via AP
+        end
+
+        // T12: XMOS reads see the full register map (MAGIC readable on both).
+        begin
+            xmos_read(7'h10, rd);
+            check("T12 XMOS reads MAGIC", rd, 32'hDAC02026);
+            spi_read (7'h10, rd);
+            check("T12 AP reads MAGIC",   rd, 32'hDAC02026);
+        end
+
+        // T13: last_wr_src — CTRL_STATE[6] = 1 after AP write, 0 after XMOS.
+        begin
+            spi_write (7'h01, 24'h000000);
+            spi_read  (7'h12, rd);
+            check("T13 last_wr_src=AP",   rd[6], 1'b1);
+            xmos_write(7'h01, 24'h000000);
+            spi_read  (7'h12, rd);
+            check("T13 last_wr_src=XMOS", rd[6], 1'b0);
+        end
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");
         else             $display("TB_FAIL: %0d errors", errors);

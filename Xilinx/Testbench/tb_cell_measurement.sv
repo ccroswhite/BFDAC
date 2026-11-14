@@ -44,7 +44,8 @@ module tb_cell_measurement;
 
     dac_ctrl_plane ctrl (
         .clk(ctrl_clk), .ext_rst_n(rst_n),
-        .spi_sclk(spi_sclk), .spi_cs_n(spi_cs_n), .spi_mosi(spi_mosi), .spi_miso(spi_miso),
+        .spi_xmos_sclk          (spi_sclk), .spi_xmos_cs_n           (spi_cs_n), .spi_xmos_mosi           (spi_mosi), .spi_xmos_miso           (spi_miso),
+        .spi_ap_sclk(1'b0), .spi_ap_cs_n(1'b1), .spi_ap_mosi(1'b0), .spi_ap_miso(), .spi_ap_irq_n(),
         .line_mute_status(!safe), .hp_mute_status(1'b0), .switch_busy(relay_switch_busy),
         .clk_locked(1'b1), .ddr4_init_calib_complete(1'b1),
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
