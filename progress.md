@@ -5351,3 +5351,28 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
 - Open review items for user: cascode bit-order within banks
   (permutable for escape routing); cf_* on bank 65 vs bank 64;
   16 spare bank-71 IOs reserved adjacent to cascode_r.
+
+2026-11-13 (cont): ACKU15S connector-end orientation constraint + mirrored cascode
+--------------------------------------------------------------------------------
+- USER CONSTRAINT (sketch): carrier layout has FF retimer block on one
+  side of the SoM and AP/XMOS/pre-reg on the other; all AP-facing
+  signaling (I2S, SPI, IRQ, reset, relays, LEDs, test) must exit on
+  the connector end OPPOSITE the cascode/FF-facing end.
+- SoM geometry: all 4 connectors (J1-J4) are in a row along ONE edge
+  (structural fig shows ~5 footprints, unlabeled). "Opposite sides"
+  = opposite ends of the row. If numbered sequentially, J1/J4 are
+  the two ends.
+- Current map already satisfies this: J4 = cascode_l/r + mclk (FF
+  end), J1 = all AP-facing slow IO (opposite end), J2 = cf_* +
+  VCCIO_64/65 (adjacent J1 end), J3 = power/boot/SelectMAP/MGT
+  (middle). Nothing AP-facing on J4, nothing analog-facing on J1.
+- VERIFY on mechanical datum arrival: confirm which physical end of
+  the connector row is J4 vs J1. If reversed, swap connector roles
+  in the pinmap (polarity is already correct; only numbering could
+  flip).
+- cascode_l/r re-mapped (5b962b0) to column-mirrored layout: L on J4
+  cols A/B, R on cols C/D, both spanning the same 32 signal rows
+  (14-60) so every L[i]/R[i] pair sits at the same connector row at
+  mirrored column positions = symmetric carrier fan-out + equal
+  length per channel. Spares: J4 rows 8-12 (8/side) + bank-94
+  remainder. Final sign-off still requires P&R (IOB packing + skew).
