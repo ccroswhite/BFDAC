@@ -5309,3 +5309,7 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   bank-65 repository).
 - TODO: cascode_l/r (2x64 SE outputs) bank assignment — candidates
   banks 64+65 (J2, 90 pins) vs 69+70 (J4, 96 pins).
+- Carrier mating connectors: 4x Samtec ADM6-60-01.5-L-4-2-A-TR
+  (240-pin board-to-board, mates the SoM's J1-J4). Datasheet +
+  footprint PDFs already in datasheets/ (samtec_adm6*.pdf) for the
+  future KiCad symbol/footprint work.
