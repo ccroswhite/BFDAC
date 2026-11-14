@@ -5313,3 +5313,9 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   (240-pin board-to-board, mates the SoM's J1-J4). Datasheet +
   footprint PDFs already in datasheets/ (samtec_adm6*.pdf) for the
   future KiCad symbol/footprint work.
+- SoM mechanicals: 80mm x 80mm board, 4x corner mounting holes inset
+  3.18mm from each edge (user manual Fig 2.8.1, top view only).
+  OPEN: J1-J4 connector XY placement / datum is NOT in the manual —
+  need ALINX mechanical DXF/STEP or the AC(K)U15 baseboard reference
+  files (precedent: ACVU13_BOT.dxf for the VU13P SoM). Carrier layout
+  is blocked on this.
