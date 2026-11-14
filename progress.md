@@ -5290,3 +5290,22 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   bit-exact. KNOWN-STALE: `Testbench/tb_fir_polyphase_stereo.sv`
   (red since TWO_STAGE_EN=1 became default ~Oct, last green Aug 19)
   — models single-stage x16 pacing, needs rework or retirement.
+
+2026-11-13 (cont): ACKU15S SoM migration begins — pin map + memory parts
+----------------------------------------------------------------------
+- Target FPGA: XCKU15P-2FFVE1517I (industrial, -2). NOTE: KU+ device
+  family was NOT installed in Vivado 2026.1 — user installing the
+  Kintex UltraScale+ library now; builds blocked until it lands.
+- `datasheets/acku15s_pins.csv`: J1-J4 connector tables parsed from
+  the ACKU15S V1.0 User Manual (472 rows, ~640 signal pins):
+  J1 = banks 90/91/93 (24 each, VCCO via J4); J2 = banks 64(48)+65(42)
+  VCCIO-adjustable; J3 = +12V power, boot straps, JTAG; J4 = banks
+  69/70/71 (48 each) + 94 (16) + MGT quads 224-231.
+- On-SoM fixed: DDR4 banks 66/67/68; QSPI0 boot flash (bank 0);
+  QSPI1 (bank-65 internal); 200 MHz sys clock; LEDs.
+- MEMORY PARTS (user): DDR4 = 5x Nanya NT5AD512M16C4-HR (x16, 80-bit
+  total, 5GB, 2666 Mbps max) — MIG component config input; QSPI =
+  2x Micron MT25QU512ABB1EW9 (64MB each: config-pins device +
+  bank-65 repository).
+- TODO: cascode_l/r (2x64 SE outputs) bank assignment — candidates
+  banks 64+65 (J2, 90 pins) vs 69+70 (J4, 96 pins).
