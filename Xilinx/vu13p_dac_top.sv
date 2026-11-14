@@ -50,7 +50,7 @@ module vu13p_dac_top #(
     // RELEASE geometry (ruling 2026-09-03): 256 x 256 = 1,048,576 taps, 4 MB/bank,
     // 31 filters on the 128 MiB coefficient flash unpacked. 1280 x 256 (5.24M)
     // is the proven upper bound (f15b P&R closed). Synth scripts may override.
-    parameter int NUM_MACS = 256,   // Any multiple of 64, <=2560 (URAM limit); taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int NUM_MACS = 80,    // NUM_MACS % MACS_PER_U == 0; taps = 16*NUM_MACS*TAPS_PER_PHASE (80 -> 5.24M @ TPP=256)
     parameter int TAPS_PER_PHASE = 256, // Power of 2, <=256; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int CFLASH_DEVICE_ADDR_BITS = 28, // 28 for four 2-Gb devices; 27 for four 1-Gb devices
     parameter int MUTE_DELAY_CYCLES = 4_000_000  // 20 ms @ 200 MHz: automute relay

@@ -17,7 +17,7 @@
 //    - RAMB36 : 768 SDP window BRAMs (28.6%), 0 LUTRAM
 // =============================================================================
 module fir_polyphase_stereo #(
-    parameter int NUM_MACS       = 128,   // 128 -> 8.39M effective taps; 256 -> 16.78M taps
+    parameter int NUM_MACS       = 128,   // multiple of MACS_PER_U; 80 -> 5.24M, 128 -> 8.39M, 256 -> 16.78M effective taps
     parameter int TAPS_PER_PHASE = 256,   // 16x-normalized TPP: COEF_DEPTH = 16 * TAPS_PER_PHASE
     parameter int DATA_WIDTH     = 24,
     parameter int COEF_WIDTH     = 18,
@@ -94,7 +94,16 @@ module fir_polyphase_stereo #(
     logic [$clog2(COEF_DEPTH)-1:0] coef_addr_r;
 
     localparam int TARGET_GRP_U = QUAD_URAM_EN ? 16 : 32;
-    localparam int URAM_GRP_SZ  = (NUM_URAMS < TARGET_GRP_U) ? NUM_URAMS : TARGET_GRP_U;
+
+    // Largest divisor of NUM_URAMS no larger than TARGET_GRP_U — keeps the
+    // broadcast tree legal for any NUM_URAMS (e.g. 20 -> 2 groups of 10).
+    function automatic int pick_grp_sz(input int n, input int tgt);
+        pick_grp_sz = 1;
+        for (int s = 2; s <= tgt; s++)
+            if (n % s == 0) pick_grp_sz = s;
+    endfunction
+
+    localparam int URAM_GRP_SZ  = pick_grp_sz(NUM_URAMS, TARGET_GRP_U);
     localparam int NUM_UGROUPS  = NUM_URAMS / URAM_GRP_SZ;
     localparam int NUM_USUPER   = ((NUM_UGROUPS >= 4) && (NUM_UGROUPS % 4 == 0)) ? 4 : 1;
     localparam int UGRP_PER_SUP = NUM_UGROUPS / NUM_USUPER;
@@ -102,8 +111,8 @@ module fir_polyphase_stereo #(
     initial begin
         assert (NUM_MACS % MACS_PER_U == 0)
             else $fatal(1, "NUM_MACS (%0d) must be a multiple of %0d", NUM_MACS, MACS_PER_U);
-        assert ((NUM_URAMS < TARGET_GRP_U) || (NUM_URAMS % TARGET_GRP_U == 0))
-            else $fatal(1, "NUM_MACS (%0d) must be a multiple of 64 at production scale", NUM_MACS);
+        assert (NUM_URAMS % URAM_GRP_SZ == 0)
+            else $fatal(1, "NUM_URAMS (%0d) not divisible by URAM_GRP_SZ (%0d)", NUM_URAMS, URAM_GRP_SZ);
         assert (COEF_DEPTH <= 4096)
             else $fatal(1, "COEF_DEPTH (%0d) exceeds URAM288 depth 4096", COEF_DEPTH);
     end

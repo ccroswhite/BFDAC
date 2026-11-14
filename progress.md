@@ -5274,3 +5274,19 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   constant-folded the biquad datapath to a passthrough; what remained
   was coefficient-bank/control residue. Gain is structural headroom,
   not tiles.
+
+2026-11-13 (cont): Production geometry -> 5.24M taps (NUM_MACS=80)
+-----------------------------------------------------------------
+- Retarget for the ACKU15S (XCKU15P) move: stored coefs 80*16*256 =
+  327,680 -> 5.24M effective taps. `vu13p_dac_top` default and
+  `run_synth_8m.tcl` env default 128->80.
+- `fir_polyphase_stereo`: URAM broadcast grouping generalized —
+  `pick_grp_sz()` picks the largest divisor of NUM_URAMS <=
+  TARGET_GRP_U (20 URAMs -> 2x10 groups; 32 -> 2x16 unchanged).
+  Replaces the "NUM_MACS multiple of 64" restriction.
+- Validated: elab NUM_MACS=80 (NUM_URAMS=20, GRP=10, GROUPS=2,
+  SUPER=1) and =128 (identical to pre-change) pass asserts;
+  tb_dac_dsp_core ALL PASS; run_all_milestones 1..3 + integration
+  bit-exact. KNOWN-STALE: `Testbench/tb_fir_polyphase_stereo.sv`
+  (red since TWO_STAGE_EN=1 became default ~Oct, last green Aug 19)
+  — models single-stage x16 pacing, needs rework or retirement.
