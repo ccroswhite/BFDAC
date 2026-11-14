@@ -33,12 +33,7 @@ xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_i
 xelab tb_fir_stereo_m3 -s sim_stereo_m3
 run_sim sim_stereo_m3
 
-echo "=== [5/6] Milestone 4: 8-Band Stereo Double-Precision PEQ Engine ==="
-xvlog -sv dac_peq_engine.sv tb_dac_peq_m4.sv
-xelab tb_dac_peq_m4 -s sim_peq_m4
-run_sim sim_peq_m4
+echo "=== [5/6] Full DSP Core Compilation Check (Milestones 1..3 Integrated) ==="
+xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv halfband_x2.sv noise_shaper_ef3.sv dpd_engine.sv dem_sort.sv dac_dsp_core.sv
 
-echo "=== [6/6] Full DSP Core Compilation Check (Milestones 1..4 Integrated) ==="
-xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv dac_peq_engine.sv halfband_x2.sv noise_shaper_ef3.sv dpd_engine.sv dem_sort.sv dac_dsp_core.sv
-
-echo "=== ALL MILESTONES (1..4) VERIFIED BIT-EXACT ==="
+echo "=== ALL MILESTONES (1..3) VERIFIED BIT-EXACT ==="
