@@ -9,7 +9,7 @@
 //      Option B 2x symmetric half-curve fold, per-lane SDP BRAM windows (DOB_REG=1).
 //    - Stage 1B (u_stage1b): 48-bit stereo rate-selectable Kaiser-Bessel half-band
 //      cascade (63t -> 63t -> 31t; rate_shift = 0..3 -> x8 / x4 / x2 / x1 DXD bypass)
-//      paced at 16 dsp_clk cycles for downstream dac_peq_engine and halfband_x2.
+//      paced at 16 dsp_clk cycles for downstream halfband_x2.
 //
 //  Resource footprint at 8.39M effective taps (NUM_MACS = 128, TAPS_PER_PHASE = 256):
 //    - DSP48E2: ~540 total stereo (~4.4% of XCVU13P)

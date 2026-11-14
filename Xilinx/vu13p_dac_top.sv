@@ -14,7 +14,7 @@
 //   dac_coef_subsys   : Coefficient loading + bank management + CDC
 //   dac_ctrl_plane    : SPI register file + relays
 //   i2s_master_ingress: FPGA-master serial clocks and tagged return-data capture
-//   dac_dsp_core      : FIRx16 + PEQ + HB1/2/3 + volume + dither + NS
+//   dac_dsp_core      : FIRx16 + HB1/2/3 + volume + dither + NS
 //                       + 64-element DEM + IOB-registered cascode outputs
 //                         (1 pin per cell, 128 total; complement generated at
 //                         the external reclock stage, Fig. 1b)
@@ -907,7 +907,7 @@ module vu13p_dac_top #(
     );
 
     // ==============================================================
-    // 5. DSP Core (FIRx16 + PEQ + HB1/2/3 + volume + dither + NS + DEM + cascode)
+    // 5. DSP Core (FIRx16 + HB1/2/3 + volume + dither + NS + DEM + cascode)
     // ==============================================================
     dac_dsp_core #(
         .NUM_MACS               (NUM_MACS),

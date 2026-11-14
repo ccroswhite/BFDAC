@@ -1,13 +1,11 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// DAC DSP Core — XCVU13P single-FPGA stereo design (Milestones 1–4 Integrated)
+// DAC DSP Core — XCVU13P single-FPGA stereo design (Milestones 1–3 Integrated)
 //
 // Signal chain (stereo throughout):
 //   1.  fir_polyphase_stereo : x16 polyphase FIR (Option B 2x Half-Curve Fold +
 //                              Quad-MAC URAM288 packing + Time-Muxed Adder Tree)
-//   1b. dac_peq_engine       : 8-band stereo 48x32-bit (84-bit acc) double-precision
-//                              Parametric Equalizer & voicing stage (Milestone 4)
 //   2.  halfband_x2 HB1      : x2 interpolation, 768k  -> 1.536 MHz, 63 taps
 //   3.  halfband_x2 HB2      : x2 interpolation, 1.536 -> 3.072 MHz, 31 taps
 //   4.  halfband_x2 HB3      : x2 interpolation, 3.072 -> 6.144 MHz, 15 taps
@@ -23,8 +21,7 @@ module dac_dsp_core #(
     parameter int TAPS_PER_PHASE = 64,
     parameter int CELL_TEST_MUTE_CYCLES = 4000000,
     parameter bit SYM_FOLD_EN  = 1'b1,
-    parameter bit QUAD_URAM_EN = 1'b1,
-    parameter int PEQ_BANDS    = 8
+    parameter bit QUAD_URAM_EN = 1'b1
 )(
     // Single clock domain — all logic runs on the 278/302 MHz audio-family dsp_clk
     input  logic        dsp_clk,
@@ -75,15 +72,6 @@ module dac_dsp_core #(
     input  logic [10:0]     bench_cmd,
     output logic            bench_ack,
     output logic            bench_ready,
-
-    // Parametric Equalizer (Milestone 4) — optional ports with safe defaults
-    input  logic                        peq_enable        = 1'b1,
-    input  logic                        peq_coef_wr_en    = 1'b0,
-    input  logic [$clog2(PEQ_BANDS)-1:0] peq_coef_wr_band = '0,
-    input  logic [2:0]                  peq_coef_wr_idx   = 3'd0,
-    input  logic signed [31:0]          peq_coef_wr_data  = 32'sh0,
-    input  logic                        peq_coef_swap_req = 1'b0,
-    output logic                        peq_active_bank,
 
     // Direct cascode cell outputs — IOB-registered on cell_clk, RTZ-encoded
     output logic [63:0] cascode_l,
@@ -138,38 +126,6 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
-    // 1b. Studio-Grade Parametric Equalizer (Milestone 4)
-    //     8-band stereo double-precision (48x32-bit, 84-bit accumulator) IIR
-    //     biquad engine at 768 / 705.6 kHz. Resets to bit-exact unity gain.
-    // =========================================================================
-    logic signed [47:0] peq_l, peq_r;
-    logic               peq_valid;
-
-    (* keep_hierarchy = "yes" *)
-    dac_peq_engine #(
-        .NUM_BANDS  (PEQ_BANDS),
-        .DATA_WIDTH (48),
-        .COEF_WIDTH (32),
-        .FRAC_BITS  (30)
-    ) u_peq (
-        .clk           (dsp_clk),
-        .rst_n         (sys_rst_n),
-        .peq_enable    (peq_enable),
-        .in_valid      (interp_l_valid),
-        .in_data_l     (interp_l),
-        .in_data_r     (interp_r),
-        .out_valid     (peq_valid),
-        .out_data_l    (peq_l),
-        .out_data_r    (peq_r),
-        .coef_wr_en    (peq_coef_wr_en),
-        .coef_wr_band  (peq_coef_wr_band),
-        .coef_wr_idx   (peq_coef_wr_idx),
-        .coef_wr_data  (peq_coef_wr_data),
-        .coef_swap_req (peq_coef_swap_req),
-        .active_bank   (peq_active_bank)
-    );
-
-    // =========================================================================
     // 2. Half-band x2 stage HB1 — stereo
     //    63 taps, 768k -> 1.536 MHz
     // =========================================================================
@@ -180,8 +136,8 @@ module dac_dsp_core #(
     u_hb1_l (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (peq_valid),
-        .data_in  (peq_l),
+        .in_valid (interp_l_valid),
+        .data_in  (interp_l),
         .out_valid(hb1_l_valid),
         .data_out (hb1_l)
     );
@@ -190,8 +146,8 @@ module dac_dsp_core #(
     u_hb1_r (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (peq_valid),
-        .data_in  (peq_r),
+        .in_valid (interp_r_valid),
+        .data_in  (interp_r),
         .out_valid(hb1_r_valid),
         .data_out (hb1_r)
     );

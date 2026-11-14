@@ -793,7 +793,7 @@ resize_pblock pb_stereo_fir_r -add {SLR2}
 # clr_s3 clears accumulators while serial_enable is low for thousands of
 # clocks, so a 1-2 cycle spread of release across the MAC array cannot corrupt
 # state.  ~6.6 ns = 2 dsp_clk cycles.  Keeps synchronous reset recovery active
-# on u_automute, u_coef_mgr, u_peq, and the FIFO Gray pointers.
+# on u_automute, u_coef_mgr, and the FIFO Gray pointers.
 # Bucketed per channel/family: a single >10k-object -to filter is dropped
 # entirely at XDC read time (Constraints 18-929), so keep each group small.
 set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]

@@ -5246,3 +5246,31 @@ pin-stub overlaps at dense label clusters -> VISUAL CHECK in
 schematic editor needed to confirm no real net merge (VAP_IO to
 GND_AP through LED R + NMOS is the suspicious path - if the PV
 driver LED_A/LED_K stubs touch, that's the short to fix).
+
+2026-11-13: PEQ REMOVED from FPGA production signal path (user ruling)
+---------------------------------------------------------------------
+- The 8-band stereo double-precision parametric EQ (`dac_peq_engine.sv`,
+  Milestone 4) is DELETED from the design to recover LUT/BRAM/DSP
+  resources for future features. EQ/voicing is NOT part of the FPGA
+  signal path; any future tone/EQ function must be re-added as a new
+  feature, not assumed present.
+- `dac_dsp_core.sv`: PEQ params/ports (`PEQ_BANDS`, `peq_enable`,
+  `peq_coef_wr_*`, `peq_coef_swap_req`, `peq_active_bank`) and the
+  `u_peq` instance removed. HB1 now consumes FIR/interpolator output
+  directly (`interp_l`/`interp_l_valid`, `interp_r`/`interp_r_valid`)
+  — the PEQ was never wired at the top level (all ports default-tied),
+  so this also removes a live-but-uncontrolled block from production.
+- `tb_dac_peq_m4.sv` deleted; `run_all_milestones.sh` M4 step removed,
+  integration compile no longer references `dac_peq_engine.sv`
+  (milestones now 1..3 + integration).
+- `vu13p_dac_top.sv` chain comments, `fir_polyphase_stereo.sv`
+  downstream-timing comment, `vu13p_dac_top.xdc` `u_peq`
+  reset-constraint comment updated.
+- Signal chain is now: FIRx16 -> HB1/2/3 -> volume -> pace -> dither
+  -> NS -> DEM -> IOB/RTZ cascode.
+- Measured recovery (post-synth, NUM_MACS=128/TPP=256): ~2.5K LUT
+  primitives (~78.1K CLB LUTs vs ~80.8K), ~6.6K FDRE, 8 DSP48E2, 0
+  BRAM/URAM — the unconnected peq_* ports meant synthesis had already
+  constant-folded the biquad datapath to a passthrough; what remained
+  was coefficient-bank/control residue. Gain is structural headroom,
+  not tiles.
