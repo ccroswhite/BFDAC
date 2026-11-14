@@ -5319,3 +5319,35 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   need ALINX mechanical DXF/STEP or the AC(K)U15 baseboard reference
   files (precedent: ACVU13_BOT.dxf for the VU13P SoM). Carrier layout
   is blocked on this.
+
+2026-11-13 (cont): ACKU15S pinmap audit — proposal verified + pins.csv fixed
+---------------------------------------------------------------------------
+- Full audit of `acku15s_pinmap_proposal.csv` (164 ports) vs
+  `acku15s_pins.csv` + Vivado package DB (xcku15p-ffve1517-2-i):
+  all ports covered, zero duplicate pins, all jpin->fpga_pin pairs
+  verified against connector tables, zero non-GP pins, mclk on
+  IS_GLOBAL_CLK pair (F11/E11, B94_L6). Proposal is structurally sound.
+- CORRECTION to earlier note: J4 has NO MGT rows — all SerDes quads
+  are on J1 (cols C/D + rows 47-60 of A/B), J2 (rows 32-60 C/D), and
+  J3 (rows 7-50 all cols). The cascode connector carries only
+  low-speed single-ended IO. J4 GND: full-width ground rows every
+  ~3 rows on all 4 columns (19 per column pair) — good SSO return
+  density for the 128 cascode drivers.
+- Power architecture confirmed: J3 = +12V input + VCCIO_69(D4)/70(C4)/
+  71(B4) — cascode bank VCCO is carrier-fed through J3; J4 A1 =
+  VCCO_90_91_93_94 (bank-94/mclk VCCO); J4 B1/C1/D1 = POWER_SCL/SDA/
+  POWER_ALT (SoM VCCO-adjust I2C + alt power); J2 A28/A29 =
+  VCCIO_64/65. All user-IO bank VCCOs are carrier-supplied -> 1.8V
+  everywhere = LVCMOS18.
+- JTAG on J2 B1/B2/C1/C2 (TDI/TDO/TMS/TCK). J3 carries a full
+  SelectMAP slave port (DATA0-7, CCLK, DONE, INIT_B, PROG_B, RDWR_B)
+  + BOOT_M0/M1/M2 straps — SelectMAP_DATA4-7 share balls with QSPI1
+  flash pins (AM12/AN12/AR12/AR13); relevant when boot-failover
+  resumes.
+- pins.csv fix (9c001f8): 12 pins restored that the PDF table parser
+  dropped — VCCIO_64/65/71, VCCO_90_91_93_94, POWER_SCL, BOOT_M1,
+  SELECTMAP_INIT_B, SELECTMAP_PROG_RAM_B, FMC1/2_VREF rows,
+  B65_T2U/T3U. All 960 pins (4 conn x 240) now present.
+- Open review items for user: cascode bit-order within banks
+  (permutable for escape routing); cf_* on bank 65 vs bank 64;
+  16 spare bank-71 IOs reserved adjacent to cascode_r.
