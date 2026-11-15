@@ -19,7 +19,7 @@ set URAMS_PER_SLR  [expr {$NUM_MACS / 2 / 4}]
 
 open_checkpoint impl_f15_synth.dcp
 
-# --- Corrected CDC constraints (mirror of vu13p_dac_top.xdc 5 / 5b) ----------
+# --- Corrected CDC constraints (mirror of acku15s_dac_top.xdc 5 / 5b) ----------
 set ld_seq  [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_loader/* && IS_SEQUENTIAL}]
 set mgr_seq [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_mgr/* && IS_SEQUENTIAL}]
 puts "CDC: loader sequential cells = [llength $ld_seq], mgr sequential cells = [llength $mgr_seq]"
@@ -99,4 +99,4 @@ write_checkpoint -force impl_f15b_routed.dcp
 report_cdc            -file impl_f15b_route_cdc.rpt
 report_design_analysis -congestion -file impl_f15b_congestion.rpt
 
-puts "impl_f15b_OK: vu13p_dac_top routed; reports written"
+puts "impl_f15b_OK: acku15s_dac_top routed; reports written"

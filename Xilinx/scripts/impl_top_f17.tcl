@@ -31,7 +31,7 @@ read_verilog -sv $sv_files
 read_ip ip/ddr4_0/ddr4_0.xci
 read_ip ip/axi_dwc_coef/axi_dwc_coef.xci
 
-read_xdc vu13p_dac_top.xdc
+read_xdc acku15s_dac_top.xdc
 
 # Four 1-Gb carrier devices use a reduced-capacity address map; override with
 # CFLASH_DEVICE_ADDR_BITS=27 in the environment for that population.
@@ -42,7 +42,7 @@ if {[info exists ::env(CFLASH_DEVICE_ADDR_BITS)]} {
 if {$CFLASH_DEVICE_ADDR_BITS != 27 && $CFLASH_DEVICE_ADDR_BITS != 28} {
     error "CFLASH_DEVICE_ADDR_BITS must be 27 (1 Gb) or 28 (2 Gb)"
 }
-synth_design -top vu13p_dac_top -part xcvu13p-fhgb2104-2-i \
+synth_design -top acku15s_dac_top -part xcku15p-ffve1517-2-i \
     -generic NUM_MACS=$NUM_MACS -generic TAPS_PER_PHASE=$TAPS_PER_PHASE \
     -generic CFLASH_DEVICE_ADDR_BITS=$CFLASH_DEVICE_ADDR_BITS
 
@@ -140,4 +140,4 @@ write_checkpoint -force impl_f17_routed.dcp
 report_cdc            -file impl_f17_route_cdc.rpt
 report_design_analysis -congestion -file impl_f17_congestion.rpt
 
-puts "impl_f17_OK: vu13p_dac_top routed; reports written"
+puts "impl_f17_OK: acku15s_dac_top routed; reports written"

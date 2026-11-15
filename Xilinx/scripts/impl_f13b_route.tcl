@@ -10,7 +10,7 @@ set_param general.maxThreads 8
 
 open_checkpoint impl_f13_placed.dcp
 
-# Corrected exception (mirrors vu13p_dac_top.xdc; the old mis-scoped one
+# Corrected exception (mirrors acku15s_dac_top.xdc; the old mis-scoped one
 # matched nothing so it left no stale constraint in the checkpoint)
 set_max_delay -datapath_only 3.3 \
     -from [get_cells -hierarchical -filter {NAME =~ u_boot_loader/fifo_mem*}]
@@ -27,4 +27,4 @@ report_timing_summary -file impl_f13b_route_timing.rpt -max_paths 50
 report_design_analysis -congestion -file impl_f13b_congestion.rpt
 write_checkpoint -force impl_f13b_routed.dcp
 
-puts "IMPL_F13B_OK: vu13p_dac_top routed; reports written"
+puts "IMPL_F13B_OK: acku15s_dac_top routed; reports written"

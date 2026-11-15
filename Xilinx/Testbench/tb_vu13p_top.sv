@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// Integration testbench for vu13p_dac_top ? REFRESHED Round 30 (todo #14)
+// Integration testbench for acku15s_dac_top ? REFRESHED Round 30 (todo #14)
 //
 // Matches the current top: differential 200M/mclk inputs, behavioral
 // dual-frequency clock selector, Fig. 4d relay set, led_debug, QSPI1, 80-bit
@@ -69,8 +69,8 @@ module tb_vu13p_top;
     wire [63:0] cascode_r;
 
     // DDR4 (stubbed inside dac_ddr4_if; pins float / tie off)
-    wire [63:0] ddr4_dq;
-    wire [7:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
+    wire [79:0] ddr4_dq;
+    wire [9:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
     wire [16:0] ddr4_addr;
     wire [1:0]  ddr4_ba;
     wire [0:0]  ddr4_bg, ddr4_cs_n, ddr4_cke, ddr4_odt, ddr4_ck_t, ddr4_ck_c;
@@ -97,7 +97,7 @@ module tb_vu13p_top;
     defparam u_dut.u_automute.SWITCH_CYCLES      = 26'd200;
     defparam u_dut.u_automute.RAIL_SETTLE_CYCLES = 26'd600;
 
-    vu13p_dac_top #(
+    acku15s_dac_top #(
         .NUM_MACS          (4),     // sim-size FIR (production: 1024)
         .MUTE_DELAY_CYCLES (2000)   // 10 us relay-release wait (production: 20 ms)
     ) u_dut (
@@ -394,7 +394,7 @@ module tb_vu13p_top;
         // --- Summary -------------------------------------------------------
         $display("==========================================================");
         if (fail_count == 0)
-            $display("ALL TESTS PASSED (%0d) - vu13p_dac_top integration OK", pass_count);
+            $display("ALL TESTS PASSED (%0d) - acku15s_dac_top integration OK", pass_count);
         else
             $display("FAILURES: %0d passed, %0d FAILED", pass_count, fail_count);
         $display("==========================================================");

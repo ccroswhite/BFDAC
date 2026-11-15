@@ -3,7 +3,7 @@
 #   controller maxes at 72-bit -> configured 64-bit data (4 devices, 8 GB
 #   addressable; 5th device unused by this controller). Part: MIG list has
 #   MT40A1G16RC-062E as the 1Gx16 -062E device (KD not listed; RC config-
-#   compatible). 2400 MT/s, on-module 200 MHz ref clk, xcvu13p-fhgb2104-2-i.
+#   compatible). 2400 MT/s, on-module 200 MHz ref clk, xcku15p-ffve1517-2-i.
 #   AXI: MIG native 512-bit slave; axi_dwidth_converter bridges the 128-bit
 #   read-only master in coef_bank_loader.
 #   vivado -mode batch -source scripts/gen_ddr4_mig.tcl -journal gen_mig.jou -log gen_mig.log
@@ -12,7 +12,7 @@ set_param general.maxThreads 8
 set ip_dir [file normalize "./ip"]
 file mkdir $ip_dir
 
-create_project -in_memory -part xcvu13p-fhgb2104-2-i
+create_project -in_memory -part xcku15p-ffve1517-2-i
 set_property target_language Verilog [current_project]
 
 # ---------------------------------------------------------------- ddr4_0

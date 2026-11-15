@@ -5423,3 +5423,12 @@ User: "follow what we already have for the XMOS SPI in the current schematic ...
 - **TPs:** TP514-517 relabeled SPI_XMOS_*, new TP527-531 for SPI_AP_* + SPI_AP_IRQ_N.
 - Verify: regen clean; `check_seaf_pinmap.py` PASS (240/240); zero stale generic `SPI_*` labels; no B71 pin collisions. `kicad_xcheck.py` RESULT: FAIL(1) — **PRE-EXISTING** (identical on HEAD): VAP_IO merged into the GND_AP net somewhere (netlist shows 498-node GND_AP absorbing VAP_IO label endpoints, e.g. R9020.1, all C501-516 AP-side cap pins). Real schematic bug worth its own pass — union-find on labels+wires found no label pair, so the merge is symbol-pin mediated. Suspects: SEAF40/J855 pin geometry or a power-flag overlap. TODO added.
 - Docs: `docs/SEAF_PIN_ASSIGNMENTS.md` row-A table updated; bom.md item 21/22/23 annotated (U509/U513, three-bus model: XMOS_SPI / AP_SPI / HOST_*-private).
+
+## 2026-11-14 — ACKU15S-4 RTL rework: vu13p_dac_top -> acku15s_dac_top (KU15P migration begins)
+
+- `git mv` `Xilinx/vu13p_dac_top.sv` -> `acku15s_dac_top.sv` and `vu13p_dac_top.xdc` -> `acku15s_dac_top.xdc`; module renamed. Header now documents the ACKU15S platform: XCKU15P-2FFVE1517I, DDR4 5x NT5AD512M16C4-HR (80-bit non-ECC, banks 66-68, 2666 Mbps, ref AR32/AT32), clk_200m = SoM user clock B94_L5 (G12/G11), mclk on B94_L6 GC pair, qspi1 = fixed SoM pins (not connector), cascode col-mirrored J4 69/70/71.
+- DDR4 widened 64->80 DQ / 8->10 DQS/DM in top + both `dac_ddr4_if` variants (stub + mig wrapper; mig file marked PENDING regen for the Nanya/KU15P config).
+- `tb_vu13p_top.sv`/`tb_vu13p_mig.sv`: module ref renamed, DDR4 wires widened, mig TB now instantiates 5x x16 memory models (was 4 for the 64-bit config).
+- All TCL scripts bulk-updated: top name + `xcvu13p-fhgb2104-2-i` -> `xcku15p-ffve1517-2-i` (17 part refs). `elab_top.tcl` now excludes `dac_ddr4_if_mig.sv` (IP-bound until ACKU15S-3) and reports ELAB_OK.
+- XDC header marks every pin assignment PENDING rewrite from `datasheets/acku15s_pinmap_proposal.csv` (ACKU15S-2).
+- Verify: `synth_design -rtl` elaboration on xcku15p-ffve1517-2-i = 0 errors (286 pre-existing lint warnings); `tb_vu13p_top` xvlog clean. Port names unchanged vs pinmap CSV; no ports added/removed.

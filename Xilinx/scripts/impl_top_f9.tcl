@@ -27,9 +27,9 @@ read_verilog -sv $sv_files
 read_ip ip/ddr4_0/ddr4_0.xci
 read_ip ip/axi_dwc_coef/axi_dwc_coef.xci
 
-read_xdc vu13p_dac_top.xdc
+read_xdc acku15s_dac_top.xdc
 
-synth_design -top vu13p_dac_top -part xcvu13p-fhgb2104-2-i \
+synth_design -top acku15s_dac_top -part xcku15p-ffve1517-2-i \
     -generic NUM_MACS=$NUM_MACS -generic TAPS_PER_PHASE=$TAPS_PER_PHASE
 
 report_utilization    -file impl_f9_synth_utilization.rpt
@@ -106,4 +106,4 @@ report_timing_summary -file impl_f9_route_timing.rpt -max_paths 50
 report_design_analysis -congestion -file impl_f9_congestion.rpt
 write_checkpoint -force impl_f9_routed.dcp
 
-puts "IMPL_F9_OK: vu13p_dac_top routed; reports written"
+puts "IMPL_F9_OK: acku15s_dac_top routed; reports written"

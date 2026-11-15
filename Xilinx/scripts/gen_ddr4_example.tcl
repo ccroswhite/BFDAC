@@ -7,7 +7,7 @@ set_param general.maxThreads 8
 set ex_dir [file normalize "./sim_mig/ddr4_example"]
 file mkdir $ex_dir
 
-create_project -force ddr4_ex_proj ./sim_mig/ddr4_ex_proj -part xcvu13p-fhgb2104-2-i
+create_project -force ddr4_ex_proj ./sim_mig/ddr4_ex_proj -part xcku15p-ffve1517-2-i
 set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
 

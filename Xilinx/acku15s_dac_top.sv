@@ -1,12 +1,18 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// vu13p_dac_top -- Wire-only top level for XCVU13P stereo DAC
+// acku15s_dac_top -- Wire-only top level for XCKU15P stereo DAC
 //
-// Platform : Xilinx XCVU13P on Alinx ACVU13 SOM
-//   - 10 GB DDR4 (C0, banks 61/62/63), C1 unused -- its 200 MHz CLKREF used as clk_200m
-//   - QSPI Flash on-module
-//   - 377 HP IOs exposed via Samtec connectors
+// Platform : Xilinx XCKU15P-2FFVE1517I on Alinx ACKU15S SOM (was XCVU13P/ACVU13)
+//   - DDR4: 5x NT5AD512M16C4-HR x16 = 80-bit non-ECC, banks 66/67/68,
+//     2666 Mbps, on-module 200 MHz ref AR32/AT32
+//   - clk_200m: SoM 200 MHz user clock, B94_L5_P/N (G12/G11)
+//   - mclk: GC pair B94_L6 (F11/E11) on J4
+//   - QSPI flash 2x MT25QU512ABB1EW9 on-module (QSPI0 config / QSPI1 records,
+//     fixed SoM pins - not on connectors)
+//   - cascode buses: column-mirrored on J4 banks 69/70/71
+//   - control/AP IOs: J1 banks 90/91; coefficient flash: J2 bank 65
+//   - port->pin map: datasheets/acku15s_pinmap_proposal.csv
 // Single-FPGA design
 //
 // Sub-modules:
@@ -19,7 +25,7 @@
 //                         (1 pin per cell, 128 total; complement generated at
 //                         the external reclock stage, Fig. 1b)
 //
-// Target: XCVU13P-2FHGB2104I, 278/302 MHz DSP clock
+// Target: XCKU15P-2FFVE1517I, 278/302 MHz DSP clock
 //
 // Clock architecture (dual oscillator enables, Round 30):
 //   Two CCHD-957 oscillators feed the shared XOCLK network through their
@@ -46,7 +52,7 @@
 //   pipeline (FIR, halfbands, NS, DEM, staging, cascode IOBs -> pins low).
 // =============================================================================
 
-module vu13p_dac_top #(
+module acku15s_dac_top #(
     // RELEASE geometry (ruling 2026-09-03): 256 x 256 = 1,048,576 taps, 4 MB/bank,
     // 31 filters on the 128 MiB coefficient flash unpacked. 1280 x 256 (5.24M)
     // is the proven upper bound (f15b P&R closed). Synth scripts may override.
@@ -58,10 +64,10 @@ module vu13p_dac_top #(
                                                  // flips (shorten in simulation)
 )(
     // Base Clocks & Reset (all differential)
-    input  logic        clk_200m_p,    // SOM 200 MHz system clock (+ side)
-    input  logic        clk_200m_n,    // SOM 200 MHz system clock (- side)
-    input  logic        mclk_p,        // Carrier single-ended LVCMOS18 clock copy
-    input  logic        mclk_n,        // Reserved, unused (carrier no-connect)
+    input  logic        clk_200m_p,    // SOM 200 MHz user clock, B94_L5_P (G12)
+    input  logic        clk_200m_n,    // SOM 200 MHz user clock, B94_L5_N (G11)
+    input  logic        mclk_p,        // Carrier LVCMOS18 clock copy, B94_L6_P (F11, GC)
+    input  logic        mclk_n,        // B94_L6_N (E11, GC) - reserved, carrier no-connect
     output logic        clk_sel,       // Carrier enable polarity: 0=49.152, 1=45.1584 MHz
 
     input  logic        ext_rst_n,
@@ -101,13 +107,13 @@ module vu13p_dac_top #(
     output logic        led_status,
     output logic [3:0]  led_debug,     // [3]=clk_locked [2]=ddr4_calib [1]=i2s_err [0]=force_zero
 
-    // QSPI Flash 1 -- coefficient storage (bank 65, directly accessible)
-    // Flash 0 accessed via STARTUPE3 (config pins, bitstreams)
+    // QSPI Flash 1 -- on-module user flash (MT25QU512, fixed SoM pins:
+    // AV11/AM12-AR13, not on connectors). Flash 0 accessed via STARTUPE3.
     output logic        qspi1_cs_n,
     inout  wire  [3:0]  qspi1_dq,
 
     // Carrier coefficient flash (bom item 18b): four Macronix MX66UM NORs
-    // on one x1 SPI bus, bank-70 pins (XDC s11b). All four CS sites are active.
+    // on one x1 SPI bus, bank-65 pins on J2. All four CS sites are active.
     // CFLASH_DEVICE_ADDR_BITS selects 2-Gb (28) vs 1-Gb (27) local addressing.
     // SCK is a user-IO forwarded copy of the engine clock.
     output logic        cf_sck,
@@ -115,22 +121,22 @@ module vu13p_dac_top #(
     inout  wire  [3:0]  cf_dq,
 
     // Direct cascode cell outputs -- IOB-registered on cell_clk, < 50 ps
-    // inter-cell skew. 1 pin per cell, 64 per channel, 128 total (pins: XDC s8,
-    // banks 64+65 = L, 67+69 = R); external MC100EP52 reclock FFs generate the
+    // inter-cell skew. 1 pin per cell, 64 per channel, 128 total. On ACKU15S:
+    // column-mirrored on J4 banks 69/70/71 (L = cols A/B, R = cols C/D);
+    // external MC100EP52 reclock FFs generate the
     // complementary base-drive pair (Fig. 1b)
     output logic [63:0] cascode_l,
     output logic [63:0] cascode_r,
 
-    // DDR4 Interface -- C0 controller, banks 61/62/63
-    // TOPOLOGY (2026-08-11): SOM has 5x MT40A1G16KD (80 DQ) but the DDR4
-    // MIG controller maxes at 72-bit -> 64-bit config (4 chips, 8 GB);
-    // 5th chip unused. 8 byte lanes.
-    input  wire         ddr4_clkref_p,   // on-module 200 MHz C0_DDR4_CLKREF
+    // DDR4 Interface -- banks 66/67/68, on-module 200 MHz ref (AR32/AT32)
+    // TOPOLOGY (ACKU15S): 5x Nanya NT5AD512M16C4-HR x16 = 80 DQ non-ECC,
+    // 10 GB, 2666 Mbps; 10 byte lanes.
+    input  wire         ddr4_clkref_p,
     input  wire         ddr4_clkref_n,
-    inout  wire  [63:0] ddr4_dq,
-    inout  wire  [7:0]  ddr4_dqs_c,
-    inout  wire  [7:0]  ddr4_dqs_t,
-    inout  wire  [7:0]  ddr4_dm_dbi_n,
+    inout  wire  [79:0] ddr4_dq,
+    inout  wire  [9:0]  ddr4_dqs_c,
+    inout  wire  [9:0]  ddr4_dqs_t,
+    inout  wire  [9:0]  ddr4_dm_dbi_n,
     output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,

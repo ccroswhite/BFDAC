@@ -108,7 +108,7 @@ module tb_qspi_subsys;
         .m_axi_bready()
     );
 
-    // Carrier pins use the same common IOB-register latency as vu13p_dac_top.
+    // Carrier pins use the same common IOB-register latency as acku15s_dac_top.
     logic carrier_sck_iob = 1'b0, carrier_mosi_iob = 1'b0;
     logic [3:0] carrier_cs_n_iob = 4'hF;
     always_ff @(posedge clk) begin

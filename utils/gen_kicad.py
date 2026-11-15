@@ -171,7 +171,7 @@ def _alinx_symbol(name, pins, used):
         units += _box_unit(name, u + 1, col[:30], col[30:], width=45.72)
     return units
 
-# Control-plane IOs on J1 bank 71 (MUST match vu13p_dac_top.xdc s4-s7, s10, 5b).  {Alinx signal: label}
+# Control-plane IOs on J1 bank 71 (MUST match acku15s_dac_top.xdc s4-s7, s10, 5b (renamed from vu13p_dac_top.xdc 2026-11-14)).  {Alinx signal: label}
 # 2026-11-14 dual-SPI: SPI_* -> SPI_XMOS_* rename (XMOS bus, U501); SPI_AP_* = second slave port for the
 # host AP (U505 + U506; RTL ports spi_ap_*).  ACVU13P pin picks below are provisional - the ACKU15S
 # pinmap puts spi_ap_* on J1 bank 91 (datasheets/acku15s_pinmap_proposal.csv).
@@ -1046,7 +1046,7 @@ def write_som_seed_board():
         f.write("\n".join(L) + "\n")
 
 # Coefficient flash bus on J1 bank 70 (bom 18a, 2026-10-05: bank 70 is 51/51 free, VCCIO_70 = V18, no clock/
-# cascode neighbours; MUST match vu13p_dac_top.xdc s11b).  {Alinx signal: schematic label}.  9 carrier IOs:
+# cascode neighbours; MUST match acku15s_dac_top.xdc s11b (renamed 2026-11-14)).  {Alinx signal: schematic label}.  9 carrier IOs:
 # C, DQ0..3, S#0..3.  RESET# (A4, dedicated, internal pull-up) is strapped to V18; DQ3 (D4) = HOLD# is the pulled-up data line; no CF_RST IO.
 #   CF_CLK  J35 J1-A20 | CF_CS0 J36 J1-A19 | CF_DQ0 H36 J1-A23 | CF_DQ1 G36 J1-A22 | CF_DQ2 H34 J1-B20 | CF_DQ3 G34 J1-B19
 #   CF_CS1  H37 J1-A26 | CF_CS2 H38 J1-A25 | CF_CS3 G37 J1-B29
@@ -2508,7 +2508,7 @@ def main():
     fpga.text("Coefficient flash (bom 18b): %d x MX66UM2G45GXRI00 2 Gb 1.8 V x1 SPI NOR populated (U320-U323 = 8 Gb; 1-Gb same-land-pattern alternative is four chips / reduced library), "
               "x1 FAST READ4B 0Ch at 100 MHz with 8 dummy clocks; 2-Gb mode = 88 filters at 10M taps, 18-bit mirrored; "
               "1-Gb mode = 44 complete filters under 128-MiB per-device sector boundaries. One bus: CF_CLK, CF_DQ0..3 shared, four chip selects CF_CS0..3. "
-              "J1 bank 70 (V18): CLK J35, CS0 J36, DQ0 H36, DQ1 G36, DQ2 H34, DQ3 G34, CS1 H37, CS2 H38, CS3 G37 - matches vu13p_dac_top.xdc s11b. "
+              "J1 bank 70 (V18): CLK J35, CS0 J36, DQ0 H36, DQ1 G36, DQ2 H34, DQ3 G34, CS1 H37, CS2 H38, CS3 G37 - matches acku15s_dac_top.xdc s11b. "
               "x1 at 100 MHz target, forwarded SCK on user IO (not STARTUPE3). 10k pull-ups on each CS# and on unused x8 SIO2/SIO3; RESET# strapped to V18. "
               "Layout: place next to J1 A19-A26/B19-B29 on the carrier top side (NOT under the SoM); all CF_* <= 75 mm pad-to-ball, "
               "CLK/DQ daisy-chained U320->U323 with <= 10 mm stubs, 33R series on CF_CLK at the connector. Macronix 24-ball 5x5 ball map + land pattern verified against the 1-Gb/2-Gb datasheets." % CFLASH_POPULATED, 20, 470)

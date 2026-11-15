@@ -21,4 +21,4 @@ report_timing_summary -file impl_f13f_route_timing.rpt -max_paths 50
 report_utilization    -file impl_f13f_route_utilization.rpt
 write_checkpoint -force impl_f13f_routed.dcp
 
-puts "IMPL_F13F_OK: vu13p_dac_top routed; reports written"
+puts "IMPL_F13F_OK: acku15s_dac_top routed; reports written"

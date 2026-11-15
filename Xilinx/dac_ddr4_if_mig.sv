@@ -2,12 +2,11 @@
 
 // DDR4 Memory Interface Subsystem — REAL MIG (f9 fitment configuration)
 // Wraps the Vivado-generated ddr4_0 IP + axi_dwc_coef width converter.
-// Platform: Alinx ACVU13 SOM — C0 controller, banks 61/62/63.
-//   TOPOLOGY NOTE (2026-08-11): SOM carries 5x MT40A1G16KD-062E (80 DQ),
-//   but the DDR4 MIG controller maxes at 72-bit. Configured 64-bit data
-//   (4 devices, 8 GB addressable); 5th device unused. MIG part is
-//   MT40A1G16RC-062E (KD not in the 2026.1 part list; config-compatible).
-//   2400 MT/s, on-module 200 MHz reference clock (C0_DDR4_CLKREF).
+// Platform: Alinx ACKU15S SOM — banks 66/67/68.
+//   TOPOLOGY (2026-11-14): 5× Nanya NT5AD512M16C4-HR x16 = 80-bit non-ECC,
+//   10 GB, 2666 Mbps, on-module 200 MHz ref (AR32/AT32).
+//   PENDING (ACKU15S-3): regenerate the ddr4_0 MIG IP for XCKU15P +
+//   NT5AD512M16C4 5×x16 @ 2666 — the VU13P-generated IP below is stale.
 // Exposes AXI4 slave ports (128-bit, upsized to the MIG's native 512-bit
 // slave via axi_dwc_coef): read side serves coef_bank_loader; write side
 // serves qspi_boot_loader (QSPI → DDR4 coefficient staging, added 2026-08-22
@@ -25,11 +24,11 @@ module dac_ddr4_if (
     input  wire         ddr4_clkref_p,
     input  wire         ddr4_clkref_n,
 
-    // DDR4 PHY Interface — C0, 64-bit, banks 61/62/63
-    inout  wire  [63:0] ddr4_dq,
-    inout  wire  [7:0]  ddr4_dqs_c,
-    inout  wire  [7:0]  ddr4_dqs_t,
-    inout  wire  [7:0]  ddr4_dm_dbi_n,
+    // DDR4 PHY Interface — banks 66/67/68, 80-bit
+    inout  wire  [79:0] ddr4_dq,
+    inout  wire  [9:0]  ddr4_dqs_c,
+    inout  wire  [9:0]  ddr4_dqs_t,
+    inout  wire  [9:0]  ddr4_dm_dbi_n,
     output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,

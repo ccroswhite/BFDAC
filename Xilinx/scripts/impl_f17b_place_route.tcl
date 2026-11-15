@@ -7,7 +7,7 @@
 # burned its effort on them. Residue elsewhere: adder tree level7->8 -0.698
 # (2033 endpoints, SLR-hop routes) which f16b closed at +0.249 with the same
 # geometry — expected to close once phys_opt is not distracted.
-# The XDC in vu13p_dac_top.xdc is already fixed (no -to); the synth DCP carries
+# The XDC in acku15s_dac_top.xdc is already fixed (no -to); the synth DCP carries
 # the stale one (matched nothing, harmless), so apply the fix here explicitly.
 #   vivado -mode batch -source scripts/impl_f17b_place_route.tcl -journal impl_f17b.jou -log impl_f17b.log
 set_param general.maxThreads 8
@@ -96,4 +96,4 @@ write_checkpoint -force impl_f17b_routed.dcp
 report_cdc            -file impl_f17b_route_cdc.rpt
 report_design_analysis -congestion -file impl_f17b_congestion.rpt
 
-puts "impl_f17b_OK: vu13p_dac_top routed; reports written"
+puts "impl_f17b_OK: acku15s_dac_top routed; reports written"

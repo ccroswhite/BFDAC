@@ -13,7 +13,7 @@ set URAMS_PER_SLR  [expr {$NUM_MACS / 2 / 4}]
 
 open_checkpoint impl_f16_synth.dcp
 
-# CDC sanity (the corrected constraints live in vu13p_dac_top.xdc since f15b)
+# CDC sanity (the corrected constraints live in acku15s_dac_top.xdc since f15b)
 set ld_seq  [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_loader/* && IS_SEQUENTIAL}]
 set chk [get_timing_paths -from [get_cells {u_coef_subsys/u_coef_mgr/target_bank_reg[*]}] -to $ld_seq -max_paths 1 -nworst 1]
 puts "CDC check mgr->loader: requirement = [get_property REQUIREMENT $chk]"
@@ -79,4 +79,4 @@ write_checkpoint -force impl_f16b_routed.dcp
 report_cdc            -file impl_f16b_route_cdc.rpt
 report_design_analysis -congestion -file impl_f16b_congestion.rpt
 
-puts "impl_f16b_OK: vu13p_dac_top routed; reports written"
+puts "impl_f16b_OK: acku15s_dac_top routed; reports written"

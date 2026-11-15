@@ -88,8 +88,8 @@ module tb_vu13p_mig;
     wire  [63:0] cascode_l, cascode_r;
 
     // ---- DDR4 pins (64-bit, 4 x16 parts) ----------------------------------------------------
-    wire [63:0] ddr4_dq;
-    wire [7:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
+    wire [79:0] ddr4_dq;
+    wire [9:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
     wire [16:0] ddr4_addr;
     wire [1:0]  ddr4_ba;
     wire [0:0]  ddr4_bg, ddr4_cs_n, ddr4_cke, ddr4_odt, ddr4_ck_t, ddr4_ck_c;
@@ -101,7 +101,7 @@ module tb_vu13p_mig;
     defparam u_dut.u_automute.SWITCH_CYCLES      = 26'd200;
     defparam u_dut.u_automute.RAIL_SETTLE_CYCLES = 26'd600;
 
-    vu13p_dac_top #(
+    acku15s_dac_top #(
         .NUM_MACS          (NUM_MACS),
         .TAPS_PER_PHASE    (TAPS_PER_PHASE),
         .MUTE_DELAY_CYCLES (2000)
@@ -170,11 +170,11 @@ module tb_vu13p_mig;
             adr_mod = ddr4_addr;
     end
 
-    DDR4_if #(.CONFIGURED_DQ_BITS(16)) iDDR4[0:3]();
+    DDR4_if #(.CONFIGURED_DQ_BITS(16)) iDDR4[0:4]();
 
     genvar i, s;
     generate
-        for (i = 0; i < 4; i++) begin : g_mem
+        for (i = 0; i < 5; i++) begin : g_mem
             ddr4_model #(
                 .CONFIGURED_DQ_BITS (16),
                 .CONFIGURED_DENSITY (_16G)

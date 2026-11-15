@@ -61,4 +61,4 @@ report_timing_summary -file impl_f9pb_route_timing.rpt -max_paths 50
 report_design_analysis -congestion -file impl_f9pb_congestion.rpt
 write_checkpoint -force impl_f9pb_routed.dcp
 
-puts "IMPL_F9PB_OK: vu13p_dac_top routed with SLR pblocks; reports written"
+puts "IMPL_F9PB_OK: acku15s_dac_top routed with SLR pblocks; reports written"

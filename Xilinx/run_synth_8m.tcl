@@ -3,8 +3,8 @@
 # Aligned with scripts/synth_f18_5M_cf.tcl (no legacy/sub-IP XDC pollution)
 # =============================================================================
 
-set PART           "xcvu13p-fhgb2104-2-i"
-set TOP            "vu13p_dac_top"
+set PART           "xcku15p-ffve1517-2-i"
+set TOP            "acku15s_dac_top"
 set NUM_MACS       [expr {[info exists ::env(NUM_MACS)]       ? $::env(NUM_MACS)       : 80}]
 set TAPS_PER_PHASE [expr {[info exists ::env(TAPS_PER_PHASE)] ? $::env(TAPS_PER_PHASE) : 256}]
 set OUT_DIR        [expr {[info exists ::env(OUT_DIR)]        ? $::env(OUT_DIR)        : "build_8m"}]
@@ -35,7 +35,7 @@ read_verilog -sv $sv_files
 
 read_ip ip/ddr4_0/ddr4_0.xci
 read_ip ip/axi_dwc_coef/axi_dwc_coef.xci
-read_xdc vu13p_dac_top.xdc
+read_xdc acku15s_dac_top.xdc
 
 puts "INFO: Launching synth_design with NUM_MACS=$NUM_MACS, TAPS_PER_PHASE=$TAPS_PER_PHASE..."
 synth_design \

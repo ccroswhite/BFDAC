@@ -1,6 +1,12 @@
 # =============================================================================
-# vu13p_dac_top.xdc -- Vivado Timing & Physical Constraints
-# Target : XCVU13P-2FHGB2104I on Alinx ACVU13 SOM
+# acku15s_dac_top.xdc -- Vivado Timing & Physical Constraints
+# Target : XCKU15P-2FFVE1517I on Alinx ACKU15S SOM
+#
+# *** PENDING (ACKU15S-2): all PACKAGE_PIN / bank assignments below are still
+# *** the VU13P-era values. Rewrite from datasheets/acku15s_pinmap_proposal.csv
+# *** (cascode col-mirrored J4 69/70/71, mclk B94_L6 GC, clk_200m B94_L5,
+# *** control J1 banks 90/91, cf flash J2 bank 65, qspi1 fixed SoM pins,
+# *** LVCMOS18 throughout, cascode DRIVE=8).
 #
 # Clock, SPI, I2S, relay, DDR4, flash, and 128 cascode output constraints.
 # =============================================================================

@@ -2,10 +2,9 @@
 
 // DDR4 Memory Interface Subsystem
 // Wraps the MIG-generated ddr4_0 IP core.
-// Platform: Alinx ACVU13 SOM — C0 controller, banks 61/62/63.
-//   TOPOLOGY (2026-08-11): 64-bit data (4× MT40A1G16, 8 GB; DDR4 MIG
-//   controller maxes at 72-bit so the SOM's 5th chip is unused).
-//   DDR4 reference clock: C0_DDR4_CLKREF (AD33/AE33) on-module 200 MHz
+// Platform: Alinx ACKU15S SOM — banks 66/67/68.
+//   TOPOLOGY (2026-11-14): 5× Nanya NT5AD512M16C4-HR x16 = 80-bit non-ECC,
+//   10 GB, 2666 Mbps. DDR4 reference clock: on-module 200 MHz (AR32/AT32).
 // Exposes AXI4 slave ports: read side for coef_bank_loader, write side for
 // qspi_boot_loader (added 2026-08-22); ui_clk for the coefficient subsystem.
 // NOTE: this is the SIMULATION STUB. The real MIG wrapper is
@@ -20,11 +19,11 @@ module dac_ddr4_if (
     input  wire         ddr4_clkref_p,
     input  wire         ddr4_clkref_n,
 
-    // DDR4 PHY Interface — C0, 64-bit, banks 61/62/63
-    inout  wire  [63:0] ddr4_dq,
-    inout  wire  [7:0]  ddr4_dqs_c,
-    inout  wire  [7:0]  ddr4_dqs_t,
-    inout  wire  [7:0]  ddr4_dm_dbi_n,
+    // DDR4 PHY Interface — banks 66/67/68, 80-bit
+    inout  wire  [79:0] ddr4_dq,
+    inout  wire  [9:0]  ddr4_dqs_c,
+    inout  wire  [9:0]  ddr4_dqs_t,
+    inout  wire  [9:0]  ddr4_dm_dbi_n,
     output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,
