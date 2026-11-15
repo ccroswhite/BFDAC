@@ -172,8 +172,13 @@ def _alinx_symbol(name, pins, used):
     return units
 
 # Control-plane IOs on J1 bank 71 (MUST match vu13p_dac_top.xdc s4-s7, s10, 5b).  {Alinx signal: label}
+# 2026-11-14 dual-SPI: SPI_* -> SPI_XMOS_* rename (XMOS bus, U501); SPI_AP_* = second slave port for the
+# host AP (U505 + U506; RTL ports spi_ap_*).  ACVU13P pin picks below are provisional - the ACKU15S
+# pinmap puts spi_ap_* on J1 bank 91 (datasheets/acku15s_pinmap_proposal.csv).
 CTRL_PINS = {
-    "B71_L3_P": "SPI_SCLK", "B71_L3_N": "SPI_CS_N", "B71_L15_P": "SPI_MOSI", "B71_L15_N": "SPI_MISO",   # T26 R26 H29 G29
+    "B71_L3_P": "SPI_XMOS_SCLK", "B71_L3_N": "SPI_XMOS_CS_N", "B71_L15_P": "SPI_XMOS_MOSI", "B71_L15_N": "SPI_XMOS_MISO",   # T26 R26 H29 G29
+    "B71_L13_P": "SPI_AP_SCLK", "B71_L13_N": "SPI_AP_CS_N", "B71_L14_P": "SPI_AP_MOSI", "B71_L14_N": "SPI_AP_MISO",       # J26 H26 G26 G27
+    "B71_L6_P": "SPI_AP_IRQ_N",                                                                                         # P26 (was struck RLY_LEVEL0)
     "B71_L5_P": "FPGA_IRQ_N", "B71_L2_N": "EXT_RST_N",                                                  # P28 R27
     "B71_L11_P": "I2S_BCLK", "B71_L2_P": "I2S_LRCLK", "B71_L5_N": "I2S_DATA", "B71_L11_N": "I2S_DATA2", # H27 T27 N28 H28
     "B71_L1_N": "RLY_LINE_MUTE",                                                                    # R28; RLY_LEVEL0/1 (P26/N29) STRUCK 2026-10-07: level is digital (bom 7 ruling), RTL ports remain -> no-connect
@@ -1111,16 +1116,16 @@ def seaf_conn1_map():
     """Conn1 pad number -> net name; one source for the generated schematic and checks."""
     nets = {}
     row_a = [
-        "AP_SPI_SCLK", "GND_AP", "AP_SPI_CS_N", "GND_AP",
-        "AP_SPI_MOSI", "GND_AP", "AP_SPI_MISO", "GND_AP",
+        "XMOS_SPI_SCLK", "GND_AP", "XMOS_SPI_CS_N", "GND_AP",
+        "XMOS_SPI_MOSI", "GND_AP", "XMOS_SPI_MISO", "GND_AP",
         "AP_I2S_BCLK", "GND_AP", "AP_I2S_LRCLK", "GND_AP",
         "AP_I2S_DATA", "GND_AP", "AP_IRQ_N", "GND_AP",
         "AP_RST_N", "GND_AP", "AP_SDA", "GND_AP",
         "AP_SCL", "GND_AP", "SOM_PG", "GND_AP",
         "VAP_IO", "GND_AP", "AP_I2S_DATA2", "GND_AP",
-        "GND_AP", "GND_AP", "GND_AP", "GND_AP",
-        "GND_AP", "GND_AP", "GND_AP", "GND_AP",
-        "GND_AP", "GND_AP", "GND_AP", "GND_AP",
+        "AP_SPI_SCLK", "GND_AP", "AP_SPI_CS_N", "GND_AP",
+        "AP_SPI_MOSI", "GND_AP", "AP_SPI_MISO", "GND_AP",
+        "AP_SPI_IRQ_N", "GND_AP", "GND_AP", "GND_AP",
     ]
     for col, net in enumerate(row_a, start=1):
         nets[seaf_pad_number("A", col)] = net
@@ -1558,8 +1563,10 @@ SOM_PARTS = {  # SoM carrier sheet 2026-10-07: remaining ACVU13P connectors, 12 
     "rstrap": ("4.7k", FP["R0603"], "CRCW06034K70FKEA", "BOOT_M[2:0] mode strap, DNP by default - the SoM straps its own boot mode; populate only if the ACVU13P manual says the carrier must  ** VERIFY **"),
 }
 CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation barrier, temp sensors, LEDs
-    "isoC":   ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U501 SPI (SCLK/CS_N/MOSI AP->FPGA, MISO back) - CS_N reads deselected while the AP side is unpowered. Side A = AP (VAP_IO), side B = FPGA (V18, 1.71 V capable) (bom 21, ruled 2026-10-09)"),
+    "isoC":   ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U501 XMOS SPI (SCLK/CS_N/MOSI XMOS->FPGA, MISO back) - CS_N reads deselected while the AP side is unpowered. Side A = AP (VAP_IO), side B = FPGA (V18, 1.71 V capable) (bom 21, ruled 2026-10-09)"),
     "isoF":   ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs: U502 I2S, sides swapped for FPGA-as-master - side A = FPGA (V18): BCLK/LRCLK/FPGA_IRQ_N -> AP; side B = AP (VAP_IO): SDATA -> FPGA. SDATA = silence with the AP off (bom 21, ruled 2026-10-09)"),
+    "isoC2":  ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U509 host-AP SPI (SCLK/CS_N/MOSI AP->FPGA, MISO back) - second FPGA SPI slave port (2026-11-14 dual-SPI: AP has direct register access; CS_N deselected with AP off). Side A = AP (VAP_IO), side B = FPGA (V18)"),
+    "isoF2":  ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs, sides swapped: U513 AP IRQ - side A = FPGA (V18): SPI_AP_IRQ_N -> AP; side B = AP (VAP_IO). IRQ_N reads asserted while the FPGA domain is down (same convention as U502); IN2/IN3/IN4 spare (tied), OUT2/OUT3/OUT4 NC"),
     "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), ch2 AP_I2S_DATA2 -> I2S_DATA2 (second AP source, 2026-10-30), IN3/IN4 spare (tied to GNDA), OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
     "isoi2c": ("ISO1640", FP["SOIC8"], "ISO1640BDR", "bidirectional I2C isolator: TMP117 sensor bus (side 1, V33D, 3.0-5.5 V) <-> AP (side 2, VAP_IO, 2.25-5.5 V) (bom 20, ruled 2026-10-05; ISO1610 was a non-existent MPN, corrected 2026-10-08). VAP_IO MUST be >= 2.25 V - a 1.8 V AP needs a different isolator or a level shifter"),
     "tmp":    ("TMP117", FP["WSON6"], "TMP117AIDRVR", "+-0.1 C sensor; 4 on one bus via ADD0 (GND 0x48, V+ 0x49, SDA 0x4A, SCL 0x4B); placement per bom 20"),
@@ -2410,7 +2417,7 @@ def main():
     for u in range(4):
         fpga.place(LIB("ACVU13P_J6"), "J6", v, 60 + 90 * u, 100, conn_nets(J, used, "J6", G, GND), unit=u + 1, **k)
         fpga.place(LIB("ACVU13P_J1"), "J1", v, 440 + 90 * u, 100, conn_nets(J, used, "J1", G, GND), unit=u + 1, **k)
-    fpga.text("J1 control-plane pins (bank 71, xdc s4-7/10/5b) -> CTRL sheet: SPI_SCLK/CS_N/MOSI/MISO, FPGA_IRQ_N, EXT_RST_N (R27, new 2026-10-07), I2S_BCLK/LRCLK/DATA/DATA2 (H28, second AP source 2026-10-30),"
+    fpga.text("J1 control-plane pins (bank 71, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N (R27, new 2026-10-07), I2S_BCLK/LRCLK/DATA/DATA2 (H28, second AP source 2026-10-30),"
               " RLY_LINE_MUTE (-> OUT sheet unmute gate), LED_DBG0..3. relay_hp_mute (T28) / relay_hp_rails (N26) struck with bom 8, relay_level[1:0] (P26/N29) struck 2026-10-07"
               " (level is digital, bom 7) - all left no-connect; RTL ports still exist. DATR01..64 = cascode_r (bank 67 on J5 + bank 66 on J6; moved off J1 bank 69 2026-10-08 so both channels' drive leaves the SoM on the analog edge) -> the 64 R-channel CELL sheets (root). JTAG_* and SOM_PG from J6 -> SOM sheet.", 20, 27)
     # --- oscillators, enable mux, FPGA copy
@@ -2588,10 +2595,12 @@ def main():
     def cp_(key):
         v, fp, mpn, ds = CTRL_PARTS[key]
         return dict(footprint=fp, mpn=mpn, descr=ds), v
-    ctrl.text("Isolation barrier (user rulings 2026-10-05 / 2026-10-07): the application processor (AP) is its own ground domain (GND_AP, VAP_IO). Everything that crosses to the"
-              " FPGA/analog side goes through isolators: U501 MAX22445C = control SPI (SCLK/CS_N/MOSI AP->FPGA, MISO back), U502 MAX22445F = I2S with the FPGA as master (BCLK/LRCLK FPGA->AP + FPGA_IRQ_N, SDATA AP->FPGA; sides swapped),"
-              " U503 MAX22444C = AP reset -> EXT_RST_N (+3 spare fwd), U504 ISO1640 = I2C to the four TMP117 (sensor bus on the FPGA/analog side, V33D = ISO1640 side 1; AP = side 2, VAP_IO >= 2.25 V). FPGA side of the MAX2244x = V18 (1.71 V capable; ISO77xx were not - 2026-10-09)."
-              " AP board not yet selected. Conn1/J506 is the 240-contact SEAF-40 site: west edge, closest to FPGA, main-board bottom. VAP_IO/GND_AP serve the AP and AP-side isolator supplies; V33_IF_IN/GND feed the separate carrier-side 1.8 V LDO. Conn1 carries 30 V12SOM contacts with a GND surround; J507/J508 are removed. SOM_PG is included but still needs an isolation-path review. SPI: 10 MHz standard-timed guaranteed, 50 MHz with AP RX sample delay (bom 21).", 20, 17)
+    ctrl.text("Isolation barrier (user rulings 2026-10-05 / 2026-10-07; dual-SPI 2026-11-14): the application processor (AP) is its own ground domain (GND_AP, VAP_IO). Everything that crosses to the"
+              " FPGA/analog side goes through isolators: U501 MAX22445C = XMOS control SPI (XMOS_SPI_* -> SPI_XMOS_*), U502 MAX22445F = I2S with the FPGA as master (BCLK/LRCLK FPGA->AP + FPGA_IRQ_N, SDATA AP->FPGA; sides swapped),"
+              " U503 MAX22444C = AP reset -> EXT_RST_N (+3 spare fwd), U504 ISO1640 = I2C to the four TMP117 (sensor bus on the FPGA/analog side, V33D = ISO1640 side 1; AP = side 2, VAP_IO >= 2.25 V)."
+              " U509 MAX22445C = host-AP SPI (AP_SPI_* -> SPI_AP_*): second independent SPI slave port - the AP SoM has direct FPGA register access alongside the XMOS (per-port write ACL in RTL; XMOS = audio-path subset). U513 MAX22445F = SPI_AP_IRQ_N FPGA->AP (sides swapped like U502)."
+              " FPGA side of the MAX2244x = V18 (1.71 V capable; ISO77xx were not - 2026-10-09)."
+              " Conn1/J506 is the 240-contact SEAF-40 site: west edge, closest to FPGA, main-board bottom. VAP_IO/GND_AP serve the AP and AP-side isolator supplies; V33_IF_IN/GND feed the separate carrier-side 1.8 V LDO. Conn1 carries 30 V12SOM contacts with a GND surround; J507/J508 are removed. SOM_PG is included but still needs an isolation-path review. SPI: 10 MHz standard-timed guaranteed, 50 MHz with AP RX sample delay (bom 21).", 20, 17)
     ctrl.text("Conn1 power allocation: 30 x V12SOM plus 30 GND perimeter contacts; 4 x V33_IF_IN plus 12 carrier-GND guard contacts. V33_IF_IN is distinct from VAP_IO/GND_AP. Local 1.8 V LDO MPN/output wiring remains to be added.", 20, 31)
     ctrl.text("TMP117 placement (bom 20, 4 so far): U505 L cascode/replica array, U506 R cascode/replica array, U507 R_off/Rpad heat zone, U508 clock XO area. V33D = digital 3.3 V (power sheet, PWR_FLAG here)."
               " ALERT pins unused. Pull-ups 2.2k each side of the ISO1640.", 20, 24)
@@ -2608,9 +2617,9 @@ def main():
     k, v = cp_("isoC")
     ctrl.place(LIB("MAX22445"), "U501", v, 130, 70,
                {"VDDA": G("VAP_IO"), "GNDA": G("GND_AP"), "GNDAB": G("GND_AP"), "ENA": G("VAP_IO"),
-                "IN1": G("AP_SPI_SCLK"), "IN2": G("AP_SPI_CS_N"), "IN3": G("AP_SPI_MOSI"), "OUT4": G("AP_SPI_MISO"),
+                "IN1": G("XMOS_SPI_SCLK"), "IN2": G("XMOS_SPI_CS_N"), "IN3": G("XMOS_SPI_MOSI"), "OUT4": G("XMOS_SPI_MISO"),
                 "VDDB": G("v18"), "GNDB": GND, "GNDBB": GND, "ENB": G("v18"),
-                "OUT1": G("SPI_SCLK"), "OUT2": G("SPI_CS_N"), "OUT3": G("SPI_MOSI"), "IN4": G("SPI_MISO")}, **k)
+                "OUT1": G("SPI_XMOS_SCLK"), "OUT2": G("SPI_XMOS_CS_N"), "OUT3": G("SPI_XMOS_MOSI"), "IN4": G("SPI_XMOS_MISO")}, **k)
     # U502: side A (left, pins 1-8) is the FPGA side here - the three forward channels carry the I2S clocks + IRQ to the AP
     k, v = cp_("isoF")
     ctrl.place(LIB("MAX22445"), "U502", v, 130, 110,
@@ -2632,6 +2641,20 @@ def main():
     ctrl.place(LIB("ISO1640"), "U504", v, 130, 175,
                {"VCC1": G("V33D"), "GND1": GND, "SDA1": G("SENS_SDA"), "SCL1": G("SENS_SCL"),
                 "VCC2": G("VAP_IO"), "GND2": G("GND_AP"), "SDA2": G("AP_SDA"), "SCL2": G("AP_SCL")}, **k)
+    # U509: host-AP SPI slave port (2026-11-14 dual-SPI) - same orientation as U501
+    k, v = cp_("isoC2")
+    ctrl.place(LIB("MAX22445"), "U509", v, 130, 215,
+               {"VDDA": G("VAP_IO"), "GNDA": G("GND_AP"), "GNDAB": G("GND_AP"), "ENA": G("VAP_IO"),
+                "IN1": G("AP_SPI_SCLK"), "IN2": G("AP_SPI_CS_N"), "IN3": G("AP_SPI_MOSI"), "OUT4": G("AP_SPI_MISO"),
+                "VDDB": G("v18"), "GNDB": GND, "GNDBB": GND, "ENB": G("v18"),
+                "OUT1": G("SPI_AP_SCLK"), "OUT2": G("SPI_AP_CS_N"), "OUT3": G("SPI_AP_MOSI"), "IN4": G("SPI_AP_MISO")}, **k)
+    # U513: AP IRQ, sides swapped like U502 (side A = FPGA); IRQ is the only FPGA->AP AP-bus signal
+    k, v = cp_("isoF2")
+    ctrl.place(LIB("MAX22445"), "U513", v, 130, 250,
+               {"VDDA": G("v18"), "GNDA": GND, "GNDAB": GND, "ENA": G("v18"),
+                "IN1": G("SPI_AP_IRQ_N"), "IN2": GND, "IN3": GND, "OUT4": ("NC", ""),
+                "VDDB": G("VAP_IO"), "GNDB": G("GND_AP"), "GNDBB": G("GND_AP"), "ENB": G("VAP_IO"),
+                "OUT1": G("AP_SPI_IRQ_N"), "OUT2": ("NC", ""), "OUT3": ("NC", ""), "IN4": G("GND_AP")}, **k)
     k, v = cp_("rpu2k2")
     ctrl.place("Device:R", "R502", v, 95, 200, {"1": G("VAP_IO"), "2": G("AP_SDA")}, **k)
     ctrl.place("Device:R", "R503", v, 110, 200, {"1": G("VAP_IO"), "2": G("AP_SCL")}, **k)
@@ -2642,6 +2665,11 @@ def main():
     for i, y in enumerate((70, 110, 145, 175)):
         ctrl.place("Device:C", "C50%d" % (1 + 2 * i), v, 75, y, {"1": G("VAP_IO"), "2": G("GND_AP")}, **k)
         ctrl.place("Device:C", "C50%d" % (2 + 2 * i), v, 190, y, {"1": G("V33D" if y == 175 else "v18"), "2": GND}, **k)
+    # U509/U513 decoupling (U509: A=VAP_IO/B=v18; U513: A=v18/B=VAP_IO - sides swapped)
+    ctrl.place("Device:C", "C513", v, 75, 215, {"1": G("VAP_IO"), "2": G("GND_AP")}, **k)
+    ctrl.place("Device:C", "C514", v, 190, 215, {"1": G("v18"), "2": GND}, **k)
+    ctrl.place("Device:C", "C515", v, 190, 250, {"1": G("VAP_IO"), "2": G("GND_AP")}, **k)
+    ctrl.place("Device:C", "C516", v, 75, 250, {"1": G("v18"), "2": GND}, **k)
     # temperature sensors on the isolated bus: ADD0 strap = address
     k, v = cp_("tmp")
     kc, vc = cp_("c100n")
@@ -2756,8 +2784,9 @@ def main():
     # --- CTRL test points (rule c): control-plane handshakes on hook pads in the free x>730 strip - SPI / sensor
     # I2C / reset / IRQ / debug LEDs / I2S clocks, plus V33D / V12SOM.  GND pads at the bottom (rule d).
     ctrl.text("TEST POINTS (rule c): SPI / SENS / RST / IRQ / LED / I2S handshakes on hook pads; GND at the bottom.", 700, 24)
-    for i, net in enumerate(["v33d", "v12som", "sens_scl", "sens_sda", "spi_sclk", "spi_cs_n", "spi_mosi",
-                             "spi_miso", "ext_rst_n", "fpga_irq_n", "led_dbg0", "i2s_bclk", "i2s_data"]):
+    for i, net in enumerate(["v33d", "v12som", "sens_scl", "sens_sda", "spi_xmos_sclk", "spi_xmos_cs_n",
+                             "spi_xmos_mosi", "spi_xmos_miso", "ext_rst_n", "fpga_irq_n", "led_dbg0",
+                             "i2s_bclk", "i2s_data"]):
         tp(ctrl, "TP%d" % (510 + i), 770, 40 + 26 * i, G(net))
     tp(ctrl, "TP523", 770, 40 + 26 * 13, GND)
     tp(ctrl, "TP524", 770, 40 + 26 * 14, GND)
@@ -2765,6 +2794,9 @@ def main():
     # return belong to the rail-TP mandate; the AP board itself carries the full VAP18/VAP09 bank.
     tp(ctrl, "TP525", 770, 40 + 26 * 15, G("VAP_IO"))
     tp(ctrl, "TP526", 770, 40 + 26 * 16, G("GND_AP"))
+    # host-AP SPI handshake (U509/U513 FPGA side) - dual-SPI 2026-11-14
+    for i, net in enumerate(["spi_ap_sclk", "spi_ap_cs_n", "spi_ap_mosi", "spi_ap_miso", "spi_ap_irq_n"]):
+        tp(ctrl, "TP%d" % (527 + i), 770, 40 + 26 * (17 + i), G(net))
 
     # ---------------- AP/base-board sheet (SEPARATE PCB, on_board=no): XMOS XU316-1024-QF60B UAC2 bridge
     # + isolated USB front end + host-SoM link placeholder (bom 23).  XMOS part CONFIRMED 2026-11-01;
@@ -2789,7 +2821,8 @@ def main():
             " One $0.70 supervisor + a divider replaces a $15 13-rail sequencer.  PLL_AVDD is a 0.9 V domain -"
             " off VAP09 via L852/C862/C863 (was mis-assigned to VAP18 in early notes).", 20, 29)
     ap.text("XU316 GPIO allocation (proposed; firmware owns final port assignment):  FPGA SPI master: X0D32/33/35/36 ="
-            " SCLK/CS_N/MOSI/MISO.  I2S slave TX: X0D37/38 BCLK/LRCLK in, X0D40 SDATA out.  Sensor I2C: X0D41/42."
+            " SCLK/CS_N/MOSI/MISO (net group XMOS_SPI_* -> carrier U501 -> SPI_XMOS_*; 2026-11-14 rename, was AP_SPI_*)."
+            "  I2S slave TX: X0D37/38 BCLK/LRCLK in, X0D40 SDATA out.  Sensor I2C: X0D41/42."
             " AP_IRQ_N (FPGA->AP) = X0D43.  Host link (SPI slave, host is master): X0D00/29/39/11 = CS_N/SCLK/MISO/MOSI,"
             " X0D30 = doorbell IRQ -> host.  USB attach detect = X1D16.  Future S/PDIF input lands on X1D22.", 20, 36)
     # --- USB connector + ESD + CM choke + ISOUSB211 moat (all upstream of the isolator live in USB_GND)
@@ -2852,8 +2885,8 @@ def main():
               "X0D05": ("L", "QSPI_D1"), "X0D06": ("L", "QSPI_D2"), "X0D07": ("L", "QSPI_D3"),
               "X0D10": ("L", "QSPI_CLK"), "X0D11": ("L", "HOST_MOSI"),
               "X0D29": ("L", "HOST_SCLK"), "X0D30": ("L", "HOST_IRQ_N"), "X0D31": ("NC", ""),
-              "X0D32": G("AP_SPI_SCLK"), "X0D33": G("AP_SPI_CS_N"), "X0D35": G("AP_SPI_MOSI"),
-              "X0D36": G("AP_SPI_MISO"), "X0D37": G("AP_I2S_BCLK"), "X0D38": G("AP_I2S_LRCLK"),
+              "X0D32": G("XMOS_SPI_SCLK"), "X0D33": G("XMOS_SPI_CS_N"), "X0D35": G("XMOS_SPI_MOSI"),
+              "X0D36": G("XMOS_SPI_MISO"), "X0D37": G("AP_I2S_BCLK"), "X0D38": G("AP_I2S_LRCLK"),
               "X0D39": ("L", "HOST_MISO"), "X0D40": G("AP_I2S_DATA"),
               "X0D41": G("AP_SDA"), "X0D42": G("AP_SCL"), "X0D43": G("AP_IRQ_N")}, unit=1, **k)
     ap.place(LIB("XU316_QF60"), "U851", v, 250, 180,
@@ -2936,6 +2969,14 @@ def main():
         m[77] = ("L", "HOST_MISO"); m[79] = ("L", "HOST_CS_N")
         m[63] = ("L", "HOST_IRQ_N")                        # VERIFY: GPIO1_44 pick
         m[65] = G("AP_RST_N")                              # VERIFY: GPIO1_42 pick - host drives OD
+        # FPGA SPI master (2026-11-14 dual-SPI: AP gets its own FPGA register port via carrier U509/U513;
+        # nets AP_SPI_* -> SPI_AP_* on the FPGA side).  Proposed = MCSPI2 on McASP0/MMC1-region balls -
+        # VERIFY vs Variscite pin-list: assembly options + TI D0/D1 direction convention.
+        m[80] = G("AP_SPI_SCLK")                           # SPI2_CLK (MCAN1_TX ball; MCAN1 unused) - VERIFY
+        m[45] = G("AP_SPI_MOSI")                           # SPI2_D0 (MCASP0_AXR3, no-ALP) - VERIFY
+        m[41] = G("AP_SPI_MISO")                           # SPI2_D1 (MCASP0_AXR2, no-ALP assembly) - VERIFY
+        m[39] = G("AP_SPI_CS_N")                           # SPI2_CS0 (MCASP0_AFSR) - VERIFY
+        m[61] = G("AP_SPI_IRQ_N")                          # VERIFY: GPIO1_46 pick - FPGA status IRQ input
         # I2S slave-TX on shared FPGA clocks - McASP0
         m[117] = G("AP_I2S_BCLK")                          # MCASP0_ACLKX
         m[72]  = G("AP_I2S_LRCLK")                         # MCASP0_AFSX (no-ALP pin - VERIFY)
@@ -2982,10 +3023,13 @@ def main():
             " = LED series Rs (VERIFY 470 R vs SoM LED drive).", 500, 380)
     ap.text("J855 = VAR-SOM-AM62P host SoM on SODIMM-200 (RA socket, module flat on board).  Module carries"
             " LPDDR4+eMMC+PMIC+GbE PHY - carrier is sockets/connectors only.  Private link = MCSPI1 (host"
-            " master) -> XMOS slave; HOST_IRQ_N = XMOS doorbell.  I2S: McASP0 slave-TX on shared FPGA"
-            " BCLK/LRCLK, SDATA -> AP_I2S_DATA2.  UART0 = console.  USB unexposed (single-USB-face ruling:"
-            " J852/XMOS only).  Ethernet-only ruling 2026-11-03 - no radio antenna needed.  VERIFY: MDI pair"
-            " assignment, McASP0_AFSX pin (72 = no-ALP option), IRQ/RST GPIO picks, USB VBUS NC = USB off.", 500, 300)
+            " master) -> XMOS slave; HOST_IRQ_N = XMOS doorbell.  FPGA link = MCSPI2 (host master) -> FPGA"
+            " AP-SPI slave via carrier isolators U509/U513 (2026-11-14 dual-SPI; AP_SPI_* nets, SPI2 IOSet"
+            " VERIFY pending pin-list cross-check); AP_SPI_IRQ_N = FPGA status IRQ -> host GPIO.  I2S:"
+            " McASP0 slave-TX on shared FPGA BCLK/LRCLK, SDATA -> AP_I2S_DATA2.  UART0 = console.  USB"
+            " unexposed (single-USB-face ruling: J852/XMOS only).  Ethernet-only ruling 2026-11-03 - no radio"
+            " antenna needed.  VERIFY: MDI pair assignment, McASP0_AFSX pin (72 = no-ALP option), IRQ/RST"
+            " GPIO picks, USB VBUS NC = USB off.", 500, 300)
     ap.text("SOM_RST_N (pin 98) = SoM cold-reset input - reset source TBD (supervisor chain / button)."
             " HOST_PG (pin 49) = SOM_PGOOD output, sequences carrier 3.3 V peripherals.", 500, 320)
     # --- SoM endpoints: console header + USB service header + probe TPs (clears dangling-label warnings)

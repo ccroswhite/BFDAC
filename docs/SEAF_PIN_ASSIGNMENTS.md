@@ -12,14 +12,14 @@
 
 ## Conn1 / J506
 
-AP signal and return assignments retain the existing row-A pin order:
+AP signal and return assignments retain the existing row-A pin order. Dual-SPI rename (2026-11-14): the pads 1-7 bus is now `XMOS_SPI_*` (the XMOS's FPGA SPI master — same physical path as the old `AP_SPI_*` nets, renamed to disambiguate from the new host-AP bus). The host AP's own FPGA SPI port lands on pads 29-37 odd (`AP_SPI_*` + `AP_SPI_IRQ_N`), keeping the odd-signal/even-`GND_AP` interleave:
 
 | Pad | Net | Pad | Net |
 |---:|---|---:|---|
-| 1 | `AP_SPI_SCLK` | 2 | `GND_AP` |
-| 3 | `AP_SPI_CS_N` | 4 | `GND_AP` |
-| 5 | `AP_SPI_MOSI` | 6 | `GND_AP` |
-| 7 | `AP_SPI_MISO` | 8 | `GND_AP` |
+| 1 | `XMOS_SPI_SCLK` | 2 | `GND_AP` |
+| 3 | `XMOS_SPI_CS_N` | 4 | `GND_AP` |
+| 5 | `XMOS_SPI_MOSI` | 6 | `GND_AP` |
+| 7 | `XMOS_SPI_MISO` | 8 | `GND_AP` |
 | 9 | `AP_I2S_BCLK` | 10 | `GND_AP` |
 | 11 | `AP_I2S_LRCLK` | 12 | `GND_AP` |
 | 13 | `AP_I2S_DATA` | 14 | `GND_AP` |
@@ -29,7 +29,14 @@ AP signal and return assignments retain the existing row-A pin order:
 | 21 | `AP_SCL` | 22 | `GND_AP` |
 | 23 | `SOM_PG` | 24 | `GND_AP` |
 | 25 | `VAP_IO` | 26 | `GND_AP` |
-| 27 | `AP_I2S_DATA2` | 28-40 | `GND_AP` |
+| 27 | `AP_I2S_DATA2` | 28 | `GND_AP` |
+| 29 | `AP_SPI_SCLK` | 30 | `GND_AP` |
+| 31 | `AP_SPI_CS_N` | 32 | `GND_AP` |
+| 33 | `AP_SPI_MOSI` | 34 | `GND_AP` |
+| 35 | `AP_SPI_MISO` | 36 | `GND_AP` |
+| 37 | `AP_SPI_IRQ_N` | 38-40 | `GND_AP` |
+
+FPGA-side net names after the carrier isolators match the RTL ports: `XMOS_SPI_*` → `SPI_XMOS_*` through U501; `AP_SPI_*` → `SPI_AP_*` through U509 and `AP_SPI_IRQ_N` → `SPI_AP_IRQ_N` through U513. The private host↔XMOS link (`HOST_*`, J855 → U851 SPI slave) is a third, separate bus — it never reaches the FPGA.
 
 The additional power assignments use the six-row matrix, where each row has 40 columns:
 

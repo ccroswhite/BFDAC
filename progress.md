@@ -5410,3 +5410,16 @@ driver LED_A/LED_K stubs touch, that's the short to fix).
   ACKU15S J1).
 - TODO added: SPI register access review — finalize the XMOS/AP
   write partition + ownership policy for the firmware protocol doc.
+
+## 2026-11-14 — Dual-SPI schematic: XMOS + host-AP buses (gen_kicad.py + regen)
+
+User: "follow what we already have for the XMOS SPI in the current schematic ... update the schematic with the new SPI bus, SPI bus names." Net names now match the RTL ports from c0a477a.
+
+- **Rename (no pin moves):** AP-domain `AP_SPI_*` -> `XMOS_SPI_*` (the XMOS's FPGA SPI master, pads 1-7 row A unchanged); FPGA-side `SPI_*` -> `SPI_XMOS_*` (U501 outputs, J1 pins T26/R26/H29/G29 unchanged).
+- **New host-AP bus:** `AP_SPI_*` (AP domain) -> U509 MAX22445CAWE+ (SCLK/CS_N/MOSI fwd + MISO back, same orientation as U501) -> `SPI_AP_*`; `SPI_AP_IRQ_N` FPGA->AP through U513 MAX22445FAWE+ (sides swapped like U502; F-variant = IRQ reads asserted while FPGA domain down; 3 spare channels). C513-C516 decoupling.
+- **J506 row A:** pads 29/31/33/35/37 = `AP_SPI_SCLK/CS_N/MOSI/MISO/IRQ_N`, GND_AP interleave preserved (was spare GND_AP). J7705 mirror updates automatically via `seaf_conn1_map()`.
+- **FPGA J1 (ACVU13P, provisional):** SPI_AP_* on B71_L13_P/N + B71_L14_P/N, SPI_AP_IRQ_N on B71_L6_P (struck RLY_LEVEL0 reclaimed). ACKU15S pinmap already has the real picks (J1 bank 91).
+- **J855 SODIMM:** AP_SPI_* on pins 80/39/45/41 + AP_SPI_IRQ_N on 61 = proposed MCSPI2 IOSet (McASP0/MMC1-region balls) — VERIFY vs Variscite pin-list (assembly options, D0/D1 convention).
+- **TPs:** TP514-517 relabeled SPI_XMOS_*, new TP527-531 for SPI_AP_* + SPI_AP_IRQ_N.
+- Verify: regen clean; `check_seaf_pinmap.py` PASS (240/240); zero stale generic `SPI_*` labels; no B71 pin collisions. `kicad_xcheck.py` RESULT: FAIL(1) — **PRE-EXISTING** (identical on HEAD): VAP_IO merged into the GND_AP net somewhere (netlist shows 498-node GND_AP absorbing VAP_IO label endpoints, e.g. R9020.1, all C501-516 AP-side cap pins). Real schematic bug worth its own pass — union-find on labels+wires found no label pair, so the merge is symbol-pin mediated. Suspects: SEAF40/J855 pin geometry or a power-flag overlap. TODO added.
+- Docs: `docs/SEAF_PIN_ASSIGNMENTS.md` row-A table updated; bom.md item 21/22/23 annotated (U509/U513, three-bus model: XMOS_SPI / AP_SPI / HOST_*-private).
