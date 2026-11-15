@@ -154,7 +154,8 @@ module acku15s_dac_top #(
     // Clocks & Reset
     // ==============================================================
     logic clk_200m;       // Single-ended after IBUFDS
-    logic mclk;           // Single-ended after IBUF (externally-muxed OCXO)
+    logic mclk_ibuf;      // Single-ended after IBUF
+    logic mclk;           // BUFG'd mclk (HDIO pin -> global route -> MMCM CLKIN1)
     logic dsp_clk;
     logic clk_locked;
     logic sys_rst_n;
@@ -170,6 +171,15 @@ module acku15s_dac_top #(
 
     IBUF u_ibuf_mclk (
         .I  (mclk_p),
+        .O  (mclk_ibuf)
+    );
+
+    // mclk_p is on bank 94 (HDIO). HDGC pins reach BUFGs but have no route
+    // to MMCM sites (DRC PLHDIO-4) -- buffer onto the global clock network
+    // so MMCM.CLKIN1 is legally sourced. BUFG insertion delay adds to the
+    // pad->CLKIN1 path; CLKOUT1_PHASE=90deg margin re-verified at sign-off.
+    BUFG u_bufg_mclkin (
+        .I  (mclk_ibuf),
         .O  (mclk)
     );
 

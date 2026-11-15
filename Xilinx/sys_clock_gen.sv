@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module sys_clock_gen (
-    input  logic mclk,            // IBUF output: carrier copy of the selected XOCLK
+    input  logic mclk,            // BUFG output (IBUF->BUFG, HDIO pin cannot reach MMCM): carrier copy of the selected XOCLK
     input  logic rst_n,
     input  logic mmcm_rst,        // Held high while carrier oscillator enables change
     output logic dsp_clk,         // 278 MHz (44.1k) / 302 MHz (48k) at DIVIDE_F=3.25

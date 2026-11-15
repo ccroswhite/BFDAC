@@ -5513,3 +5513,11 @@ RTL/XDC currently at 80-bit pending decision.
   scripts/run_*.tcl; convention unchanged: run Vivado from Xilinx/.
 - .gitignore: Xilinx/build_*/ -> Xilinx/build/.
 - Xilinx/ root now = RTL/XDC sources + sim-data .txt + dirs only.
+
+### ACKU15S-6 P&R attempt 1: PLHDIO-4 on mclk_p (HDIO bank 94)
+- place_design DRC: mclk_p (F11, B94_L6 HDGC) drives MMCME4_BASE.CLKIN1 -- HDIO
+  pins cannot reach MMCM sites. clk_200m (G12, same bank) is OK (IBUFDS->BUFG only).
+- FIX: IBUF -> BUFG -> u_clk_gen.mclk (acku15s_dac_top.sv). BUFG output is a
+  legal MMCM CLKIN source; adds ~insertion delay to pad->CLKIN1 -- CLKOUT1_PHASE
+  90deg margin must be re-verified in sign-off reports.
+- Re-synth required (checkpoint stale) then P&R.
