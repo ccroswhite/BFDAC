@@ -5432,3 +5432,31 @@ User: "follow what we already have for the XMOS SPI in the current schematic ...
 - All TCL scripts bulk-updated: top name + `xcvu13p-fhgb2104-2-i` -> `xcku15p-ffve1517-2-i` (17 part refs). `elab_top.tcl` now excludes `dac_ddr4_if_mig.sv` (IP-bound until ACKU15S-3) and reports ELAB_OK.
 - XDC header marks every pin assignment PENDING rewrite from `datasheets/acku15s_pinmap_proposal.csv` (ACKU15S-2).
 - Verify: `synth_design -rtl` elaboration on xcku15p-ffve1517-2-i = 0 errors (286 pre-existing lint warnings); `tb_vu13p_top` xvlog clean. Port names unchanged vs pinmap CSV; no ports added/removed.
+
+## 2026-11-14 — ACKU15S-2 XDC + ACKU15S-3 MIG regen (in flight)
+
+### XDC regenerated (utils/gen_acku15s_xdc.py — rerunnable)
+- All 315 PACKAGE_PINs reassigned: connector signals from acku15s_pinmap_proposal.csv
+  (cascode col-mirrored J4 A/B vs C/D rows 14-60; SPI/I2S/ctrl J1 banks 90/91; cf_* J2
+  bank 65); fixed SoM pins from manual (clk_200m G12/G11 HDGC, mclk F11/E11 B94_L6,
+  qspi1 AV11+AM12/AN12/AR13/AR12, DDR4 banks 66-68).
+- MANUAL GOTCHA: _acku15s_manual.txt DDR4 pin-number column is MISALIGNED at PDF page
+  breaks (blank cells shift pins up ~2 rows). Resolved every signal via its unique
+  IO_L* name through _ku15p_pkgpins.csv — 141/141 unique, verified on unshifted rows.
+- DDR4 now 80-bit (D0-79, 10 byte lanes, DM0-9, DQS0-9); addr[14:16] map to dedicated
+  SoM WE_B(AP31)/CAS_B(AP34)/RAS_B(AP35) pins per JEDEC cmd encoding. ALERT_B(AK34)/
+  PAR(AV32) unused in non-ECC config.
+- led_status moved off bank-61 LVCMOS12 -> J1-B4 LVCMOS18. spi_ap_* pins added (were
+  auto-placed on VU13P dev).
+- VU13P SLR pblocks removed (KU15P is monolithic — no SLRs). Reset-relaxation and
+  all CDC/max_delay/multicycle constraints preserved verbatim.
+- Sanity: 53/53 RTL ports covered, 0 dup pins, 0 bad port names.
+
+### MIG regen launched (detached)
+- scripts/gen_ddr4_mig.tcl rewritten: xcku15p-ffve1517-2-i, DataWidth 80, AXI 640,
+  TimePeriod 750ps (2666 Mbps), ref clk 200MHz. MemoryPart = MT40A512M16LY-075
+  (listed Micron 8Gb x16 DDR4-2666) as config-compatible stand-in for Nanya
+  NT5AD512M16C4-HR — VERIFY timings or move to CustomParts CSV.
+- dac_ddr4_if_mig.sv: mig_* AXI nets widened 512->640, wstrb 64->80.
+- Run: vivado -mode batch -source scripts/gen_ddr4_mig.tcl
+  logs: Xilinx/gen_mig.log / gen_mig_stdout.log (detached, still running)

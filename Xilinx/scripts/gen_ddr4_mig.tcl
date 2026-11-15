@@ -1,11 +1,14 @@
-# f9 — Generate DDR4 MIG (ddr4_0) + AXI width converter for ACVU13 SOM
-#   Topology: C0 controller. SOM carries 5x 1Gx16 (80 DQ) but the DDR4 MIG
-#   controller maxes at 72-bit -> configured 64-bit data (4 devices, 8 GB
-#   addressable; 5th device unused by this controller). Part: MIG list has
-#   MT40A1G16RC-062E as the 1Gx16 -062E device (KD not listed; RC config-
-#   compatible). 2400 MT/s, on-module 200 MHz ref clk, xcku15p-ffve1517-2-i.
-#   AXI: MIG native 512-bit slave; axi_dwidth_converter bridges the 128-bit
-#   read-only master in coef_bank_loader.
+# ACKU15S-3 — Generate DDR4 MIG (ddr4_0) + AXI width converter for ACKU15S SOM
+#   Topology: C0 controller, 5x Nanya NT5AD512M16C4-HR x16 = 80-bit non-ECC
+#   (5 GB addressable), 2666 Mbps, on-module 200 MHz ref clk (AR32/AT32),
+#   banks 66-68, xcku15p-ffve1517-2-i.
+#   MemoryPart: Nanya NT5AD512M16C4-HR is not a MIG-listed part; using the
+#   config-compatible Micron 8Gb x16 DDR4-2666 entry. VERIFY: if Vivado
+#   rejects the part name, the error prints the valid list — pick the 8Gb x16
+#   -075 (2666) part or move to a C0.DDR4_CustomParts CSV with Nanya timings.
+#   AXI: MIG native 640-bit slave; axi_dwc_coef bridges the 128-bit
+#   read/write masters (coef_bank_loader, qspi_boot_loader).
+#   Pins are NOT set here: PACKAGE_PINs live in acku15s_dac_top.xdc.
 #   vivado -mode batch -source scripts/gen_ddr4_mig.tcl -journal gen_mig.jou -log gen_mig.log
 set_param general.maxThreads 8
 
@@ -18,25 +21,25 @@ set_property target_language Verilog [current_project]
 # ---------------------------------------------------------------- ddr4_0
 create_ip -name ddr4 -vendor xilinx.com -library ip -module_name ddr4_0 -dir $ip_dir
 set_property -dict [list \
-    CONFIG.C0.DDR4_TimePeriod            {833} \
+    CONFIG.C0.DDR4_TimePeriod            {750} \
     CONFIG.C0.DDR4_InputClockPeriod      {4998} \
-    CONFIG.C0.DDR4_MemoryPart            {MT40A1G16RC-062E} \
-    CONFIG.C0.DDR4_DataWidth             {64} \
+    CONFIG.C0.DDR4_MemoryPart            {MT40A512M16LY-075} \
+    CONFIG.C0.DDR4_DataWidth             {80} \
     CONFIG.C0.DDR4_AxiSelection          {true} \
-    CONFIG.C0.DDR4_AxiDataWidth          {512} \
+    CONFIG.C0.DDR4_AxiDataWidth          {640} \
     CONFIG.C0.DDR4_AxiIDWidth            {1} \
     CONFIG.C0.DDR4_AxiArbitrationScheme  {RD_PRI_REG} \
 ] [get_ips ddr4_0]
 
 puts "ddr4_0 AxiAddressWidth = [get_property CONFIG.C0.DDR4_AxiAddressWidth [get_ips ddr4_0]]"
 
-# ------------------------------------------- axi_dwidth_converter 128<->512
+# ------------------------------------------- axi_dwidth_converter 128<->640
 create_ip -name axi_dwidth_converter -vendor xilinx.com -library ip \
     -module_name axi_dwc_coef -dir $ip_dir
 set_property -dict [list \
     CONFIG.ADDR_WIDTH          {33} \
     CONFIG.SI_DATA_WIDTH       {128} \
-    CONFIG.MI_DATA_WIDTH       {512} \
+    CONFIG.MI_DATA_WIDTH       {640} \
     CONFIG.SI_ID_WIDTH         {1} \
     CONFIG.FIFO_MODE           {0} \
 ] [get_ips axi_dwc_coef]
