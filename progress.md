@@ -5487,3 +5487,10 @@ RTL/XDC currently at 80-bit pending decision.
   (no width) -> DataWidth LAST; verified CHECK dw=64/axi=512/tp=750 in
   gen_mig.log; OOC synthesis in flight (detached).
 - Remaining delta vs VU13P: capacity 8GB->4GB, addr width 33->32.
+
+### MIG regen COMPLETE (gen_mig.log: MIG_OK)
+- ddr4_0 + axi_dwc_coef generated + OOC-synthesized for xcku15p-ffve1517-2-i:
+  MemoryPart MT40A512M16LY-075 (Nanya stand-in), DW=64, AxiDW=512, TP=750ps,
+  ref 200MHz, AxiAddressWidth=32 (4GB).
+- Stub interface verified vs dac_ddr4_if_mig.sv: c0_ddr4_adr[16:0], dq[63:0],
+  dqs/dm[7:0], s_axi_* 512b/[31:0] — all match.
