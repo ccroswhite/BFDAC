@@ -204,6 +204,15 @@ def main():
         ("set_property IOSTANDARD LVDS     [get_ports {clk_200m_p clk_200m_n}]",
          "set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]),
 
+        # mclk CMT-column waiver: HDIO bank-94 IBUF->BUFGCE_HDIO->MMCM hop
+        # requires CLOCK_DEDICATED_ROUTE ANY_CMT_COLUMN (Place 30-716).
+        ('create_clock -name clk_mclk -period 20.345 [get_ports mclk_p]',
+         'create_clock -name clk_mclk -period 20.345 [get_ports mclk_p]
+
+# mclk IBUF is on bank 94 HDIO; BUFGCE_HDIO->MMCM.CLKIN1 hops along the CMT
+# column (no MMCM in the pin clock region; clockplacer Place 30-716 waiver).
+set_property CLOCK_DEDICATED_ROUTE ANY_CMT_COLUMN [get_nets mclk]'),
+
         # mclk comment
         ("""# Bank 65 TRUE GC pair B65_L12 (J6-C30/C29) - moved from B71_L12 (J1-A17/A16,
 # J28/J29) on 2026-10-08: the clock block sits on the analog/right edge next to

@@ -31,6 +31,10 @@ set_property PACKAGE_PIN G11   [get_ports clk_200m_n];# IO_L5N_HDGC_94 SoM 200 M
 # clock block faces the analog/FF side. Carrier drives mclk_p single-ended
 # LVCMOS18 and leaves mclk_n reserved/no-connect. RTL uses IBUF on mclk_p.
 create_clock -name clk_mclk -period 20.345 [get_ports mclk_p]
+
+# mclk IBUF is on bank 94 HDIO; BUFGCE_HDIO->MMCM.CLKIN1 hops along the CMT
+# column (no MMCM in the pin's clock region; clockplacer Place 30-716 waiver).
+set_property CLOCK_DEDICATED_ROUTE ANY_CMT_COLUMN [get_nets mclk]
 set_property IOSTANDARD LVCMOS18 [get_ports {mclk_p mclk_n}]
 set_property PACKAGE_PIN F11   [get_ports mclk_p];# B94_L6_P J4-B4
 set_property PACKAGE_PIN E11   [get_ports mclk_n];# B94_L6_N J4-B3
@@ -94,7 +98,7 @@ set_false_path -to [get_pins {
 
 # clk_200m -> dsp_clk held multi-bit control buses (sampled after sync edge).
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells -hierarchical -filter {NAME =~ u_ctrl_plane/cmd_level_reg*}] \
+    -from [get_clocks clk_200m] \
     -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells -hierarchical -filter {NAME =~ sys_volume_q_reg*}] \
@@ -157,7 +161,7 @@ set_false_path \
     -to   [get_pins -hierarchical -filter {NAME =~ u_i2s_ingress/* && (REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
 set_false_path \
     -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst_tree_n_reg*}] \
-    -to   [get_pins {u_dsp_core/pace_div_reg[*]/R u_dsp_core/pace_tgl_reg/R}]
+    -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
 
 # -----------------------------------------------------------------------------
 # 4. SPI Control Bus — XMOS port (XMOS SPI master -> FPGA slave, clk_200m domain)
@@ -680,7 +684,7 @@ set_max_delay -datapath_only 3.3 \
     -from [get_cells {u_boot_loader/job_toggle_reg}] \
     -to   [get_cells {u_boot_loader/job_sync_ui_reg[0]}]
 set_max_delay -datapath_only 3.3 \
-    -from [get_cells {u_boot_loader/job_addr_reg[*] u_boot_loader/job_words_reg[*] u_boot_loader/rec_len_reg[*]}] \
+    -from [get_cells -quiet -hierarchical -filter {NAME =~ u_boot_loader/job_addr* || NAME =~ u_boot_loader/job_words* || NAME =~ u_boot_loader/rec_len*}] \
     -to   [get_cells {u_boot_loader/w_addr_reg[*] u_boot_loader/w_words_left_reg[*]}]
 # Done toggle + quasi-static job_err back to clk_200m
 set_max_delay -datapath_only 5.0 \
@@ -807,6 +811,11 @@ set_multicycle_path 1 -hold -start \
 # Bucketed per channel/family: a single >10k-object -to filter is dropped
 # entirely at XDC read time (Constraints 18-929), so keep each group small.
 set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]
+# Broad catch-all (post-route audit 2026-11-14): the KU15P fit spreads the
+# reset tree across gen_ch coefficient banks and non-u_*_fir sinks -- 8439
+# failing endpoints when scoped to u_l_fir/u_r_fir only. Release stays a
+# bounded (6.6 ns, ~2 dsp_clk) checked event, not a false path.
+set_max_delay 6.6 -from $rst_src_cells
 # Unrolled per-channel/family (foreach/if are not supported in XDC).
 set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/*boundary*/R}]
 set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/*boundary*/R}]
@@ -819,8 +828,7 @@ set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filte
 
 # rate_shift_q is quasi-static: it only changes while the MMCM is in reset /
 # stream is stopped, so its fanout inside the FIR cannot race live data.
-set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/rate_shift_q_reg[*]}]
-set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/rate_shift_q_reg[*]}]
+set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/*/rate_shift_q_reg*}]
 
 # -----------------------------------------------------------------------------
 # 13. Bitstream / Configuration

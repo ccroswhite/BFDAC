@@ -18,6 +18,26 @@ open_checkpoint "$OUT_DIR/post_synth.dcp"
 # clk_200m sits on HDIO bank 94 -- LVDS is not legal there; DIFF_HSTL_I_18 is
 # (1.8 V VCCO, LVDS-level compatible). Re-apply in case dcp has stale LVDS.
 set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]
+set_property CLOCK_DEDICATED_ROUTE ANY_CMT_COLUMN [get_nets mclk]
+
+# Constraint staleness fixes (post-route audit): the dcp embeds pre-fix XDC.
+# level_target sync chain lost its -from (cmd_level_reg renamed) -> clock scope.
+set_max_delay -datapath_only 5.0 \
+    -from [get_clocks clk_200m] \
+    -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
+# Reset tree: 8439 endpoints sat outside the u_l_fir/u_r_fir buckets.
+set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]
+set_max_delay 6.6 -from $rst_src_cells
+# pace reset pins carry CLR not R.
+set_false_path \
+    -from $rst_src_cells \
+    -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
+# rate_shift_q: u_r copy trimmed post-synth; one tolerant pattern covers both.
+set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/*/rate_shift_q_reg*}]
+# job bus -from pattern (job_words renamed post-synth).
+set_max_delay -datapath_only 3.3 \
+    -from [get_cells -quiet -hierarchical -filter {NAME =~ u_boot_loader/job_addr* || NAME =~ u_boot_loader/job_words* || NAME =~ u_boot_loader/rec_len*}] \
+    -to   [get_cells {u_boot_loader/w_addr_reg[*] u_boot_loader/w_words_left_reg[*]}]
 
 # Pre-place cross-clock sanity audit (verifies zero sub-ns un-excepted beat paths)
 foreach {src dst} {
@@ -63,6 +83,10 @@ set s3_nets [get_nets -quiet -hierarchical -filter {
     NAME =~ u_dsp_core/u_stereo_fir/u_*_fir/*snap_en* ||
     NAME =~ u_i2s_ingress/new_sample
 }]
+# u_dem_l FSM state bit fans to ~1300 DEM sort loads (post-route audit).
+set dem_nets [get_nets -quiet -of_objects \
+    [get_pins -hierarchical -filter {NAME =~ u_dsp_core/u_dem_l/FSM_sequential_state_reg*/Q}]]
+set s3_nets [concat $s3_nets $dem_nets]
 if {[llength $s3_nets] > 0} {
     puts "INFO: Forcing replication on [llength $s3_nets] broadcast nets"
     phys_opt_design -force_replication_on_nets $s3_nets

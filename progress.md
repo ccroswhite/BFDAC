@@ -5528,3 +5528,17 @@ RTL/XDC currently at 80-bit pending decision.
   HDIO-legal differential input, LVDS-swing compatible).
 - run_pnr_5m.tcl re-applies the property after open_checkpoint so a
   pre-fix dcp still gets the corrected standard.
+
+### ACKU15S-6 P&R attempt 2 -> routed, timing FAIL (WNS -2.081/TNS -1210)
+Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
+- 8439/10355 failing endpoints = dsp_rst_tree_n reset fanout (6 replicas);
+  6.6ns relaxation was scoped to u_l_fir/u_r_fir only -- gen_ch coef banks +
+  rest of dsp_core uncovered. FIX: broad set_max_delay 6.6 -from $rst_src_cells.
+- 1291 endpoints = u_dem_l/FSM_sequential_state_reg[2] fanout -> added to
+  force_replication list in run_pnr_5m.tcl.
+- clk_200m->dsp_clk 0.005ns beat (level_target chain): -from cmd_level_reg*
+  renamed to level_target_reg -> now -from [get_clocks clk_200m].
+- pace_*_reg /R pins actually CLR; u_r_fir/rate_shift_q trimmed; job_words
+  renamed -> filters broadened. cfifo/cal/fifo_mem startpoint warnings remain
+  (pre-existing mem-inference name churn, partial application).
+- All fixes mirrored in acku15s_dac_top.xdc + pnr refresh block (dcp is stale).
