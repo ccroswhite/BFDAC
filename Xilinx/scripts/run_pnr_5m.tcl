@@ -3,7 +3,6 @@
 # =============================================================================
 
 set OUT_DIR   [expr {[info exists ::env(OUT_DIR)]   ? $::env(OUT_DIR)   : "build/5m"}]
-set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
 
 set_param general.maxThreads 8
 
@@ -142,13 +141,6 @@ puts "========================================================================="
 
 if {$failed_nets != 0} {
     error "ERROR: Routing failed with $failed_nets routing errors!"
-}
-
-if {$WRITE_BIT && $final_wns >= 0.000 && $final_whs >= 0.000} {
-    puts "INFO: Timing met with 0 routing errors — generating bitstream..."
-    write_bitstream -force "$OUT_DIR/acku15s_dac_5m.bit"
-} else {
-    puts "WARNING: Skipping bitstream generation (WRITE_BIT=$WRITE_BIT, WNS=$final_wns, WHS=$final_whs)."
 }
 
 exit

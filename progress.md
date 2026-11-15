@@ -5542,3 +5542,10 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   renamed -> filters broadened. cfifo/cal/fifo_mem startpoint warnings remain
   (pre-existing mem-inference name churn, partial application).
 - All fixes mirrored in acku15s_dac_top.xdc + pnr refresh block (dcp is stale).
+
+### ACKU15S-6 P&R TIMING CLOSED on KU15P
+- Final: WNS +0.011 ns, WHS +0.007 ns, 0 failing endpoints, 0 routing errors.
+- dsp_clk 302.5MHz, mmcm_clkout0 333MHz, all CDC crossings met.
+- Fixes that landed: broad 6.6ns rst-tree relaxation, dem_l FSM replication,
+  level_target clock-scoped -from, pace/rate_shift/job filter fixes.
+- write_bitstream REMOVED from run_pnr_5m.tcl per user (no bitstream for now).
