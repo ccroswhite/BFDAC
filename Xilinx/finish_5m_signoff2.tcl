@@ -1,4 +1,4 @@
-set OUT_DIR [expr {[info exists ::env(OUT_DIR)] ? $::env(OUT_DIR) : "build_8m"}]
+set OUT_DIR [expr {[info exists ::env(OUT_DIR)] ? $::env(OUT_DIR) : "build_5m"}]
 set_param general.maxThreads 8
 
 open_checkpoint "$OUT_DIR/post_route_signoff.dcp"
@@ -41,8 +41,8 @@ report_bus_skew -file "$OUT_DIR/post_route_bus_skew2.rpt"
 
 set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
 if {$WRITE_BIT && $failed_nets == 0 && $final_wns >= 0.000 && $final_whs >= 0.000} {
-    puts "INFO: Timing CLOSED with 0 failed nets! Writing $OUT_DIR/vu13p_dac_8m.bit..."
-    write_bitstream -force "$OUT_DIR/vu13p_dac_8m.bit"
+    puts "INFO: Timing CLOSED with 0 failed nets! Writing $OUT_DIR/acku15s_dac_5m.bit..."
+    write_bitstream -force "$OUT_DIR/acku15s_dac_5m.bit"
 } else {
     puts "WARNING: Sign-off incomplete (Failed=$failed_nets, WNS=${final_wns} ns, WHS=${final_whs} ns)."
 }

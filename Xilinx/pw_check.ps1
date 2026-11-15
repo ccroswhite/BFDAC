@@ -1,4 +1,4 @@
-$lines = [IO.File]::ReadAllLines((Resolve-Path "build_8m\post_route_closed_timing.rpt").Path)
+$lines = [IO.File]::ReadAllLines((Resolve-Path "build_5m\post_route_closed_timing.rpt").Path)
 for ($i = 0; $i -lt $lines.Length; $i++) {
     if ($lines[$i] -match "^Pulse Width Checks") {
         for ($j = $i; $j -lt $lines.Length; $j++) {

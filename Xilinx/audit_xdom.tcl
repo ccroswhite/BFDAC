@@ -1,4 +1,4 @@
-open_checkpoint build_8m/post_synth.dcp
+open_checkpoint build_5m/post_synth.dcp
 
 foreach c1 [get_clocks] {
     foreach c2 [get_clocks] {

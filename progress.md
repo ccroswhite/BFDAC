@@ -5494,3 +5494,10 @@ RTL/XDC currently at 80-bit pending decision.
   ref 200MHz, AxiAddressWidth=32 (4GB).
 - Stub interface verified vs dac_ddr4_if_mig.sv: c0_ddr4_adr[16:0], dq[63:0],
   dqs/dm[7:0], s_axi_* 512b/[31:0] — all match.
+
+### Build-script family renamed 8m -> 5m (design is 5.24M taps)
+- run_synth_8m/run_pnr_8m/run_build_8m/close_8m/finish_8m -> *_5m equivalents;
+  OUT_DIR default build_5m; bitstream name acku15s_dac_5m.bit (was vu13p_dac_8m.bit);
+  run_build_5m.sh NUM_MACS default fixed 128->80 to match the .tcl.
+- audit_*.tcl/check_641.tcl checkpoint paths + pw_check.ps1 updated to build_5m.
+- NOTE: in-flight synth run (launched pre-rename) still writes synth_8m.log + build_8m/.

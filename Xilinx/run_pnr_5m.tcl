@@ -1,14 +1,14 @@
 # =============================================================================
-# run_pnr_8m.tcl — Vivado Non-Project Place & Route for BFDAC 8.39M-Tap Build
+# run_pnr_5m.tcl — Vivado Non-Project Place & Route for BFDAC 5.24M-Tap Build
 # =============================================================================
 
-set OUT_DIR   [expr {[info exists ::env(OUT_DIR)]   ? $::env(OUT_DIR)   : "build_8m"}]
+set OUT_DIR   [expr {[info exists ::env(OUT_DIR)]   ? $::env(OUT_DIR)   : "build_5m"}]
 set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
 
 set_param general.maxThreads 8
 
 if {![file exists "$OUT_DIR/post_synth.dcp"]} {
-    error "ERROR: $OUT_DIR/post_synth.dcp not found. Run run_synth_8m.tcl first."
+    error "ERROR: $OUT_DIR/post_synth.dcp not found. Run run_synth_5m.tcl first."
 }
 
 puts "INFO: Opening post-synthesis checkpoint $OUT_DIR/post_synth.dcp..."
@@ -104,7 +104,7 @@ set final_wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setu
 set final_whs [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -hold]]
 
 puts "========================================================================="
-puts "FINAL 8.39M-TAP PLACE & ROUTE SCOREBOARD"
+puts "FINAL 5.24M-TAP PLACE & ROUTE SCOREBOARD"
 puts "  Failed / Unrouted Nets : $failed_nets"
 puts "  Final Setup WNS        : ${final_wns} ns"
 puts "  Final Hold  WHS        : ${final_whs} ns"
@@ -117,7 +117,7 @@ if {$failed_nets != 0} {
 
 if {$WRITE_BIT && $final_wns >= 0.000 && $final_whs >= 0.000} {
     puts "INFO: Timing met with 0 routing errors — generating bitstream..."
-    write_bitstream -force "$OUT_DIR/vu13p_dac_8m.bit"
+    write_bitstream -force "$OUT_DIR/acku15s_dac_5m.bit"
 } else {
     puts "WARNING: Skipping bitstream generation (WRITE_BIT=$WRITE_BIT, WNS=$final_wns, WHS=$final_whs)."
 }

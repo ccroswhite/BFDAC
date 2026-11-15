@@ -1,5 +1,5 @@
 # =============================================================================
-# run_synth_8m.tcl — Vivado Non-Project Synthesis for BFDAC 8.39M-Tap (x2 -> x8)
+# run_synth_5m.tcl — Vivado Non-Project Synthesis for BFDAC 5.24M-Tap (x2 -> x8)
 # Aligned with scripts/synth_f18_5M_cf.tcl (no legacy/sub-IP XDC pollution)
 # =============================================================================
 
@@ -7,7 +7,7 @@ set PART           "xcku15p-ffve1517-2-i"
 set TOP            "acku15s_dac_top"
 set NUM_MACS       [expr {[info exists ::env(NUM_MACS)]       ? $::env(NUM_MACS)       : 80}]
 set TAPS_PER_PHASE [expr {[info exists ::env(TAPS_PER_PHASE)] ? $::env(TAPS_PER_PHASE) : 256}]
-set OUT_DIR        [expr {[info exists ::env(OUT_DIR)]        ? $::env(OUT_DIR)        : "build_8m"}]
+set OUT_DIR        [expr {[info exists ::env(OUT_DIR)]        ? $::env(OUT_DIR)        : "build_5m"}]
 
 file mkdir $OUT_DIR
 set_param general.maxThreads 8
@@ -51,7 +51,7 @@ set dsp_all  [get_cells -quiet -hierarchical -filter {REF_NAME =~ DSP48E*}]
 set lram_all [get_cells -quiet -hierarchical -filter {PRIMITIVE_TYPE =~ DMEM.DRAM.*}]
 
 puts "========================================================================="
-puts "POST-SYNTHESIS PRIMITIVE AUDIT (8.39M-Tap Two-Stage Build)"
+puts "POST-SYNTHESIS PRIMITIVE AUDIT (5.24M-Tap Two-Stage Build)"
 puts "  DSP48E2 slices        : [llength $dsp_all]"
 puts "  URAM288 tiles         : [llength $uram_all]"
 puts "  RAMB18/RAMB36 tiles   : [llength $bram_all] (with DOB_REG=1: [llength $bram_dob])"

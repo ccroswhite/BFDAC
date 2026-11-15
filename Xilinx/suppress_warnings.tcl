@@ -1,7 +1,7 @@
 # =============================================================================
-# suppress_warnings.tcl — Scoped Vivado message pruning for the 8.39M build
+# suppress_warnings.tcl — Scoped Vivado message pruning for the 5.24M build
 #
-# Sourced by run_synth_8m.tcl before synth_design.  Entries are string-scoped
+# Sourced by run_synth_5m.tcl before synth_design.  Entries are string-scoped
 # wherever possible so a suppression only silences the KNOWN-benign instance —
 # new/unexpected instances of the same message ID still fire.  Broad classes
 # are demoted to INFO, not suppressed, so they remain greppable in the log.
