@@ -120,7 +120,7 @@ def main():
            d("ddr4_act_n"), d("ddr4_cs_n[0]"), d("ddr4_cke[0]"),
            d("ddr4_odt[0]"), d("ddr4_reset_n"), d("ddr4_ck_t[0]"),
            d("ddr4_ck_c[0]"), ""]
-    for byte in range(10):
+    for byte in range(8):
         dd.append(f"# Byte {byte} (bank {66 if byte < 4 else 68 if byte < 8 else 67})")
         for i in range(byte * 8, byte * 8 + 8):
             dd.append(d(f"ddr4_dq[{i}]"))
@@ -290,11 +290,13 @@ set_property IOSTANDARD LVCMOS18 [get_ports led_status]"""),
 # addr[16:14] carry RAS/CAS/WE per DDR4 command encoding: A14=WE_B,
 # A15=CAS_B, A16=RAS_B.""",
          """# 9. DDR4 Interface
-# ACKU15S SoM: 5x NT5AD512M16C4-HR, 80-bit non-ECC, banks 66-68, 2666 Mbps,
+# ACKU15S SoM: 4x NT5AD512M16C4-HR, 64-bit non-ECC, banks 66-68, 2666 Mbps,
 # ref clk AR32/AT32. Pins from the SoM manual DDR4 table, IO-name resolved
 # via _ku15p_pkgpins.csv (printed pin column in the manual is misaligned at
 # page breaks). ALERT_B (AK34) and PAR (AV32) are routed on the SoM but not
-# used by this non-ECC controller config.
+# used by this non-ECC controller config. SoM 5th x16 chip (D64-79,
+# DQS8/9, DM8/9 on bank 67) is unconnected: Xilinx MIG caps DataWidth at
+# 72 (64+ECC), 80-bit non-ECC unsupported; option (a) ruled 2026-11-14.
 # IOSTANDARD / DCI / output impedance are set by the ddr4_0 IP (PG150);
 # only PACKAGE_PIN is constrained here.
 # addr[16:14] carry RAS/CAS/WE per DDR4 command encoding: [14]=WE_B,

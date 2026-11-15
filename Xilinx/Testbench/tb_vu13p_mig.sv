@@ -88,8 +88,8 @@ module tb_vu13p_mig;
     wire  [63:0] cascode_l, cascode_r;
 
     // ---- DDR4 pins (64-bit, 4 x16 parts) ----------------------------------------------------
-    wire [79:0] ddr4_dq;
-    wire [9:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
+    wire [63:0] ddr4_dq;
+    wire [7:0]  ddr4_dqs_c, ddr4_dqs_t, ddr4_dm_dbi_n;
     wire [16:0] ddr4_addr;
     wire [1:0]  ddr4_ba;
     wire [0:0]  ddr4_bg, ddr4_cs_n, ddr4_cke, ddr4_odt, ddr4_ck_t, ddr4_ck_c;
@@ -157,7 +157,7 @@ module tb_vu13p_mig;
         .ddr4_reset_n   (ddr4_reset_n)
     );
 
-    // ---- Micron DDR4 model: 1 rank, 4 x16 parts (mirrors the ddr4_0 example sim_tb_top) ------
+    // ---- Micron DDR4 model: 1 rank, 4 x16 parts (64-bit; SoM 5th chip NC) --
     bit  en_model = 0;
     tri  model_enable = en_model;
 
@@ -170,11 +170,11 @@ module tb_vu13p_mig;
             adr_mod = ddr4_addr;
     end
 
-    DDR4_if #(.CONFIGURED_DQ_BITS(16)) iDDR4[0:4]();
+    DDR4_if #(.CONFIGURED_DQ_BITS(16)) iDDR4[0:3]();
 
     genvar i, s;
     generate
-        for (i = 0; i < 5; i++) begin : g_mem
+        for (i = 0; i < 4; i++) begin : g_mem
             ddr4_model #(
                 .CONFIGURED_DQ_BITS (16),
                 .CONFIGURED_DENSITY (_16G)

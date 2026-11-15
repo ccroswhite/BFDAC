@@ -4,7 +4,8 @@
 // acku15s_dac_top -- Wire-only top level for XCKU15P stereo DAC
 //
 // Platform : Xilinx XCKU15P-2FFVE1517I on Alinx ACKU15S SOM (was XCVU13P/ACVU13)
-//   - DDR4: 5x NT5AD512M16C4-HR x16 = 80-bit non-ECC, banks 66/67/68,
+//   - DDR4: 4x NT5AD512M16C4-HR x16 = 64-bit non-ECC, banks 66/67/68,
+//   (SoM 5th chip NC: Xilinx MIG caps at 72-bit; ECC=72 unused - option a)
 //     2666 Mbps, on-module 200 MHz ref AR32/AT32
 //   - clk_200m: SoM 200 MHz user clock, B94_L5_P/N (G12/G11)
 //   - mclk: GC pair B94_L6 (F11/E11) on J4
@@ -133,10 +134,10 @@ module acku15s_dac_top #(
     // 10 GB, 2666 Mbps; 10 byte lanes.
     input  wire         ddr4_clkref_p,
     input  wire         ddr4_clkref_n,
-    inout  wire  [79:0] ddr4_dq,
-    inout  wire  [9:0]  ddr4_dqs_c,
-    inout  wire  [9:0]  ddr4_dqs_t,
-    inout  wire  [9:0]  ddr4_dm_dbi_n,
+    inout  wire  [63:0] ddr4_dq,
+    inout  wire  [7:0]  ddr4_dqs_c,
+    inout  wire  [7:0]  ddr4_dqs_t,
+    inout  wire  [7:0]  ddr4_dm_dbi_n,
     output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,

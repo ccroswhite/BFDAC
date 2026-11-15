@@ -3,7 +3,7 @@
 // DDR4 Memory Interface Subsystem
 // Wraps the MIG-generated ddr4_0 IP core.
 // Platform: Alinx ACKU15S SOM — banks 66/67/68.
-//   TOPOLOGY (2026-11-14): 5× Nanya NT5AD512M16C4-HR x16 = 80-bit non-ECC,
+//   TOPOLOGY (2026-11-14): 4× Nanya NT5AD512M16C4-HR x16 = 64-bit non-ECC (5th chip NC — MIG caps at 72),
 //   10 GB, 2666 Mbps. DDR4 reference clock: on-module 200 MHz (AR32/AT32).
 // Exposes AXI4 slave ports: read side for coef_bank_loader, write side for
 // qspi_boot_loader (added 2026-08-22); ui_clk for the coefficient subsystem.
@@ -19,11 +19,11 @@ module dac_ddr4_if (
     input  wire         ddr4_clkref_p,
     input  wire         ddr4_clkref_n,
 
-    // DDR4 PHY Interface — banks 66/67/68, 80-bit
-    inout  wire  [79:0] ddr4_dq,
-    inout  wire  [9:0]  ddr4_dqs_c,
-    inout  wire  [9:0]  ddr4_dqs_t,
-    inout  wire  [9:0]  ddr4_dm_dbi_n,
+    // DDR4 PHY Interface — banks 66/67/68, 64-bit
+    inout  wire  [63:0] ddr4_dq,
+    inout  wire  [7:0]  ddr4_dqs_c,
+    inout  wire  [7:0]  ddr4_dqs_t,
+    inout  wire  [7:0]  ddr4_dm_dbi_n,
     output wire  [16:0] ddr4_addr,
     output wire  [1:0]  ddr4_ba,
     output wire  [0:0]  ddr4_bg,

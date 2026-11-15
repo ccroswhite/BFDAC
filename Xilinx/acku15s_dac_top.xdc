@@ -433,13 +433,16 @@ set_property PACKAGE_PIN B31   [get_ports {cascode_r[63]}];# B69_L21_P J4-D60
 
 
 
+
 # -----------------------------------------------------------------------------
 # 9. DDR4 Interface
-# ACKU15S SoM: 5x NT5AD512M16C4-HR, 80-bit non-ECC, banks 66-68, 2666 Mbps,
+# ACKU15S SoM: 4x NT5AD512M16C4-HR, 64-bit non-ECC, banks 66-68, 2666 Mbps,
 # ref clk AR32/AT32. Pins from the SoM manual DDR4 table, IO-name resolved
 # via _ku15p_pkgpins.csv (printed pin column in the manual is misaligned at
 # page breaks). ALERT_B (AK34) and PAR (AV32) are routed on the SoM but not
-# used by this non-ECC controller config.
+# used by this non-ECC controller config. SoM 5th x16 chip (D64-79, DQS8/9,
+# DM8/9 on bank 67) is unconnected: Xilinx MIG caps DataWidth at 72 (64+ECC),
+# 80-bit non-ECC unsupported; option (a) ruled 2026-11-14.
 # IOSTANDARD / DCI / output impedance are set by the ddr4_0 IP (PG150);
 # only PACKAGE_PIN is constrained here.
 # addr[16:14] carry RAS/CAS/WE per DDR4 command encoding: [14]=WE_B,
@@ -573,30 +576,6 @@ set_property PACKAGE_PIN AN32  [get_ports {ddr4_dq[63]}];# DDR4_D63 (fixed SoM)
 set_property PACKAGE_PIN AN30  [get_ports {ddr4_dqs_t[7]}];# DDR4_DQS7_P (fixed SoM)
 set_property PACKAGE_PIN AN31  [get_ports {ddr4_dqs_c[7]}];# DDR4_DQS7_N (fixed SoM)
 set_property PACKAGE_PIN AM28  [get_ports {ddr4_dm_dbi_n[7]}];# DDR4_DM7 (fixed SoM)
-# Byte 8 (bank 67)
-set_property PACKAGE_PIN AU29  [get_ports {ddr4_dq[64]}];# DDR4_D64 (fixed SoM)
-set_property PACKAGE_PIN AW31  [get_ports {ddr4_dq[65]}];# DDR4_D65 (fixed SoM)
-set_property PACKAGE_PIN AW28  [get_ports {ddr4_dq[66]}];# DDR4_D66 (fixed SoM)
-set_property PACKAGE_PIN AV31  [get_ports {ddr4_dq[67]}];# DDR4_D67 (fixed SoM)
-set_property PACKAGE_PIN AT29  [get_ports {ddr4_dq[68]}];# DDR4_D68 (fixed SoM)
-set_property PACKAGE_PIN AU30  [get_ports {ddr4_dq[69]}];# DDR4_D69 (fixed SoM)
-set_property PACKAGE_PIN AW29  [get_ports {ddr4_dq[70]}];# DDR4_D70 (fixed SoM)
-set_property PACKAGE_PIN AT30  [get_ports {ddr4_dq[71]}];# DDR4_D71 (fixed SoM)
-set_property PACKAGE_PIN AV30  [get_ports {ddr4_dqs_t[8]}];# DDR4_DQS8_P (fixed SoM)
-set_property PACKAGE_PIN AW30  [get_ports {ddr4_dqs_c[8]}];# DDR4_DQS8_N (fixed SoM)
-set_property PACKAGE_PIN AU28  [get_ports {ddr4_dm_dbi_n[8]}];# DDR4_DM8 (fixed SoM)
-# Byte 9 (bank 67)
-set_property PACKAGE_PIN AT35  [get_ports {ddr4_dq[72]}];# DDR4_D72 (fixed SoM)
-set_property PACKAGE_PIN AW34  [get_ports {ddr4_dq[73]}];# DDR4_D73 (fixed SoM)
-set_property PACKAGE_PIN AU33  [get_ports {ddr4_dq[74]}];# DDR4_D74 (fixed SoM)
-set_property PACKAGE_PIN AU34  [get_ports {ddr4_dq[75]}];# DDR4_D75 (fixed SoM)
-set_property PACKAGE_PIN AU32  [get_ports {ddr4_dq[76]}];# DDR4_D76 (fixed SoM)
-set_property PACKAGE_PIN AT36  [get_ports {ddr4_dq[77]}];# DDR4_D77 (fixed SoM)
-set_property PACKAGE_PIN AU35  [get_ports {ddr4_dq[78]}];# DDR4_D78 (fixed SoM)
-set_property PACKAGE_PIN AW35  [get_ports {ddr4_dq[79]}];# DDR4_D79 (fixed SoM)
-set_property PACKAGE_PIN AV32  [get_ports {ddr4_dqs_t[9]}];# DDR4_DQS9_P (fixed SoM)
-set_property PACKAGE_PIN AV33  [get_ports {ddr4_dqs_c[9]}];# DDR4_DQS9_N (fixed SoM)
-set_property PACKAGE_PIN AV35  [get_ports {ddr4_dm_dbi_n[9]}];# DDR4_DM9 (fixed SoM)
 
 # --- ui_clk <-> dsp_clk CDC (dac_coef_subsys) ---------------------------------
 # dac_coef_subsys has two toggle synchronizers (load_start, load_done) and one

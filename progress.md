@@ -5475,3 +5475,15 @@ OPTIONS: (a) 64-bit non-ECC, chip5 NC (VU13P-equivalent); (b) 64+8 ECC=72-bit
 using chip5 (coefficient-store SEU protection — needs Ecc enable figured out);
 (c) custom non-MIG controller for true 80-bit (not recommended).
 RTL/XDC currently at 80-bit pending decision.
+
+### 2026-11-14 — Option (a) ruled: 64-bit non-ECC DDR4
+- Xilinx MIG caps DataWidth at 72; 80-bit non-ECC impossible. 5th x16 chip NC.
+- Reverted 80-bit widening: top/dac_ddr4_if/tb_vu13p_mig back to dq[63:0],
+  dqs/dm[7:0]; XDC byte-8/9 pins removed (293 pins total).
+- AXI topology preserved: AxiDataWidth=512 is valid for DW=64 (full
+  bandwidth, ~21 GB/s @ 333 MHz ui_clk — coefficient-load todo downgraded
+  to capacity check: 4GB vs 8GB store map).
+- IP config ordering finally cracked: {TP,ICP} -> MemoryPart -> AXI dict
+  (no width) -> DataWidth LAST; verified CHECK dw=64/axi=512/tp=750 in
+  gen_mig.log; OOC synthesis in flight (detached).
+- Remaining delta vs VU13P: capacity 8GB->4GB, addr width 33->32.
