@@ -5521,3 +5521,10 @@ RTL/XDC currently at 80-bit pending decision.
   legal MMCM CLKIN source; adds ~insertion delay to pad->CLKIN1 -- CLKOUT1_PHASE
   90deg margin must be re-verified in sign-off reports.
 - Re-synth required (checkpoint stale) then P&R.
+
+### ACKU15S-6 cont: clk_200m IOSTANDARD fix (12-1411)
+- Bank 94 is HDIO: LVDS IOSTANDARD illegal (CW 12-1411 during XDC parse).
+  Fixed XDC + gen_acku15s_xdc.py fixup: LVDS -> DIFF_HSTL_I_18 (1.8 V VCCO
+  HDIO-legal differential input, LVDS-swing compatible).
+- run_pnr_5m.tcl re-applies the property after open_checkpoint so a
+  pre-fix dcp still gets the corrected standard.

@@ -14,6 +14,11 @@ if {![file exists "$OUT_DIR/post_synth.dcp"]} {
 puts "INFO: Opening post-synthesis checkpoint $OUT_DIR/post_synth.dcp..."
 open_checkpoint "$OUT_DIR/post_synth.dcp"
 
+# Post-synth port-property refresh: checkpoint may predate XDC fixes.
+# clk_200m sits on HDIO bank 94 -- LVDS is not legal there; DIFF_HSTL_I_18 is
+# (1.8 V VCCO, LVDS-level compatible). Re-apply in case dcp has stale LVDS.
+set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]
+
 # Pre-place cross-clock sanity audit (verifies zero sub-ns un-excepted beat paths)
 foreach {src dst} {
     dsp_clk      clk_200m

@@ -20,7 +20,7 @@
 # 200 MHz SOM system clock (differential) -- drives SPI control plane (clk_200m domain).
 # SoM oscillator on B94_L5_P/N = G12/G11 (HDGC, fixed on-module; not connector-routed).
 create_clock -name clk_200m -period 5.000 [get_ports clk_200m_p]
-set_property IOSTANDARD LVDS     [get_ports {clk_200m_p clk_200m_n}]
+set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]
 set_property PACKAGE_PIN G12   [get_ports clk_200m_p];# IO_L5P_HDGC_94 SoM 200 MHz osc
 set_property PACKAGE_PIN G11   [get_ports clk_200m_n];# IO_L5N_HDGC_94 SoM 200 MHz osc
 

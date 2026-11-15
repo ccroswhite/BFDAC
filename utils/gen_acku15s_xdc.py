@@ -198,6 +198,12 @@ def main():
          """# 200 MHz SOM system clock (differential) -- drives SPI control plane (clk_200m domain).
 # SoM oscillator on B94_L5_P/N = G12/G11 (HDGC, fixed on-module; not connector-routed)."""),
 
+        # clk_200m IOSTANDARD: bank 94 is HDIO -- true LVDS is not a legal
+        # standard there (Vivado PLHDIO / 12-1411). 1.8 V HDIO banks accept
+        # DIFF_HSTL_I_18; electrically compatible with the LVDS oscillator.
+        ("set_property IOSTANDARD LVDS     [get_ports {clk_200m_p clk_200m_n}]",
+         "set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]),
+
         # mclk comment
         ("""# Bank 65 TRUE GC pair B65_L12 (J6-C30/C29) - moved from B71_L12 (J1-A17/A16,
 # J28/J29) on 2026-10-08: the clock block sits on the analog/right edge next to
