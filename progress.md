@@ -5501,3 +5501,15 @@ RTL/XDC currently at 80-bit pending decision.
   run_build_5m.sh NUM_MACS default fixed 128->80 to match the .tcl.
 - audit_*.tcl/check_641.tcl checkpoint paths + pw_check.ps1 updated to build_5m.
 - NOTE: in-flight synth run (launched pre-rename) still writes synth_8m.log + build_8m/.
+
+### Xilinx/ dir cleanup (script+artifact consolidation)
+- ALL run/build scripts moved Xilinx/*.tcl|sh|ps1 -> Xilinx/scripts/ (incl.
+  run_*_5m, close_5m, finish_5m, audit_*, check_641, suppress_warnings, pw_check,
+  run_all_milestones, tb_fir_stereo_m5, plus historical synth/pnr experiments).
+- Outputs consolidated under Xilinx/build/: build/5m (current: post_synth.dcp,
+  synth.log, *.rpt), build/mig (MIG-gen logs), build/archive (107 stray
+  logs/jou/wdb/pb/backup/stdout files).
+- OUT_DIR default build/5m in all scripts; run_build_5m.sh invokes
+  scripts/run_*.tcl; convention unchanged: run Vivado from Xilinx/.
+- .gitignore: Xilinx/build_*/ -> Xilinx/build/.
+- Xilinx/ root now = RTL/XDC sources + sim-data .txt + dirs only.

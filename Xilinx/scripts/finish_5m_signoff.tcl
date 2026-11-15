@@ -1,4 +1,4 @@
-set OUT_DIR [expr {[info exists ::env(OUT_DIR)] ? $::env(OUT_DIR) : "build_5m"}]
+set OUT_DIR [expr {[info exists ::env(OUT_DIR)] ? $::env(OUT_DIR) : "build/5m"}]
 set_param general.maxThreads 8
 
 open_checkpoint "$OUT_DIR/post_route.dcp"

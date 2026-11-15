@@ -1,5 +1,5 @@
 set_param general.maxThreads 8
-open_checkpoint "build_5m/post_route.dcp"
+open_checkpoint "build/5m/post_route.dcp"
 
 # 1. SPI Mode 0 hold multicycle: MOSI/CS toggle on cf_sck falling edge (clk_200m +5 ns),
 #    never on cf_sck rising edge. Shifts hold req from 0.0 ns to -5.0 ns (+3.529 ns slack).
@@ -32,12 +32,12 @@ puts "========================================================================="
 puts "INCREMENTAL CLOSURE SCOREBOARD: WNS = ${final_wns} ns | WHS = ${final_whs} ns"
 puts "========================================================================="
 
-write_checkpoint -force "build_5m/post_route_closed.dcp"
-report_timing_summary -max_paths 20 -file "build_5m/post_route_closed_timing.rpt"
+write_checkpoint -force "build/5m/post_route_closed.dcp"
+report_timing_summary -max_paths 20 -file "build/5m/post_route_closed_timing.rpt"
 
 set WRITE_BIT [expr {[info exists ::env(WRITE_BIT)] ? $::env(WRITE_BIT) : 0}]
 if {$WRITE_BIT && $final_wns >= 0.000 && $final_whs >= 0.000} {
-    puts "INFO: Timing CLOSED! Writing build_5m/acku15s_dac_5m.bit..."
-    write_bitstream -force "build_5m/acku15s_dac_5m.bit"
+    puts "INFO: Timing CLOSED! Writing build/5m/acku15s_dac_5m.bit..."
+    write_bitstream -force "build/5m/acku15s_dac_5m.bit"
 }
 exit

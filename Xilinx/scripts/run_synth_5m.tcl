@@ -7,14 +7,14 @@ set PART           "xcku15p-ffve1517-2-i"
 set TOP            "acku15s_dac_top"
 set NUM_MACS       [expr {[info exists ::env(NUM_MACS)]       ? $::env(NUM_MACS)       : 80}]
 set TAPS_PER_PHASE [expr {[info exists ::env(TAPS_PER_PHASE)] ? $::env(TAPS_PER_PHASE) : 256}]
-set OUT_DIR        [expr {[info exists ::env(OUT_DIR)]        ? $::env(OUT_DIR)        : "build_5m"}]
+set OUT_DIR        [expr {[info exists ::env(OUT_DIR)]        ? $::env(OUT_DIR)        : "build/5m"}]
 
 file mkdir $OUT_DIR
 set_param general.maxThreads 8
 create_project -in_memory -part $PART
 
 # Scoped message pruning (string-filtered; known-benign instances only)
-source suppress_warnings.tcl
+source scripts/suppress_warnings.tcl
 
 set sv_files {}
 foreach f [glob *.sv] {

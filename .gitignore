@@ -84,4 +84,4 @@ dfx_runtime.txt
 .DS_Store
 Thumbs.db
 Desktop.ini
-Xilinx/build_*/
+Xilinx/build/

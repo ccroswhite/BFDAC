@@ -1,4 +1,4 @@
-open_checkpoint build_5m/post_synth.dcp
+open_checkpoint build/5m/post_synth.dcp
 set p [get_timing_paths -from [get_clocks dsp_clk] -to [get_clocks dsp_clk] -max_paths 1 -nworst 1 -setup]
 puts "\n=== 1. WORST dsp_clk PATH CELLS & PBLOCKS ==="
 foreach c [get_cells -of_objects $p] {

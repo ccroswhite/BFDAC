@@ -1,4 +1,4 @@
-open_checkpoint build_5m/post_route.dcp
+open_checkpoint build/5m/post_route.dcp
 
 set paths [get_timing_paths -quiet -from [get_clocks dsp_clk] -to [get_clocks dsp_clk] -max_paths 2000 -nworst 1 -slack_lesser_than 0.0]
 puts "failing dsp_clk paths sampled: [llength $paths]"
