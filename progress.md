@@ -5460,3 +5460,18 @@ User: "follow what we already have for the XMOS SPI in the current schematic ...
 - dac_ddr4_if_mig.sv: mig_* AXI nets widened 512->640, wstrb 64->80.
 - Run: vivado -mode batch -source scripts/gen_ddr4_mig.tcl
   logs: Xilinx/gen_mig.log / gen_mig_stdout.log (detached, still running)
+
+### MIG width finding (BLOCKING decision needed)
+Empirical, from Vivado batch runs: ddr4_v2_2 C0.DDR4_DataWidth valid values are
+{8,16,32,64,72} — 80-bit non-ECC is NOT supported by the Xilinx MIG (the old
+VU13P note "maxes at 72-bit" was correct). The SoM's 5th x16 chip maps to the
+ECC lane: 64-bit data + 8-bit ECC = 72-bit interface (5th chip half-used) is
+the intended "all 5 chips" config; ECC param exists (C0.DDR4_Ecc) but was
+disabled at DW=64 — enable path TBD (likely memory-type dependent or GUI).
+Also learned: CONFIG set ordering matters — TP/ICP first, then MemoryPart,
+then DataWidth last; AxiSelection dict cascades DW back to part-min. For an
+80-bit... for a 64-bit config AxiDataWidth valid = {32,64}.
+OPTIONS: (a) 64-bit non-ECC, chip5 NC (VU13P-equivalent); (b) 64+8 ECC=72-bit
+using chip5 (coefficient-store SEU protection — needs Ecc enable figured out);
+(c) custom non-MIG controller for true 80-bit (not recommended).
+RTL/XDC currently at 80-bit pending decision.
