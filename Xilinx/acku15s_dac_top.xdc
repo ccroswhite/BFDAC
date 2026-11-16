@@ -102,9 +102,6 @@ set_max_delay -datapath_only 5.0 \
     -from [get_cells -hierarchical -filter {NAME =~ sys_volume_q_reg*}] \
     -to   [get_cells {sys_volume_dsp_reg[*]}]
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells -hierarchical -filter {NAME =~ u_ctrl_plane/i2s_rx_trim_reg*}] \
-    -to   [get_cells {u_i2s_ingress/trim_meta_reg[*]}]
-set_max_delay -datapath_only 5.0 \
     -from [get_clocks clk_200m] \
     -to   [get_cells {u_coef_subsys/req_data_dsp_reg[*]}]
 
@@ -130,7 +127,7 @@ set_max_delay -datapath_only 5.0 \
         u_ctrl_plane/current_bank_id_r_reg[*]
     }]
 
-# Serial DATA synchronizer (covers i2s_data, i2s_data2, and i2s_src_sel mux)
+# Serial DATA synchronizer (i2s_data)
 # and tagged launch-event crossing.
 set_false_path -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
 set_false_path -to [get_pins {u_i2s_ingress/enable_cell_reg[0]/D u_i2s_ingress/enable_sync_reg[0]/D u_i2s_ingress/valid_sync_reg[0]/D}]
@@ -205,15 +202,13 @@ set_property PACKAGE_PIN F2    [get_ports ext_rst_n];# B90_L3_N J1-B11
 # -----------------------------------------------------------------------------
 # 6. FPGA-master I2S with asynchronously returning serial DATA
 # -----------------------------------------------------------------------------
-set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data i2s_data2}]
-# J1 rows A2-A6, bank 90. BCLK/LRCLK are outputs; DATA is sampled with a
-# qualified delay.
-# i2s_data2 (J1-A6): second AP-domain source (host app processor) via U503
-# ch2; selected by i2s_src_sel (SPI reg 0x1C bit 5).
+set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data}]
+# J1 rows A2-A4, bank 90. BCLK/LRCLK are outputs; DATA is sampled with a
+# qualified delay. (i2s_data2/src_sel removed 2026-11-15 — XMOS is the sole
+# audio source; B2/J1-A6 freed.)
 set_property PACKAGE_PIN B5    [get_ports i2s_bclk];# B90_L10_P J1-A2
 set_property PACKAGE_PIN C4    [get_ports i2s_lrclk];# B90_L8_N J1-A3
 set_property PACKAGE_PIN C5    [get_ports i2s_data];# B90_L8_P J1-A4
-set_property PACKAGE_PIN B2    [get_ports i2s_data2];# B90_L9_N J1-A6
 set_property DRIVE 4 [get_ports {i2s_bclk i2s_lrclk}]
 set_property SLEW SLOW [get_ports {i2s_bclk i2s_lrclk}]
 set_property IOB TRUE [get_cells {u_i2s_ingress/i2s_bclk_reg u_i2s_ingress/i2s_lrclk_reg}]

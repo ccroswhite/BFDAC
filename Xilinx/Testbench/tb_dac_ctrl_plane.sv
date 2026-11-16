@@ -350,11 +350,11 @@ module tb_dac_ctrl_plane;
         stream_busy=0;
         xmos_write(7'h1B, 24'd1);
         check("source ready", source_valid, 1);
-        spi_write(7'h1C, 24'd31);
-        check("capture trim locked with active source", rx_trim, 8);
+        spi_write(7'h1C, 24'd31);             // 0x1C retired -> BAD_ADDR
+        check("capture trim fixed at 8 (reg retired)", rx_trim, 8);
         xmos_write(7'h1B, 24'd0);
         spi_write(7'h1C, 24'd31);
-        check("capture trim while stopped", rx_trim, 31);
+        check("capture trim still fixed while stopped", rx_trim, 8);
         stream_audio_ready=0;
         xmos_write(7'h1B, 24'd1);
         check("stream arm (0x1B) still works — frame-readiness gate moved to automute/top", source_valid, 1);

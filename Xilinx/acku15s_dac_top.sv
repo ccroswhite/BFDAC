@@ -81,7 +81,6 @@ module acku15s_dac_top #(
     output logic        i2s_bclk,
     output logic        i2s_lrclk,
     input  logic        i2s_data,
-    input  logic        i2s_data2,
 
     // ARM SPI Interface (Control Plane)
     // Dual host SPI — XMOS audio bridge + host AP (isolated on carrier).
@@ -192,7 +191,6 @@ module acku15s_dac_top #(
     logic [2:0] stream_rate_request, applied_stream_rate;
     logic stream_rate_toggle, stream_rate_ack, stream_source_valid;
     logic [4:0] i2s_rx_trim;
-    logic i2s_src_sel;
     logic core_stream_fault, serial_fault;
     logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
     (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
@@ -806,7 +804,6 @@ module acku15s_dac_top #(
         .stream_rate_toggle     (stream_rate_toggle),
         .stream_source_valid    (stream_source_valid),
         .i2s_rx_trim            (i2s_rx_trim),
-        .i2s_src_sel            (i2s_src_sel),
         .stream_busy            (stream_busy),
         .stream_clocks_ready    (stream_clock_ready),
         .stream_applied_rate    (applied_stream_rate),
@@ -853,7 +850,7 @@ module acku15s_dac_top #(
         .rx_trim                (i2s_rx_trim),
         .i2s_bclk               (i2s_bclk),
         .i2s_lrclk              (i2s_lrclk),
-        .i2s_data               (i2s_src_sel ? i2s_data2 : i2s_data),
+        .i2s_data               (i2s_data),
         .audio_l                (audio_l),
         .audio_r                (audio_r),
         .new_sample             (new_sample),

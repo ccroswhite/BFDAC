@@ -12,7 +12,7 @@
 //  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
 //  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
 //  XMOS owns the audio-path subset {NOP, RATE,
-//  STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
+//  STICKY_W1C, STREAM_RATE, STREAM_VALID}; all other
 //  write registers (volume/level, filter/bank, cal, flash/update,
 //  bench/cell-test) are AP-only — a denied XMOS write reports BAD_ADDR and
 //  does not execute. Ruled 2026-11-14: VOLUME and LEVEL are AP-owned (UAC2
@@ -69,7 +69,8 @@
 `define SPI_W_CELL_TEST_R      7'h19
 `define SPI_W_STREAM_RATE      7'h1A  // [2:0]={rate_shift[1:0],family48}; 24-bit PCM/32-bit slots
 `define SPI_W_STREAM_VALID     7'h1B  // [0]=XMOS stream-live flag; zero on underrun/stop (XMOS-only 11-15)
-`define SPI_W_I2S_RX_TRIM      7'h1C  // [4:0]=extra DSP capture-delay cycles, [5]=src_sel (0=XMOS/USB, 1=host); muted/source stopped only
+// 7'h1C RESERVED (was I2S_RX_TRIM — retired 2026-11-15: trim fixed at 8,
+//          src_sel dead — XMOS is the sole audio source)
 
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026

@@ -103,8 +103,8 @@ module dac_ctrl_plane (
     output logic [2:0]    stream_rate_request,
     output logic          stream_rate_toggle,
     output logic          stream_source_valid,
-    output logic [4:0]    i2s_rx_trim,
-    output logic          i2s_src_sel,
+    output logic [4:0]    i2s_rx_trim,   // fixed at reset value — SPI trim reg
+                                          // retired 11-15 (calculable/negligible)
     input  tri0           stream_busy,
     input  tri1           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
@@ -256,7 +256,7 @@ module dac_ctrl_plane (
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
             `SPI_W_FILTER_SELECT_ID,
             `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R,
-            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID, `SPI_W_I2S_RX_TRIM: wr_addr_invalid = 1'b0;
+            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID: wr_addr_invalid = 1'b0;
             default:                                    wr_addr_invalid = 1'b1;
         endcase
     end
@@ -275,7 +275,7 @@ module dac_ctrl_plane (
                 `SPI_W_NOP,
                 `SPI_W_RATE,
                 `SPI_W_STICKY_W1C,
-                `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID,  `SPI_W_I2S_RX_TRIM:
+                `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID:
                     wr_denied = 1'b0;
                 default: wr_denied = 1'b1;
             endcase
@@ -314,6 +314,7 @@ module dac_ctrl_plane (
     wire [1:0] cell_test_busy = cell_test_req ^ cell_test_ack_sync;
     wire cell_test_enabled = cell_test_cfg[0][7] || cell_test_cfg[1][7];
     wire cell_test_channel = (wr_addr == `SPI_W_CELL_TEST_R);
+    assign i2s_rx_trim = 5'd8;   // fixed round-trip trim (0x1C retired 11-15)
     assign bench_available = !cell_test_enabled && !(|cell_test_busy) && !stream_busy;
 
     always_ff @(posedge clk) begin
@@ -374,15 +375,6 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault ||
                                                 cell_test_enabled || |cell_test_busy)) begin
-                    wr_rejected = 1;
-                    wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
-                end
-            end
-            `SPI_W_I2S_RX_TRIM: begin
-                if (ctrl_bus_data[23:6] != 0) begin
-                    wr_rejected = 1;
-                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
-                end else if (stream_source_valid || bench_busy || stream_busy) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
@@ -599,8 +591,6 @@ module dac_ctrl_plane (
             stream_rate_request <= 0;
             stream_rate_toggle <= 0;
             stream_source_valid <= 0;
-            i2s_rx_trim <= 5'd8;
-            i2s_src_sel <= 1'b0;
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
             read_addr_reg   <= `SPI_W_NOP;
@@ -656,10 +646,6 @@ module dac_ctrl_plane (
                             dpd_enable <= 0;
                         end
                         `SPI_W_STREAM_VALID: if (!wr_rejected) stream_source_valid <= ctrl_bus_data[0];
-                        `SPI_W_I2S_RX_TRIM: if (!wr_rejected) begin
-                            i2s_rx_trim <= ctrl_bus_data[4:0];
-                            i2s_src_sel <= ctrl_bus_data[5];
-                        end
                         `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: if (!wr_rejected) begin
                             cell_test_cfg[cell_test_channel] <= ctrl_bus_data[7:0];
                             cell_test_req[cell_test_channel] <= ~cell_test_req[cell_test_channel];
