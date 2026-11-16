@@ -5573,3 +5573,19 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   UNMUTE deferred, XMOS-allowed set now 8 regs.
 - TODO added: strip board-side headphone circuitry if any remains in
   gen_kicad sheets (bom 8 already struck relay_hp_* nets — verify).
+
+### 2026-11-15 SPI rulings batch 2: RATE XMOS-only, DAC_MODE removed
+- RULING (user): RATE (0x03) / STREAM_RATE (0x1A) -> XMOS-ONLY. XMOS is the
+  sole audio source to the FPGA (USB or AP-network relay), so the stream
+  rate always originates there. wr_denied is now bidirectional: XMOS mask
+  unchanged, AP mask denies 0x03/0x1A.
+- RULING (user): DAC_MODE (0x0B) REMOVED - video-sync streaming not
+  supported. video_mode output, decode, FILTER_LIST_STAT[11] -> reserved 0.
+- TBs: rate writes rerouted to XMOS bus (xmos_write added to
+  tb_spi_ctrl_plane + tb_vu13p_top); tb_dac_ctrl_plane T5 updated.
+  tb_dac_ctrl_plane TB_PASS; tb_spi_ctrl_plane all PASS (0 FAIL).
+- DISCUSS (not yet ruled): STREAM_VALID 0x1B is the "stream actually live"
+  flag gating relay_line_mute/UNMUTE - still required even with XMOS as
+  sole source. I2S_RX_TRIM[4:0] = FPGA-master I2S capture-point trim
+  (still useful); [5] src_sel muxes i2s_data2 host path (dead if XMOS-only).
+  STICKY_W1C lets XMOS clear shared AP-domain errors - ownership TBD.

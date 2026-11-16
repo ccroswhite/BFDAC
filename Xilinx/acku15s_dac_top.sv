@@ -336,7 +336,6 @@ module acku15s_dac_top #(
     logic [15:0] filter_id;
     logic [15:0] filter_next_id;
     logic        filter_load_req;
-    logic        video_mode;
 
     // I2S audio (dsp_clk domain)
     logic [23:0] audio_l;
@@ -771,7 +770,6 @@ module acku15s_dac_top #(
         .filter_id              (filter_id),
         .filter_next_id         (filter_next_id),
         .filter_load_req        (filter_load_req),
-        .video_mode             (video_mode),
         .spi_unmute             (spi_unmute),
         .cal_wr_toggle          (cal_wr_toggle),
         .cal_wr_addr            (cal_wr_addr),

@@ -54,7 +54,6 @@ module dac_ctrl_plane (
     output logic [15:0] filter_id,        // Currently selected filter (DDR4 directory ID)
     output logic [15:0] filter_next_id,   // Next list entry — bank manager preload target
     output logic        filter_load_req,  // Single-cycle pulse on select/advance
-    output logic        video_mode,       // Status flag (host-enforced eligibility)
     output logic        spi_unmute,       // Raw clk_49m-domain unmute command (CDC in top)
     output logic        fpga_irq_n,       // Active-low IRQ to XMOS (sticky errors)
     output logic        spi_ap_irq_n,     // Active-low IRQ to AP (same sticky source)
@@ -253,7 +252,7 @@ module dac_ctrl_plane (
             `SPI_W_VOLUME,        `SPI_W_LEVEL,          `SPI_W_RATE,
             `SPI_W_UNMUTE,        `SPI_W_BANK_LOAD,
             `SPI_W_FILTER_LIST_CTRL, `SPI_W_FILTER_LIST_APP, `SPI_W_FILTER_SELECT,
-            `SPI_W_DAC_MODE,      `SPI_W_CAL_ADDR,       `SPI_W_CAL_DATA,
+            `SPI_W_CAL_ADDR,       `SPI_W_CAL_DATA,
             `SPI_W_CAL_COMMIT,    `SPI_W_CAL_RDADDR,     `SPI_W_FLASH_ADDR_LO,
             `SPI_W_FLASH_ADDR_HI, `SPI_W_FLASH_CMD,      `SPI_W_FLASH_DATA,
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
@@ -277,10 +276,17 @@ module dac_ctrl_plane (
             case (wr_addr)
                 `SPI_W_NOP,
                 `SPI_W_RATE,          `SPI_W_UNMUTE,
-                `SPI_W_DAC_MODE,      `SPI_W_STICKY_W1C,
+                `SPI_W_STICKY_W1C,
                 `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID,  `SPI_W_I2S_RX_TRIM:
                     wr_denied = 1'b0;
                 default: wr_denied = 1'b1;
+            endcase
+        end else begin // SRC_AP: RATE/STREAM_RATE are XMOS-only (ruled
+            // 2026-11-15 — the XMOS is the sole audio source to the FPGA, so
+            // the stream rate always originates there; AP writes denied).
+            case (wr_addr)
+                `SPI_W_RATE, `SPI_W_STREAM_RATE: wr_denied = 1'b1;
+                default: wr_denied = 1'b0;
             endcase
         end
     end
@@ -609,7 +615,6 @@ module dac_ctrl_plane (
             filter_cur_index <= '0;
             filter_id        <= 16'd0;
             filter_load_req  <= 1'b0;
-            video_mode       <= 1'b0;
             cal_wr_toggle     <= 1'b0;
             cal_wr_ptr        <= 9'd0;
             cal_wr_addr       <= 9'd0;
@@ -711,7 +716,8 @@ module dac_ctrl_plane (
                                 filter_load_req  <= 1'b1;
                             end
                         end
-                        `SPI_W_DAC_MODE: video_mode <= ctrl_bus_data[0];
+                        // 7'h0B: RESERVED (was DAC_MODE video_mode; video-sync
+                        //        streaming not supported per 2026-11-15 ruling)
                         `SPI_W_CAL_ADDR: begin // shadow write pointer
                             cal_wr_ptr      <= ctrl_bus_data[8:0];
                             cal_ptr_wrapped <= 1'b0;
@@ -796,8 +802,8 @@ module dac_ctrl_plane (
                                     1'b0, line_mute_r, cmd_unmute};
             // 0x15: Clock / PLL status (+ DPD enable readback, bit 2)
             `SPI_R_CLK_STATUS: reg_read = {29'd0, dpd_enable, ddr4_calib_sync[1], clk_locked};
-            // 0x16: Filter list status {video_mode[11], list_len[10:5], cur_index[4:0]}
-            `SPI_R_FILTER_LIST_STAT: reg_read = {20'd0, video_mode, filter_list_len, filter_cur_index};
+            // 0x16: Filter list status {rsvd[11], list_len[10:5], cur_index[4:0]}
+            `SPI_R_FILTER_LIST_STAT: reg_read = {21'd0, filter_list_len, filter_cur_index};
             // 0x17: Current + next-in-list filter IDs (next is informational only)
             `SPI_R_FILTER_IDS: reg_read = {filter_next_id, filter_id};
             // 0x18: Cal store status

@@ -12,13 +12,17 @@
 //  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
 //  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
 //  XMOS owns the audio-path subset {NOP, RATE, UNMUTE,
-//  DAC_MODE, STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
+//  STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
 //  write registers (volume/level, filter/bank, cal, flash/update,
 //  bench/cell-test) are AP-only — a denied XMOS write reports BAD_ADDR and
 //  does not execute. Ruled 2026-11-14: VOLUME and LEVEL are AP-owned (UAC2
 //  volume control disabled; the application sets level/volume — XMOS has no
 //  access). OUTSEL/headphone path removed entirely (2026-11-14 ruling: no
 //  headphone output stage). UNMUTE ownership under review.
+//  Ruled 2026-11-15: RATE/STREAM_RATE are XMOS-ONLY (the XMOS is the sole
+//  audio source to the FPGA — USB or AP-network relay — so the rate always
+//  originates there; AP writes are denied). DAC_MODE/video_mode removed —
+//  video-sync streaming is not supported.
 //  DRAFT partition pending the SPI access-review TODO.
 //
 //  Keep this file in sync with progress.md "SPI Register Map" and
@@ -42,7 +46,9 @@
 `define SPI_W_FILTER_LIST_CTRL 7'h08  // [0]=clear list, [1]=select entry 0 (commit)
 `define SPI_W_FILTER_LIST_APP  7'h09  // [15:0] append filter_id (max SPI_FLIST_MAX)
 `define SPI_W_FILTER_SELECT    7'h0A  // [16]=advance, [4:0]=index
-`define SPI_W_DAC_MODE         7'h0B  // [0]    video_mode (status only)
+//                             7'h0B     RESERVED (was DAC_MODE video_mode;
+//                                       video-sync streaming not supported
+//                                       per 2026-11-15 ruling)
 `define SPI_W_CAL_ADDR         7'h0C  // [8:0]  cal_coef_store shadow write pointer
 `define SPI_W_CAL_DATA         7'h0D  // [23:0] shadow word, auto-increment
 `define SPI_W_CAL_COMMIT       7'h0E  // [0]=1  toggle atomic bank swap
@@ -72,7 +78,7 @@
                                       //  clk_src[9], base_rate[8], cur_bank[7:4], bank_id[3:0]}
 `define SPI_R_MUTE_STATUS      7'h14  // {i2s_err, switch_busy, rsvd, line_mute, unmute}
 `define SPI_R_CLK_STATUS       7'h15  // {dpd_enable, ddr4_calib, clk_locked}
-`define SPI_R_FILTER_LIST_STAT 7'h16  // {video_mode[11], list_len[10:5], cur_index[4:0]}
+`define SPI_R_FILTER_LIST_STAT 7'h16  // {rsvd[11], list_len[10:5], cur_index[4:0]}
 `define SPI_R_FILTER_IDS       7'h17  // {next_in_list_id[31:16], cur_filter_id[15:0]}
 `define SPI_R_CAL_STATUS       7'h18  // {calibration_valid[11], cal_wr_ptr[10:2], pending[1], active_bank[0]}
 `define SPI_R_CAL_RDDATA       7'h19  // [23:0] active-bank word at CAL_RDADDR

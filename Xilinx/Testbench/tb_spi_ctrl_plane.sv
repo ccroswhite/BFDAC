@@ -25,6 +25,10 @@ module tb_spi_ctrl_plane;
     logic spi_cs_n;
     logic spi_mosi;
     logic spi_miso;
+    logic xmos_sclk;
+    logic xmos_cs_n;
+    logic xmos_mosi;
+    logic xmos_miso;
     logic fpga_irq_n;
     logic       level_switch_req;
     logic [2:0] level_target;
@@ -60,10 +64,10 @@ module tb_spi_ctrl_plane;
     dac_ctrl_plane u_dut (
         .clk                    (clk),
         .ext_rst_n              (ext_rst_n),
-        .spi_xmos_sclk          (1'b0),
-        .spi_xmos_cs_n           (1'b1),
-        .spi_xmos_mosi           (1'b0),
-        .spi_xmos_miso           (),
+        .spi_xmos_sclk          (xmos_sclk),
+        .spi_xmos_cs_n           (xmos_cs_n),
+        .spi_xmos_mosi           (xmos_mosi),
+        .spi_xmos_miso           (xmos_miso),
         .spi_ap_sclk            (spi_sclk),
         .spi_ap_cs_n            (spi_cs_n),
         .spi_ap_mosi            (spi_mosi),
@@ -155,6 +159,33 @@ module tb_spi_ctrl_plane;
             spi_cs_n = 1'b1;
             spi_mosi = 1'b0;
             #(SPI_HALF_NS * 4); // inter-frame gap: allow CS-rise detection + data_valid
+        end
+    endtask
+
+    // XMOS-bus write — identical framing, drives the xmos_* pins.
+    // RATE/STREAM_RATE are XMOS-only (2026-11-15 ruling).
+    task automatic xmos_write(input [6:0] addr, input [23:0] data);
+        logic [39:0] frame;
+        logic [7:0]  crc;
+        begin
+            frame = {1'b0, addr, data, 8'h00};
+            crc   = crc8_msb_first(frame[39:8]);
+            frame[7:0] = crc;
+            xmos_cs_n = 1'b0;
+            xmos_sclk = 1'b0;
+            xmos_mosi = 1'b0;
+            #(SPI_HALF_NS * 4);
+            for (int i = 0; i < 40; i++) begin
+                xmos_mosi = frame[39-i];
+                #(SPI_HALF_NS);
+                xmos_sclk = 1'b1;
+                #(SPI_HALF_NS);
+                xmos_sclk = 1'b0;
+            end
+            #(SPI_HALF_NS);
+            xmos_cs_n = 1'b1;
+            xmos_mosi = 1'b0;
+            #(SPI_HALF_NS * 4);
         end
     endtask
 
@@ -264,6 +295,9 @@ module tb_spi_ctrl_plane;
         spi_sclk = 0;
         spi_cs_n = 1;
         spi_mosi = 0;
+        xmos_sclk = 0;
+        xmos_cs_n = 1;
+        xmos_mosi = 0;
         mgr_busy = 0;
         coef_load_done = 0;
         current_bank_id = 4'h0;
@@ -294,8 +328,9 @@ module tb_spi_ctrl_plane;
             $display("PASS: [1] volume write  addr=0x01 sys_volume=0x%08X", sys_volume);
 
         // 2. Write base_rate_sel (addr=0x03) — single-register clock control:
-        //    clk_source_sel is a comb ALIAS of base_rate_sel (0x06 is reserved)
-        spi_write(7'h03, 24'h00_0001);
+        //    clk_source_sel is a comb ALIAS of base_rate_sel (0x06 is reserved).
+        //    RATE is XMOS-only (2026-11-15 ruling) — written on the XMOS bus.
+        xmos_write(7'h03, 24'h00_0001);
         #(CLK_PERIOD_NS * 20);
         if (base_rate_sel !== 1 || clk_source_sel !== 1)
             $display("FAIL: [2] rate write  base_rate_sel=%0b clk_source_sel=%0b (exp both 1, alias)",

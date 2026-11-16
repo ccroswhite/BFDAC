@@ -45,11 +45,16 @@ module tb_vu13p_top;
     wire        i2s_lrclk;
     logic       i2s_data  = 0;
 
-    // SPI
+    // SPI — spi_* drives the AP bus, xmos_* drives the XMOS bus.
+    // RATE/STREAM_RATE are XMOS-only (2026-11-15 ruling), VOLUME/LEVEL AP-only.
     logic spi_sclk = 0;
     logic spi_cs_n = 1;
     logic spi_mosi = 0;
     wire  spi_miso;
+    logic xmos_sclk = 0;
+    logic xmos_cs_n = 1;
+    logic xmos_mosi = 0;
+    wire  xmos_miso;
 
     // Outputs
     wire        fpga_irq_n;
@@ -110,12 +115,12 @@ module tb_vu13p_top;
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
         .i2s_data       (i2s_data),
-        // Drive the AP bus: VOLUME/LEVEL are AP-only since the 2026-11-14
-        // access ruling (XMOS is restricted to the audio-path subset).
-        .spi_xmos_sclk          (1'b0),
-        .spi_xmos_cs_n           (1'b1),
-        .spi_xmos_mosi           (1'b0),
-        .spi_xmos_miso           (),
+        // AP bus: VOLUME/LEVEL are AP-only (2026-11-14 ruling);
+        // XMOS bus: RATE/STREAM_RATE are XMOS-only (2026-11-15 ruling).
+        .spi_xmos_sclk          (xmos_sclk),
+        .spi_xmos_cs_n           (xmos_cs_n),
+        .spi_xmos_mosi           (xmos_mosi),
+        .spi_xmos_miso           (xmos_miso),
         .spi_ap_sclk            (spi_sclk),
         .spi_ap_cs_n            (spi_cs_n),
         .spi_ap_mosi            (spi_mosi),
@@ -180,6 +185,28 @@ module tb_vu13p_top;
             end
             repeat (4) @(posedge clk_200m);
             spi_cs_n = 1; spi_mosi = 0;
+            repeat (8) @(posedge clk_200m);
+        end
+    endtask
+
+    // XMOS-bus write — identical framing, drives the xmos_* pins.
+    task automatic xmos_write(input [6:0] addr, input [23:0] data);
+        logic [31:0] payload;
+        logic [39:0] frame;
+        begin
+            payload = {1'b0, addr, data};
+            frame   = {payload, crc8_word(payload)};
+            xmos_cs_n = 0; xmos_sclk = 0; xmos_mosi = 0;
+            repeat (8) @(posedge clk_200m);
+            for (int i = 39; i >= 0; i--) begin
+                xmos_mosi = frame[i];
+                repeat (4) @(posedge clk_200m);
+                xmos_sclk = 1;
+                repeat (4) @(posedge clk_200m);
+                xmos_sclk = 0;
+            end
+            repeat (4) @(posedge clk_200m);
+            xmos_cs_n = 1; xmos_mosi = 0;
             repeat (8) @(posedge clk_200m);
         end
     endtask
@@ -314,7 +341,7 @@ module tb_vu13p_top;
         // verifies that the old source remains selected until the mute delay
         // completes. The next check expects clk_sel=0 for the new 48 kHz rate.
         release u_dut.bank_valid;
-        spi_write(7'h03, 24'h000001);            // 44.1k family -> 48k family
+        xmos_write(7'h03, 24'h000001);           // 44.1k family -> 48k family (RATE is XMOS-only)
         wdog = 0;                                // a) automute drops the relay
         while (relay_line_mute !== 1'b0 && wdog < 20000) begin
             @(posedge clk_200m); wdog++;

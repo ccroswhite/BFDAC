@@ -37,7 +37,7 @@ module tb_dac_ctrl_plane;
     logic [3:0]  coef_bank_id;
     logic        coef_load_start;
     logic [15:0] filter_id, filter_next_id;
-    logic        filter_load_req, video_mode;
+    logic        filter_load_req;
     logic        spi_unmute, fpga_irq_n;
     logic        level_switch_req;
     logic [2:0]  level_target;
@@ -74,7 +74,7 @@ module tb_dac_ctrl_plane;
         .dpd_enable(dpd_enable),
         .coef_bank_id(coef_bank_id), .coef_load_start(coef_load_start),
         .filter_id(filter_id), .filter_next_id(filter_next_id),
-        .filter_load_req(filter_load_req), .video_mode(video_mode),
+        .filter_load_req(filter_load_req),
         .spi_unmute(spi_unmute), .fpga_irq_n(fpga_irq_n),
         .bench_busy(bench_busy), .bench_status(32'h12345678), .bench_available(),
         .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req),
@@ -224,11 +224,10 @@ module tb_dac_ctrl_plane;
         check("T4 wrap filter_id", filter_id, 32'h0101);
         check("T4 load pulses", load_req_count, 3);
 
-        // T5: video mode set + readback
-        spi_write(7'h0B, 24'h000001);
-        check("T5 video_mode", video_mode, 1);
+        // T5: filter-list status readback (was video_mode set + readback;
+        //     DAC_MODE 0x0B retired 2026-11-15 — bit11 is now reserved 0)
         spi_read (7'h16, rd);
-        check("T5 status w/ video", rd, {20'd0, 1'b1, 6'd3, 5'd0});
+        check("T5 status (video bit reserved)", rd, {21'd0, 6'd3, 5'd0});
 
         // T6: out-of-range explicit index clamps to 0
         spi_write(7'h0A, 24'h00001F);
@@ -325,7 +324,7 @@ module tb_dac_ctrl_plane;
         check("unmute blocked during local test", spi_unmute, 0);
         spi_write(7'h18, 24'h80);
         check("SPI cell config blocked during local test", cell_cfg[0], 0);
-        spi_write(7'h03, 24'd1);
+        xmos_write(7'h03, 24'd1);
         check("rate change blocked during local test", base_rate_sel, 0);
         spi_read(7'h1f, rd);
         check("local status readback", rd, 32'h12345678);
@@ -336,15 +335,15 @@ module tb_dac_ctrl_plane;
         check("explicit unmute after exit", spi_unmute, 1);
 
         for (int r=0; r<8; r++) begin
-            spi_write(7'h1A, 24'(r));
+            xmos_write(7'h1A, 24'(r));
             check("requested stream rate", stream_request, r);
             check("request clears unmute", spi_unmute, 0);
             check("request clears source ready", source_valid, 0);
         end
-        spi_write(7'h1A, 24'd8);
+        xmos_write(7'h1A, 24'd8);
         check("unsupported rate rejected", stream_request, 7);
         stream_busy=1;
-        spi_write(7'h1A, 24'd0);
+        xmos_write(7'h1A, 24'd0);
         check("busy rate request rejected", stream_request, 7);
         spi_write(7'h1B, 24'd1);
         check("source ready rejected while configuring", source_valid, 0);
