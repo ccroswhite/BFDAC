@@ -279,11 +279,12 @@ module dac_ctrl_plane (
                     wr_denied = 1'b0;
                 default: wr_denied = 1'b1;
             endcase
-        end else begin // SRC_AP: RATE/STREAM_RATE are XMOS-only (ruled
-            // 2026-11-15 — the XMOS is the sole audio source to the FPGA, so
-            // the stream rate always originates there; AP writes denied).
+        end else begin // SRC_AP: RATE/STREAM_RATE/STREAM_VALID are XMOS-only
+            // (ruled 2026-11-15 — the XMOS is the sole audio source to the FPGA,
+            // so the whole stream lifecycle originates there; AP writes denied).
             case (wr_addr)
-                `SPI_W_RATE, `SPI_W_STREAM_RATE: wr_denied = 1'b1;
+                `SPI_W_RATE, `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID:
+                    wr_denied = 1'b1;
                 default: wr_denied = 1'b0;
             endcase
         end

@@ -315,12 +315,12 @@ module tb_dac_ctrl_plane;
             check("T10 bank_valid=1 readback", rd[12], 1'b1);
         end
 
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("stream armed before local takeover", source_valid, 1);
         bench_busy = 1;
         repeat(10) @(negedge clk);
         check("local takeover disarms stream", source_valid, 0);
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("stream arm blocked during local test", source_valid, 0);
         spi_write(7'h18, 24'h80);
         check("SPI cell config blocked during local test", cell_cfg[0], 0);
@@ -331,7 +331,7 @@ module tb_dac_ctrl_plane;
         bench_busy = 0;
         repeat(10) @(negedge clk);
         check("no automatic re-arm on local exit", source_valid, 0);
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("explicit stream arm after exit", source_valid, 1);
 
         for (int r=0; r<8; r++) begin
@@ -345,28 +345,28 @@ module tb_dac_ctrl_plane;
         stream_busy=1;
         xmos_write(7'h1A, 24'd0);
         check("busy rate request rejected", stream_request, 7);
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("source ready rejected while configuring", source_valid, 0);
         stream_busy=0;
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("source ready", source_valid, 1);
         spi_write(7'h1C, 24'd31);
         check("capture trim locked with active source", rx_trim, 8);
-        spi_write(7'h1B, 24'd0);
+        xmos_write(7'h1B, 24'd0);
         spi_write(7'h1C, 24'd31);
         check("capture trim while stopped", rx_trim, 31);
         stream_audio_ready=0;
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("stream arm (0x1B) still works — frame-readiness gate moved to automute/top", source_valid, 1);
         stream_audio_ready=1;
-        spi_write(7'h1B, 24'd0);
+        xmos_write(7'h1B, 24'd0);
         spi_read(7'h20, rd);
         check("applied stream rate status", rd[7:5], 5);
         check("requested stream rate status", rd[10:8], 7);
         check("capture trim status", rd[15:11], 31);
         check("valid PCM frame status", rd[16], 1);
         stream_fault=1;
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         check("fault blocks source-ready", source_valid, 0);
         begin
             logic [7:0] old_cell_cfg;
@@ -418,10 +418,10 @@ module tb_dac_ctrl_plane;
         check("DPD enable accepted only after calibration/filter setup", dpd_enable, 1);
         spi_read(7'h18, rd);
         check("calibration status valid bit", rd[11], 1);
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         spi_write(7'h15, 24'd0);
         check("DPD mode cannot change with an active AP stream", dpd_enable, 1);
-        spi_write(7'h1B, 24'd0);
+        xmos_write(7'h1B, 24'd0);
         spi_write(7'h15, 24'd0);
         check("DPD disables while muted and source stopped", dpd_enable, 0);
 
@@ -441,12 +441,17 @@ module tb_dac_ctrl_plane;
             spi_write(7'h16, 24'h0000FF);         // clean up
         end
 
-        // T11: XMOS write to an allowed register (STREAM_VALID) executes
-        //      normally. VOLUME is AP-only since the 2026-11-14 access ruling.
+        // T11: STREAM_VALID is XMOS-only (2026-11-15 ruling — the whole
+        //      stream lifecycle is XMOS-owned; AP writes denied BAD_ADDR).
         begin
             xmos_write(7'h1B, 24'h000001);
             check("T11 XMOS stream_valid write executes", source_valid, 1);
-            spi_write(7'h1B, 24'h000000);         // restore via AP
+            spi_write (7'h1B, 24'h000000);          // AP write -> denied
+            check("T11 AP stream_valid write denied", source_valid, 1);
+            spi_read  (7'h1C, rd);
+            check("T11 CMD_ERR_INFO BAD_ADDR", rd[10:0], {7'h1B, 4'h1});
+            xmos_write(7'h1B, 24'h000000);          // restore via XMOS
+            spi_write (7'h16, 24'h0000FF);          // clean up sticky
         end
 
         // T12: XMOS reads see the full register map (MAGIC readable on both).

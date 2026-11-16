@@ -352,7 +352,7 @@ module tb_spi_ctrl_plane;
 
         // 4. Write STREAM_VALID (addr=0x1B) — UNMUTE 0x04 retired 2026-11-15;
         //    stream arm is now the only "unmute" path
-        spi_write(7'h1B, 24'h00_0001);
+        xmos_write(7'h1B, 24'h00_0001);
         #(CLK_PERIOD_NS * 20);
         if (source_valid !== 1)
             $display("FAIL: [4] stream_source_valid addr=0x1B got=%0b exp=1", source_valid);

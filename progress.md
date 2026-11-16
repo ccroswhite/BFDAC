@@ -5639,3 +5639,18 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - Results: tb_dac_ctrl_plane TB_PASS (107), tb_spi_ctrl_plane 25/0,
   tb_automute TB_PASS, tb_cell_measurement TB_PASS (262 windows),
   tb_vu13p_top ALL 9 PASS.
+
+### 2026-11-15 STREAM_VALID (0x1B) -> XMOS-only (R4b ruled)
+- RULING (user): XMOS controls all streaming — bit rate, stream type —
+  so the whole stream lifecycle {RATE, STREAM_RATE, STREAM_VALID} is
+  XMOS-owned. AP writes to 0x1B now denied BAD_ADDR.
+- STREAM_VALID is now the sole stream-arm path (post-UNMUTE retirement):
+  unmute_req = stream_source_valid && clocks_ready && bank_valid.
+- TBs: all AP-bus 0x1B writes re-bused to xmos_write (tb_dac_ctrl_plane
+  x12, tb_spi_ctrl_plane x1, tb_vu13p_top x3); tb_dac_ctrl_plane T11 now
+  verifies the AP deny (BAD_ADDR); tb_cell_measurement gained an XMOS
+  SPI bus + xwr task for its STREAM_VALID writes.
+- Results: tb_dac_ctrl_plane TB_PASS, tb_spi_ctrl_plane 0 FAIL,
+  tb_cell_measurement TB_PASS (262 windows), tb_vu13p_top ALL 9 PASS.
+- Split is now clean: XMOS owns stream lifecycle {RATE, VALID, TRIM},
+  AP owns user-facing {VOLUME, LEVEL} + provisioning/diagnostics.

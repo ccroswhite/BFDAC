@@ -283,7 +283,7 @@ module tb_vu13p_top;
         // this does not verify autonomous QSPI boot or DDR4 staging. Separate
         // loader tests cover those blocks.
         force u_dut.bank_valid = 1'b1;
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         spi_write(7'h01, 24'h123456);            // volume (smoke: CRC path)
         // unmute is now implicit: stream_valid + clocks-ready + bank_valid
         repeat (100) @(posedge clk_200m);
@@ -383,7 +383,7 @@ module tb_vu13p_top;
         if (!u_dut.force_zero || u_dut.stream_source_valid)
             $fatal(1, "rate change automatically resumed playback");
         force u_dut.bank_valid = 1'b1;
-        spi_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd1);
         wdog = 0;
         while (relay_line_mute !== 1'b1 && wdog < 400000) begin
             @(posedge clk_49m); wdog++;
@@ -400,7 +400,7 @@ module tb_vu13p_top;
         // --- TEST 6: I2S watchdog -> digital clamp (relay stays closed) ---
         // Three-tier model: a stream stop/underrun is a runtime mute event —
         // force_zero clamps, the relay MUST NOT cycle (no click).
-        spi_write(7'h1B, 24'd0);                 // AP reports source stopped/underrun
+        xmos_write(7'h1B, 24'd0);                 // AP reports source stopped/underrun
         wdog = 0;                                // first: watchdog must fire
         while (led_debug[1] !== 1'b1 && wdog < 20000) begin
             @(posedge clk_49m); wdog++;

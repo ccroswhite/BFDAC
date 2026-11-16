@@ -57,7 +57,7 @@ Ruling column = review checkbox.
 | 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | [ ] |
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | [ ] |
 | 0x1A | STREAM_RATE | [2:0] | {rate_shift[1:0],family48}; resets unmute/src-valid/dpd | **XMOS-only** (same ruling as 0x03) | [x] ruled |
-| 0x1B | STREAM_VALID | [0] | "stream actually live" flag; gates digital unmute (top-level AND + UNMUTE reject); 0 also clears unmute. No relay gating post-R1 | both | open (§6 R4b — XMOS-only vs both) | [ ] open |
+| 0x1B | STREAM_VALID | [0] | "stream actually live" flag; IS the stream-arm path (gates unmute_req at top); rejects while busy/not-ready/fault/diagnostics | **XMOS-only** | **XMOS-only** (ruled 11-15: whole stream lifecycle is XMOS-owned) | [x] ruled |
 | 0x1C | I2S_RX_TRIM | [4:0]trim [5]src_sel | [4:0] FPGA-master I2S capture-point trim; [5] src_sel muxes i2s_data2 host path | both | **PARKED** — review in detail | [ ] parked |
 
 Reserved: 0x06 (was clk_source_sel, merged into 0x03).
@@ -96,10 +96,10 @@ E TEST_FORMAT, F FILT_RATE.
 
 ## 5. Current draft partition (implemented)
 
-- **XMOS-allowed (6)**: NOP, RATE/STREAM_RATE (XMOS-only),
-  STICKY_W1C, STREAM_VALID, I2S_RX_TRIM
-- **XMOS-only**: RATE (0x03) / STREAM_RATE (0x1A) — AP writes denied
-  (ruled 2026-11-15)
+- **XMOS-allowed (6)**: NOP, STICKY_W1C, I2S_RX_TRIM
+- **XMOS-only**: RATE 0x03, STREAM_RATE 0x1A, STREAM_VALID 0x1B
+  (AP writes denied BAD_ADDR)
+
 - Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15),
   UNMUTE 0x04 (2026-11-15) — all now reserved, writes → BAD_ADDR
 - **AP-only (17)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
@@ -162,12 +162,11 @@ E TEST_FORMAT, F FILT_RATE.
   releases fpga_irq_n/spi_ap_irq_n. XMOS can currently clear shared
   AP-domain bits (BOOT_FLASH/FLASH_OP/DDR4_CALIB). Open: AP-only, or XMOS
   restricted mask (only SPI_CRC/I2S_ERR/FRAME_LEN)?
-- [ ] R4b STREAM_VALID (0x1B): still needed — the "stream actually live"
-  flag; gates the digital unmute path (spi_unmute top-level AND + UNMUTE
-  reject + auto-clears unmute on 0). Post-R1 it NO LONGER gates
-  relay_line_mute (relay is startup/fault/test only), so it is now
-  purely digital-mute/UX state. Ownership: XMOS-only (consistent with
-  RATE) vs both (AP can force-stop by writing 0)?
+- [x] R4b STREAM_VALID (0x1B) → **XMOS-only** (ruled 11-15): XMOS
+  controls all streaming — bit rate, stream type — so the stream arm
+  flag is XMOS-owned like RATE. AP writes denied BAD_ADDR. Post-R1 it
+  is the sole "stream is live" path: unmute_req = stream_source_valid
+  && clocks_ready && bank_valid. Writing 0 disarms (underrun/stop).
 - [ ] R5 DPD_EN (0x15): confirm AP-only.
 - [ ] R7 CELL_TEST_L/R: confirm AP-only (bench feature).
 - [ ] R8 FILTER_*: confirm all four AP-only per user ruling "XMOS should not choose filters".
