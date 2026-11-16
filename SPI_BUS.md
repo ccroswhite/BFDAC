@@ -35,27 +35,27 @@ Ruling column = review checkbox.
 | 0x02 | LEVEL | [2:0] | digital level cap 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied muted | AP | **AP-only** (ruled 11-14: app-controlled) | [x] ruled |
 | 0x03 | RATE | [2:0] | alias of STREAM_RATE | **XMOS-only** (ruled 11-15: XMOS is the sole audio source — USB or AP-network relay — rate always originates there; AP writes denied) | [x] ruled |
 | 0x04 | — | — | **REMOVED** (was UNMUTE — retired 11-15; stream arm = STREAM_VALID 0x1B, user mute = VOLUME) | — | — | [x] removed |
-| 0x05 | BANK_LOAD | [3:0] | legacy DDR4 slot id + coef_load_start trigger | AP | | [ ] |
+| 0x05 | BANK_LOAD | [3:0] | legacy DDR4 slot id + coef_load_start trigger | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x06 | — | — | RESERVED (was clk_source_sel, merged 0x03) | — | — | [x] reserved |
 | 0x07 | — | — | **REMOVED** (was OUTSEL 0=line/1=HP; no headphone output stage — ruled 11-14) | — | — | [x] removed |
-| 0x08 | FILTER_LIST_CTRL | [0]clr [1]commit | clear filter toggle-list / commit entry 0 | AP | | [ ] |
-| 0x09 | FILTER_LIST_APP | [15:0] | append filter_id to toggle list (≤32) | AP | | [ ] |
-| 0x0A | FILTER_SELECT | [16]adv [4:0]idx | select from toggle list | AP | | [ ] |
+| 0x08 | FILTER_LIST_CTRL | [0]clr [1]commit | clear filter toggle-list / commit entry 0 | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x09 | FILTER_LIST_APP | [15:0] | append filter_id to toggle list (≤32) | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x0A | FILTER_SELECT | [16]adv [4:0]idx | select from toggle list | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x0B | — | — | **REMOVED** (was DAC_MODE video_mode; video-sync streaming not supported — ruled 11-15) | — | — | [x] removed |
-| 0x0C | CAL_ADDR | [8:0] | cal shadow-bank write pointer | AP | | [ ] |
-| 0x0D | CAL_DATA | [23:0] | shadow word write, auto-incr | AP | | [ ] |
-| 0x0E | CAL_COMMIT | [0] | atomic bank-swap toggle | AP | | [ ] |
-| 0x0F | CAL_RDADDR | [8:0] | active-bank readback address | AP | | [ ] |
-| 0x10 | FLASH_ADDR_LO | [23:0] | flash cmd addr[23:0] | AP | | [ ] |
-| 0x11 | FLASH_ADDR_HI | [9:8] tgt | 0=SoM Flash1(coef) 1=SoM Flash0(bin) 2=carrier (chip=addr[29:28]) | AP | | [ ] |
-| 0x12 | FLASH_CMD | [7:0] | 0x01 erase / 0x02 program / 0x03 read | AP | | [ ] |
-| 0x13 | FLASH_DATA | [7:0] | page-buffer byte, auto-incr | AP | | [ ] |
-| 0x14 | FLASH_PTR | [15:0] | page-buffer w/r pointer | AP | | [ ] |
-| 0x15 | DPD_EN | [0] | DPD engine enable | AP | | [ ] |
+| 0x0C | CAL_ADDR | [8:0] | cal shadow-bank write pointer | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x0D | CAL_DATA | [23:0] | shadow word write, auto-incr | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x0E | CAL_COMMIT | [0] | atomic bank-swap toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x0F | CAL_RDADDR | [8:0] | active-bank readback address | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x10 | FLASH_ADDR_LO | [23:0] | flash cmd addr[23:0] | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x11 | FLASH_ADDR_HI | [9:8] tgt | 0=SoM Flash1(coef) 1=SoM Flash0(bin) 2=carrier (chip=addr[29:28]) | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x12 | FLASH_CMD | [7:0] | 0x01 erase / 0x02 program / 0x03 read | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x13 | FLASH_DATA | [7:0] | page-buffer byte, auto-incr | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x14 | FLASH_PTR | [15:0] | page-buffer w/r pointer | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x15 | DPD_EN | [0] | DPD engine enable | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO; XMOS masked to {0,1,4} (its bus errors + I2S) | masked | **AP full, XMOS masked** (ruled 11-15) | [x] ruled | **PARKED** — review in detail (XMOS can clear AP-domain errors) | [ ] parked |
-| 0x17 | FILTER_SELECT_ID | [15:0] | direct directory filter_id, bypasses toggle list | AP | | [ ] |
-| 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | [ ] |
-| 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | [ ] |
+| 0x17 | FILTER_SELECT_ID | [15:0] | direct directory filter_id, bypasses toggle list | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
+| 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x1A | STREAM_RATE | [2:0] | {rate_shift[1:0],family48}; resets unmute/src-valid/dpd | **XMOS-only** (same ruling as 0x03) | [x] ruled |
 | 0x1B | STREAM_VALID | [0] | "stream actually live" flag; IS the stream-arm path (gates unmute_req at top); rejects while busy/not-ready/fault/diagnostics | **XMOS-only** | **XMOS-only** (ruled 11-15: whole stream lifecycle is XMOS-owned) | [x] ruled |
 | 0x1C | — | — | **REMOVED** (was I2S_RX_TRIM: trim [4:0] calculable/negligible → fixed at 8; src_sel [5] + i2s_data2 pin/mux dead — XMOS sole source) | — | — | [x] removed |
@@ -103,7 +103,7 @@ E TEST_FORMAT, F FILT_RATE.
 - Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15),
   UNMUTE 0x04, I2S_RX_TRIM 0x1C (2026-11-15) — all now reserved,
   writes → BAD_ADDR
-- **AP-only (17)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
+- **AP-only (17, all ruled)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
   FILTER_SELECT_ID, CAL_ADDR/DATA/COMMIT/RDADDR, FLASH_ADDR_LO/HI/CMD/DATA/PTR,
   DPD_EN, CELL_TEST_L/R
 - Reads: unrestricted both ports.
@@ -169,11 +169,12 @@ E TEST_FORMAT, F FILT_RATE.
   flag is XMOS-owned like RATE. AP writes denied BAD_ADDR. Post-R1 it
   is the sole "stream is live" path: unmute_req = stream_source_valid
   && clocks_ready && bank_valid. Writing 0 disarms (underrun/stop).
-- [ ] R5 DPD_EN (0x15): confirm AP-only.
-- [ ] R7 CELL_TEST_L/R: confirm AP-only (bench feature).
-- [ ] R8 FILTER_*: confirm all four AP-only per user ruling "XMOS should not choose filters".
-- [ ] R9 FLASH_*: confirm AP-only (update start = AP only per user).
-- [ ] R10 BANK_LOAD legacy: keep AP-only or deprecate?
+- [x] R5 DPD_EN (0x15) → **AP-only** (ruled 11-16 — confirmed).
+- [x] R7 CELL_TEST_L/R → **AP-only** (ruled 11-16 — confirmed).
+- [x] R8 FILTER_* (0x08/09/0A/17) → **AP-only** (ruled 11-16 — confirmed).
+- [x] R9 FLASH_* (0x10-0x14) → **AP-only** (ruled 11-16 — confirmed).
+- [x] R10 BANK_LOAD (0x05) → **AP-only** (ruled 11-16 — kept as a
+  debug/recovery hook for manual DDR4 bank loads).
 - [ ] Document final partition in firmware protocol doc (todo: firmware protocol doc FPGA↔XMOS↔host).
 - [ ] Decide dedicated deny reason code vs current BAD_ADDR reuse.
 - [ ] TB coverage: extend denied-write tests to every AP-only addr (currently T10 spot-checks FILTER_LIST_CTRL).

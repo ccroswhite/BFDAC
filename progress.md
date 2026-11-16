@@ -5682,3 +5682,21 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   bit5 + CMD_ERR_INFO; AP W1C clears all). TB_PASS.
 - NOTE: bits 0/4 are bus-shared — either bus can raise them; the mask
   lets XMOS clear them regardless of which bus errored (documented).
+
+### 2026-11-16 Confirm batch: all AP-only registers ruled (R5/R7-R10)
+- RULINGS (user, all confirmed AP-only — XMOS never writes):
+  DPD_EN (0x15), CELL_TEST_L/R (0x18/0x19), FILTER_LIST_CTRL/APP,
+  FILTER_SELECT, FILTER_SELECT_ID (0x08/0x09/0x0A/0x17),
+  FLASH_ADDR_LO/HI/CMD/DATA/PTR (0x10-0x14), BANK_LOAD (0x05 — kept as
+  debug/recovery hook for manual DDR4 bank loads).
+- Implementation already matched the draft partition (XMOS denied ->
+  BAD_ADDR); this commit is doc-only. Every write register now has a
+  firm access ruling.
+
+### FINAL write-access partition (all ruled)
+- XMOS-only : NOP?, RATE 0x03, STREAM_RATE 0x1A, STREAM_VALID 0x1B
+- XMOS-allowed : STICKY_W1C (masked to {CRC,I2S,FRMLEN})
+- AP-only : VOLUME, LEVEL, BANK_LOAD, FILTER_*, CAL_*, FLASH_*, DPD_EN,
+            CELL_TEST_L/R
+- Removed : OUTSEL 0x07, DAC_MODE 0x0B, UNMUTE 0x04, I2S_RX_TRIM 0x1C
+- Reads   : unrestricted on both ports
