@@ -142,8 +142,6 @@ led_status,A4,J1,B4,B90_L11_P
 mclk_n,E11,J4,B3,B94_L6_N
 mclk_p,F11,J4,B4,B94_L6_P
 pg_all,F3,J1,B12,B90_L3_P
-relay_hp_mute,E5,J1,A14,B90_L1_P
-relay_hp_rails,A6,J1,B1,B90_L12_N
 relay_level[0],B6,J1,B2,B90_L12_P
 relay_line_mute,E4,J1,A13,B90_L1_N
 spi_xmos_cs_n,C2,J1,A7,B90_L9_P

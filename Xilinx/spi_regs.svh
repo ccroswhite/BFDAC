@@ -11,10 +11,14 @@
 //  DUAL-PORT (2026-11): two independent SPI slaves share this register file —
 //  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
 //  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
-//  XMOS owns the audio-path subset {NOP, VOLUME, LEVEL, RATE, UNMUTE, OUTSEL,
+//  XMOS owns the audio-path subset {NOP, RATE, UNMUTE,
 //  DAC_MODE, STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
-//  write registers (filter/bank, cal, flash/update, bench/cell-test) are
-//  AP-only — a denied XMOS write reports BAD_ADDR and does not execute.
+//  write registers (volume/level, filter/bank, cal, flash/update,
+//  bench/cell-test) are AP-only — a denied XMOS write reports BAD_ADDR and
+//  does not execute. Ruled 2026-11-14: VOLUME and LEVEL are AP-owned (UAC2
+//  volume control disabled; the application sets level/volume — XMOS has no
+//  access). OUTSEL/headphone path removed entirely (2026-11-14 ruling: no
+//  headphone output stage). UNMUTE ownership under review.
 //  DRAFT partition pending the SPI access-review TODO.
 //
 //  Keep this file in sync with progress.md "SPI Register Map" and
@@ -32,7 +36,9 @@
 `define SPI_W_UNMUTE           7'h04  // [0]    spi_unmute
 `define SPI_W_BANK_LOAD        7'h05  // [3:0]  legacy fixed DDR4 slot + load trigger
 //                             7'h06     RESERVED (was clk_source_sel; merged into 0x03)
-`define SPI_W_OUTSEL           7'h07  // [0]    0=line XLR 1=headphone
+//                             7'h07     RESERVED (was OUTSEL 0=line/1=HP;
+//                                       headphone output stage removed per
+//                                       2026-11-14 ruling — no HP hardware)
 `define SPI_W_FILTER_LIST_CTRL 7'h08  // [0]=clear list, [1]=select entry 0 (commit)
 `define SPI_W_FILTER_LIST_APP  7'h09  // [15:0] append filter_id (max SPI_FLIST_MAX)
 `define SPI_W_FILTER_SELECT    7'h0A  // [16]=advance, [4:0]=index
@@ -61,10 +67,10 @@
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026
 `define SPI_R_STICKY_ERR       7'h11  // [7:0] sticky bits (see SPI_STICKY_*)
-`define SPI_R_CTRL_STATE       7'h12  // {clk_source_sel, base_rate_sel, outsel, level[1:0]}
+`define SPI_R_CTRL_STATE       7'h12  // {clk_source_sel, base_rate_sel, rsvd, level[1:0]}
 `define SPI_R_COEF_STATUS      7'h13  // {bank_valid[12], mgr_busy[11], load_done[10],
                                       //  clk_src[9], base_rate[8], cur_bank[7:4], bank_id[3:0]}
-`define SPI_R_MUTE_STATUS      7'h14  // {i2s_err, switch_busy, hp_mute, line_mute, unmute}
+`define SPI_R_MUTE_STATUS      7'h14  // {i2s_err, switch_busy, rsvd, line_mute, unmute}
 `define SPI_R_CLK_STATUS       7'h15  // {dpd_enable, ddr4_calib, clk_locked}
 `define SPI_R_FILTER_LIST_STAT 7'h16  // {video_mode[11], list_len[10:5], cur_index[4:0]}
 `define SPI_R_FILTER_IDS       7'h17  // {next_in_list_id[31:16], cur_filter_id[15:0]}

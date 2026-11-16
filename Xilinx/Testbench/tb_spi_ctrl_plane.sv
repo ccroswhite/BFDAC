@@ -28,8 +28,6 @@ module tb_spi_ctrl_plane;
     logic fpga_irq_n;
     logic       level_switch_req;
     logic [2:0] level_target;
-    logic       outsel_switch_req;
-    logic       outsel_target;
 
     // Status inputs
     logic mgr_busy;
@@ -41,7 +39,6 @@ module tb_spi_ctrl_plane;
     logic clk_locked;
     logic ddr4_init_calib_complete;
     logic line_mute_status;
-    logic hp_mute_status;
     logic flash_cmd_busy;
     logic flash_cmd_err;
     logic boot_crc_fail;
@@ -50,7 +47,7 @@ module tb_spi_ctrl_plane;
     logic [2:0] coef_load_err_code;
 
     // Single-cycle pulse catchers (200 MHz pulses vs #-delay stimulus)
-    logic seen_level_req, seen_outsel_req;
+    logic seen_level_req;
 
     // Control outputs
     logic [31:0] sys_volume;
@@ -63,20 +60,18 @@ module tb_spi_ctrl_plane;
     dac_ctrl_plane u_dut (
         .clk                    (clk),
         .ext_rst_n              (ext_rst_n),
-        .spi_xmos_sclk          (spi_sclk),
-        .spi_xmos_cs_n           (spi_cs_n),
-        .spi_xmos_mosi           (spi_mosi),
-        .spi_xmos_miso           (spi_miso),
-        .spi_ap_sclk            (1'b0),
-        .spi_ap_cs_n            (1'b1),
-        .spi_ap_mosi            (1'b0),
-        .spi_ap_miso            (),
+        .spi_xmos_sclk          (1'b0),
+        .spi_xmos_cs_n           (1'b1),
+        .spi_xmos_mosi           (1'b0),
+        .spi_xmos_miso           (),
+        .spi_ap_sclk            (spi_sclk),
+        .spi_ap_cs_n            (spi_cs_n),
+        .spi_ap_mosi            (spi_mosi),
+        .spi_ap_miso            (spi_miso),
         .spi_ap_irq_n           (),
         .fpga_irq_n             (fpga_irq_n),
         .level_switch_req       (level_switch_req),
         .level_target           (level_target),
-        .outsel_switch_req      (outsel_switch_req),
-        .outsel_target          (outsel_target),
         .mgr_busy               (mgr_busy),
         .bank_valid             (bank_valid),
         .coef_load_done         (coef_load_done),
@@ -86,7 +81,6 @@ module tb_spi_ctrl_plane;
         .clk_locked             (clk_locked),
         .ddr4_init_calib_complete(ddr4_init_calib_complete),
         .line_mute_status       (line_mute_status),
-        .hp_mute_status         (hp_mute_status),
         .flash_cmd_busy         (flash_cmd_busy),
         .flash_cmd_err          (flash_cmd_err),
         .boot_crc_fail          (boot_crc_fail),
@@ -108,7 +102,6 @@ module tb_spi_ctrl_plane;
     // Latch single-cycle switch-request pulses
     always @(posedge clk) begin
         if (level_switch_req)  seen_level_req  <= 1'b1;
-        if (outsel_switch_req) seen_outsel_req <= 1'b1;
     end
 
     // -------------------------------------------------------------------------
@@ -279,7 +272,6 @@ module tb_spi_ctrl_plane;
         clk_locked = 1;
         ddr4_init_calib_complete = 1;
         line_mute_status = 0;
-        hp_mute_status = 0;
         flash_cmd_busy = 0;
         flash_cmd_err  = 0;
         boot_crc_fail  = 0;
@@ -287,7 +279,6 @@ module tb_spi_ctrl_plane;
         coef_load_err  = 0;
         coef_load_err_code = 2'd0;
         seen_level_req  = 0;
-        seen_outsel_req = 0;
 
         #(CLK_PERIOD_NS * 10);
         ext_rst_n = 1;
@@ -315,21 +306,14 @@ module tb_spi_ctrl_plane;
 
         // 3. Write level cap (addr=0x02): 3'b010 = 6 Vrms (digital gain cap, bom 7).
         //    Verifies level_target latches and the change fires level_switch_req.
-        //    Then write output select (addr=0x07): 1 = headphone.
+        //    (OUTSEL addr 0x07 retired 2026-11-14 — no headphone output stage.)
         spi_write(7'h02, 24'h00_0002);
-        #(CLK_PERIOD_NS * 20);
-        spi_write(7'h07, 24'h00_0001);
         #(CLK_PERIOD_NS * 20);
         if (level_target !== 3'b010 || !seen_level_req)
             $display("FAIL: [3a] level addr=0x02 target=%0b req_seen=%0b (exp 010, 1)",
                      level_target, seen_level_req);
         else
             $display("PASS: [3a] level addr=0x02 target=%0b, level_switch_req pulsed", level_target);
-        if (outsel_target !== 1 || !seen_outsel_req)
-            $display("FAIL: [3b] outsel addr=0x07 target=%0b req_seen=%0b (exp 1, 1)",
-                     outsel_target, seen_outsel_req);
-        else
-            $display("PASS: [3b] outsel addr=0x07 target=%0b, outsel_switch_req pulsed", outsel_target);
 
         // 4. Write spi_unmute (addr=0x04)
         //    Verifies mute control register; spi_unmute drives the relay/DSP mute path
@@ -394,33 +378,33 @@ module tb_spi_ctrl_plane;
                 $display("PASS: [8] sticky_err addr=0x11 = 0x%08X (cleared)", rd);
 
             // 9. Read control state register (addr=0x12)
-            //    Fields: {clk_source_sel[5], base_rate_sel[4], cmd_outsel[3], cmd_level[2:0]}
-            //    From tests 2+3: clk_src=1, base_rate=1, outsel=1, level=3'b010 -> 0x3A
+            //    Fields: {clk_source_sel[5], base_rate_sel[4], rsvd[3], cmd_level[2:0]}
+            //    From tests 2+3: clk_src=1, base_rate=1, level=3'b010 -> 0x32
+            //    (bit3 was cmd_outsel before the headphone path was removed)
             spi_read(7'h12, rd);
-            if (rd[5:0] !== 6'b111010)
-                $display("FAIL: [9] ctrl_state addr=0x12 [5:0]=0x%X exp=0x3A {clk_src,base_rate,outsel,level[2:0]}",
+            if (rd[5:0] !== 6'b110010)
+                $display("FAIL: [9] ctrl_state addr=0x12 [5:0]=0x%X exp=0x32 {clk_src,base_rate,rsvd,level[2:0]}",
                          rd[5:0]);
             else
-                $display("PASS: [9] ctrl_state addr=0x12 [5:0]=0x%X {clk_src=%0b,base_rate=%0b,outsel=%0b,level=%0b}",
-                         rd[5:0], rd[5], rd[4], rd[3], rd[2:0]);
+                $display("PASS: [9] ctrl_state addr=0x12 [5:0]=0x%X {clk_src=%0b,base_rate=%0b,level=%0b}",
+                         rd[5:0], rd[5], rd[4], rd[2:0]);
 
             // 10. Read mute/relay status register (addr=0x14)
-            //     Fields: {i2s_err_r[4], switch_busy_r[3], hp_mute_r[2], line_mute_r[1], cmd_unmute[0]}
-            //     Inject switch_busy=1, hp_mute=1, line_mute=1; unmute=1 from test 4;
-            //     i2s_err deasserted (live status, not sticky) -> expect 0x0F
+            //     Fields: {i2s_err_r[4], switch_busy_r[3], rsvd[2], line_mute_r[1], cmd_unmute[0]}
+            //     Inject switch_busy=1, line_mute=1; unmute=1 from test 4;
+            //     i2s_err deasserted (live status, not sticky) -> expect 0x0B
+            //     (bit2 was hp_mute before the headphone path was removed)
             switch_busy      = 1;
-            hp_mute_status   = 1;
             line_mute_status = 1;
             #(CLK_PERIOD_NS * 20); // allow 2-stage sync + re-register to propagate
             spi_read(7'h14, rd);
-            if (rd[4:0] !== 5'b01111)
-                $display("FAIL: [10] status addr=0x14 [4:0]=0x%X exp=0x0F {i2s_err,sw_busy,hp_mute,line_mute,unmute}",
+            if (rd[4:0] !== 5'b01011)
+                $display("FAIL: [10] status addr=0x14 [4:0]=0x%X exp=0x0B {i2s_err,sw_busy,rsvd,line_mute,unmute}",
                          rd[4:0]);
             else
-                $display("PASS: [10] status addr=0x14 = 0x%08X {i2s_err=%0b,sw_busy=%0b,hp_mute=%0b,line_mute=%0b,unmute=%0b}",
-                         rd, rd[4], rd[3], rd[2], rd[1], rd[0]);
+                $display("PASS: [10] status addr=0x14 = 0x%08X {i2s_err=%0b,sw_busy=%0b,line_mute=%0b,unmute=%0b}",
+                         rd, rd[4], rd[3], rd[1], rd[0]);
             switch_busy      = 0;
-            hp_mute_status   = 0;
             line_mute_status = 0;
 
             // 11. Read clock/PLL status register (addr=0x15)

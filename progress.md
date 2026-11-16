@@ -5549,3 +5549,27 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - Fixes that landed: broad 6.6ns rst-tree relaxation, dem_l FSM replication,
   level_target clock-scoped -from, pace/rate_shift/job filter fixes.
 - write_bitstream REMOVED from run_pnr_5m.tcl per user (no bitstream for now).
+
+### 2026-11-15 SPI access-review rulings + headphone path removal
+- RULING (user): VOLUME (0x01) and LEVEL (0x02) -> AP-only. UAC2 volume
+  control disabled on the USB path; the streamer/AP application owns both.
+  XMOS wr_denied mask updated; spi_regs.svh + SPI_BUS.md marked.
+- RULING (user): UNMUTE (0x04) ownership deferred ("probably needs to
+  change") — stays XMOS+AP for now, still stream/fault-gated.
+- RULING (user): OUTSEL (0x07) REMOVED — no separate headphone XLR/amp
+  stage. Retired to reserved addr; write -> BAD_ADDR.
+- Headphone-path RTL struck: automute_controller outsel FSM +
+  hp_mute/hp_rails drives + ST_RAIL_SETTLING removed (line-mute-only
+  sequencer); top ports relay_hp_mute (E5) / relay_hp_rails (A6) removed,
+  pins freed in XDC + acku15s_pinmap_proposal.csv; outsel CDC chains and
+  hp_mute sync dropped; CTRL_STATE[3] and MUTE_STATUS[2] now reserved 0;
+  cell_test_safe hp term removed; ILA probe list updated.
+- TBs: tb_automute rewritten for line-only seq (TB_PASS);
+  tb_spi_ctrl_plane + tb_vu13p_top + tb_vu13p_mig rewired to the AP bus
+  (they exercise AP-only regs); tb_dac_ctrl_plane T11/T13 moved from XMOS
+  VOLUME to XMOS STREAM_VALID (0x1B). tb_spi_ctrl_plane all PASS;
+  tb_dac_ctrl_plane TB_PASS; tb_automute TB_PASS.
+- SPI_BUS.md updated: 0x07 REMOVED row, VOLUME/LEVEL ruled AP-only,
+  UNMUTE deferred, XMOS-allowed set now 8 regs.
+- TODO added: strip board-side headphone circuitry if any remains in
+  gen_kicad sheets (bom 8 already struck relay_hp_* nets — verify).

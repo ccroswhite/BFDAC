@@ -24,7 +24,7 @@ module tb_dac_ctrl_plane;
     // DUT status inputs (benign defaults)
     logic mgr_busy = 0, bank_valid = 0, coef_load_done = 1, i2s_err = 0, switch_busy = 0;
     logic clk_locked = 1, ddr4_init_calib_complete = 1;
-    logic line_mute_status = 0, hp_mute_status = 0;
+    logic line_mute_status = 0;
     logic [3:0] current_bank_id = 4'h0;
     logic flash_cmd_busy = 0, flash_cmd_err = 0, boot_crc_fail = 0, boot_axi_fail = 0;
     logic coef_load_err = 0;
@@ -39,7 +39,7 @@ module tb_dac_ctrl_plane;
     logic [15:0] filter_id, filter_next_id;
     logic        filter_load_req, video_mode;
     logic        spi_unmute, fpga_irq_n;
-    logic        level_switch_req, outsel_switch_req, outsel_target;
+    logic        level_switch_req;
     logic [2:0]  level_target;
     logic bench_busy = 0;
     wire [1:0] cell_req;
@@ -61,12 +61,11 @@ module tb_dac_ctrl_plane;
         .spi_ap_mosi(spi_mosi), .spi_ap_miso(spi_miso),
         .spi_ap_irq_n(spi_ap_irq_n),
         .level_switch_req(level_switch_req), .level_target(level_target),
-        .outsel_switch_req(outsel_switch_req), .outsel_target(outsel_target),
         .mgr_busy(mgr_busy), .bank_valid(bank_valid), .coef_load_done(coef_load_done),
         .current_bank_id(current_bank_id), .i2s_err(i2s_err),
         .switch_busy(switch_busy), .clk_locked(clk_locked),
         .ddr4_init_calib_complete(ddr4_init_calib_complete),
-        .line_mute_status(line_mute_status), .hp_mute_status(hp_mute_status),
+        .line_mute_status(line_mute_status),
         .flash_cmd_busy(flash_cmd_busy), .flash_cmd_err(flash_cmd_err),
         .boot_crc_fail(boot_crc_fail), .boot_axi_fail(boot_axi_fail),
         .coef_load_err(coef_load_err), .coef_load_err_code(coef_load_err_code),
@@ -380,7 +379,6 @@ module tb_dac_ctrl_plane;
             check("cell test blocked while relay state is transitioning", cell_cfg[0], old_cell_cfg);
             switch_busy = 0;
             line_mute_status = 0;
-            hp_mute_status = 0;
             spi_write(7'h18, 24'h000080);
             check("cell test accepted while safely muted and settled", cell_cfg[0], 8'h80);
             spi_write(7'h18, 24'h000000);
@@ -446,11 +444,12 @@ module tb_dac_ctrl_plane;
             spi_write(7'h16, 24'h0000FF);         // clean up
         end
 
-        // T11: XMOS write to an allowed register (VOLUME) executes normally.
+        // T11: XMOS write to an allowed register (STREAM_VALID) executes
+        //      normally. VOLUME is AP-only since the 2026-11-14 access ruling.
         begin
-            xmos_write(7'h01, 24'h400000);
-            check("T11 XMOS volume write executes", sys_volume, 32'h00070000);
-            spi_write(7'h01, 24'h000000);         // restore via AP
+            xmos_write(7'h1B, 24'h000001);
+            check("T11 XMOS stream_valid write executes", source_valid, 1);
+            spi_write(7'h1B, 24'h000000);         // restore via AP
         end
 
         // T12: XMOS reads see the full register map (MAGIC readable on both).
@@ -466,7 +465,7 @@ module tb_dac_ctrl_plane;
             spi_write (7'h01, 24'h000000);
             spi_read  (7'h12, rd);
             check("T13 last_wr_src=AP",   rd[6], 1'b1);
-            xmos_write(7'h01, 24'h000000);
+            xmos_write(7'h1B, 24'h000000);
             spi_read  (7'h12, rd);
             check("T13 last_wr_src=XMOS", rd[6], 1'b0);
         end

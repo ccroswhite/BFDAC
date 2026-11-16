@@ -3,18 +3,15 @@
 // =============================================================================
 // Testbench for automute_controller (Fig. 4d relay set)
 //
+// Headphone path removed 2026-11-14 ruling: no HP jack / HP mute / HP rails —
+// the line XLR mute relay is the only output control.
+//
 // Verifies:
-//   - Reset forces mute everywhere (both mute relays open, HP rails off,
-//     force_zero=1, level relays at 2V default)
-//   - spi_unmute brings the controller to Playing with LINE output active
-//     (line mute energized, HP mute open, HP rails off)
+//   - Reset forces mute (line mute open, force_zero=1, level at 2V default)
+//   - spi_unmute brings the controller to Playing (line mute energized)
 //   - i2s_err / base_rate_sel change force an immediate return to Muted
-//   - Level tap switch happens only while both mutes are open, then returns
-//     to Playing
-//   - Output select line->HP: rails energize and RAIL_SETTLE elapses BEFORE
-//     hp_mute closes; line mute stays open (mutual exclusivity)
-//   - Output select HP->line: HP mute opens, rails drop, line mute closes
-//   - Mute relays are never simultaneously energized at any cycle
+//   - Level cap switch happens only while muted, then returns to Playing
+//   - force_zero is never released while the line mute is open
 // =============================================================================
 module tb_automute;
 
@@ -24,7 +21,6 @@ module tb_automute;
     localparam logic [27:0] TB_FLUSH  = 28'd200;
     localparam logic [27:0] TB_SETTLE = 28'd50;
     localparam logic [27:0] TB_SWITCH = 28'd50;
-    localparam logic [27:0] TB_RAIL   = 28'd400;
 
     logic clk;
     logic rst_n;
@@ -33,11 +29,7 @@ module tb_automute;
     logic i2s_err;
     logic level_switch_req;
     logic [2:0] level_target;
-    logic outsel_switch_req;
-    logic outsel_target;
     logic line_mute_drive;
-    logic hp_mute_drive;
-    logic hp_rails_drive;
     logic [2:0] level_relay_drive;
     logic force_zero;
     logic switch_busy;
@@ -47,8 +39,7 @@ module tb_automute;
     automute_controller #(
         .FLUSH_CYCLES       (TB_FLUSH),
         .SETTLE_CYCLES      (TB_SETTLE),
-        .SWITCH_CYCLES      (TB_SWITCH),
-        .RAIL_SETTLE_CYCLES (TB_RAIL)
+        .SWITCH_CYCLES      (TB_SWITCH)
     ) u_dut (
         .clk              (clk),
         .rst_n            (rst_n),
@@ -57,11 +48,7 @@ module tb_automute;
         .i2s_err          (i2s_err),
         .level_switch_req (level_switch_req),
         .level_target     (level_target),
-        .outsel_switch_req(outsel_switch_req),
-        .outsel_target    (outsel_target),
         .line_mute_drive  (line_mute_drive),
-        .hp_mute_drive    (hp_mute_drive),
-        .hp_rails_drive   (hp_rails_drive),
         .level_relay_drive(level_relay_drive),
         .force_zero       (force_zero),
         .switch_busy      (switch_busy)
@@ -71,18 +58,10 @@ module tb_automute;
     initial clk = 0;
     always #(CLK_PERIOD_NS/2) clk = ~clk;
 
-    // Invariant: the two mute relays must never be energized together
+    // Invariant: audio must never flow while the line mute relay is open
     always @(posedge clk) begin
-        if (rst_n && line_mute_drive && hp_mute_drive) begin
-            $display("FAIL: line and HP mute relays energized simultaneously");
-            fail_count++;
-        end
-    end
-
-    // Invariant: HP mute must never be closed with HP rails off
-    always @(posedge clk) begin
-        if (rst_n && hp_mute_drive && !hp_rails_drive) begin
-            $display("FAIL: HP jack live while HP stage unpowered");
+        if (rst_n && !line_mute_drive && !force_zero) begin
+            $display("FAIL: force_zero released while line mute relay open");
             fail_count++;
         end
     end
@@ -103,26 +82,21 @@ module tb_automute;
         i2s_err           = 0;
         level_switch_req  = 0;
         level_target      = 3'b000;
-        outsel_switch_req = 0;
-        outsel_target     = 1'b0;
 
         repeat(5) @(posedge clk);
         rst_n = 1;
         repeat(2) @(posedge clk);
 
-        // 1. Reset state: everything muted / de-energized
-        check(line_mute_drive === 0 && hp_mute_drive === 0 &&
-              hp_rails_drive === 0 && force_zero === 1 &&
+        // 1. Reset state: muted / de-energized
+        check(line_mute_drive === 0 && force_zero === 1 &&
               level_relay_drive === 3'b000 && switch_busy === 0,
-              "reset state correct (all de-energized, clamped, 2V level)");
+              "reset state correct (mute open, clamped, 2V level)");
 
-        // 2. Unmute -> Playing on line output
+        // 2. Unmute -> Playing
         spi_unmute = 1;
         wait (switch_busy === 1);
-        check(force_zero === 1, "switch_busy asserted while relays are settling");
+        check(force_zero === 1, "switch_busy asserted while relay is settling");
         wait (line_mute_drive === 1 && force_zero === 0);
-        check(hp_mute_drive === 0 && hp_rails_drive === 0,
-              "playing on line output; HP branch dead");
         check(switch_busy === 0, "switch_busy is clear during stable playback");
         repeat(10) @(posedge clk);
 
@@ -177,31 +151,6 @@ module tb_automute;
         wait (line_mute_drive === 1 && force_zero === 0);
         $display("PASS: playing at 0.2V level after muted write");
         repeat(10) @(posedge clk);
-
-        // 6. Output select line -> headphone
-        outsel_target     = 1'b1;
-        outsel_switch_req = 1;
-        @(posedge clk);
-        outsel_switch_req = 0;
-        // rails must energize while both mutes are open
-        wait (hp_rails_drive === 1);
-        check(line_mute_drive === 0 && hp_mute_drive === 0 && force_zero === 1,
-              "HP rails energized while fully muted");
-        // then, after rail settle, HP mute closes and line stays open
-        wait (hp_mute_drive === 1 && force_zero === 0);
-        check(line_mute_drive === 0, "playing on HP; line mute open");
-        repeat(10) @(posedge clk);
-
-        // 7. Output select headphone -> line
-        outsel_target     = 1'b0;
-        outsel_switch_req = 1;
-        @(posedge clk);
-        outsel_switch_req = 0;
-        wait (hp_mute_drive === 0 && force_zero === 1);
-        $display("PASS: HP muted before switch back");
-        wait (line_mute_drive === 1 && force_zero === 0);
-        check(hp_mute_drive === 0 && hp_rails_drive === 0,
-              "back on line; HP branch dead again");
 
         if (fail_count == 0) $display("TB_PASS: tb_automute all tests passed");
         else                 $display("TB_FAIL: %0d errors (tb_automute)", fail_count);

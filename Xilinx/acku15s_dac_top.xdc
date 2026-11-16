@@ -87,8 +87,6 @@ set_false_path -to [get_pins {
     unmute_sync_chain_reg[0]/D
     rate_sel_sync_chain_reg[0]/D
     level_req_sync_chain_reg[0]/D
-    outsel_req_sync_chain_reg[0]/D
-    outsel_target_sync_chain_reg[0]/D
     vol_tog_sync_reg[0]/D
     stream_automute_sync_reg[0]/D
     u_coef_subsys/boot_ok_sync_reg[0]/D
@@ -122,7 +120,6 @@ set_false_path -to [get_pins {
     u_ctrl_plane/i2s_err_sync_reg[0]/D
     u_ctrl_plane/switch_busy_sync_reg[0]/D
     u_ctrl_plane/line_mute_sync_reg[0]/D
-    u_ctrl_plane/hp_mute_sync_reg[0]/D
 }]
 set_max_delay -datapath_only 5.0 \
     -from [get_clocks dsp_clk] \
@@ -233,12 +230,12 @@ set_max_delay -datapath_only 5.0 \
 # 7. Hardware Relay Outputs (slow, relay coil drive)
 # -----------------------------------------------------------------------------
 # Fig. 4d relay set: 2x mute, HP rails, 2x level tap (all coil drives via ULN buffer)
-set_property IOSTANDARD LVCMOS18 [get_ports {relay_line_mute relay_hp_mute relay_hp_rails relay_level[*]}]
-set_property DRIVE       12      [get_ports {relay_line_mute relay_hp_mute relay_hp_rails relay_level[*]}]
-set_property SLEW        SLOW    [get_ports {relay_line_mute relay_hp_mute relay_hp_rails relay_level[*]}]
+set_property IOSTANDARD LVCMOS18 [get_ports {relay_line_mute relay_level[*]}]
+set_property DRIVE       12      [get_ports {relay_line_mute relay_level[*]}]
+set_property SLEW        SLOW    [get_ports {relay_line_mute relay_level[*]}]
 set_property PACKAGE_PIN E4    [get_ports relay_line_mute];# B90_L1_N J1-A13
-set_property PACKAGE_PIN E5    [get_ports relay_hp_mute];# B90_L1_P J1-A14
-set_property PACKAGE_PIN A6    [get_ports relay_hp_rails];# B90_L12_N J1-B1
+# relay_hp_mute (E5/J1-A14) + relay_hp_rails (A6/J1-B1) removed 2026-11-14:
+# no headphone output stage — pins freed for future use.
 set_property PACKAGE_PIN B6    [get_ports {relay_level[0]}];# B90_L12_P J1-B2
 set_property PACKAGE_PIN A3    [get_ports {relay_level[1]}];# B90_L11_N J1-B3
 set_property PACKAGE_PIN F3    [get_ports pg_all];# B90_L3_P J1-B12
@@ -250,7 +247,7 @@ set_property DRIVE 4 [get_ports test_led]
 set_property SLEW SLOW [get_ports test_led]
 set_false_path -from [get_ports {pg_all test_select_n test_step_n}]
 set_false_path -to [get_ports test_led]
-set_false_path -to [get_ports {relay_line_mute relay_hp_mute relay_hp_rails relay_level[*]}]
+set_false_path -to [get_ports {relay_line_mute relay_level[*]}]
 
 # -----------------------------------------------------------------------------
 # 8. Cascode Cell Outputs (1 pin per cell, 64 per channel, 128 total)

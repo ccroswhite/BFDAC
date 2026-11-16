@@ -100,8 +100,8 @@ module acku15s_dac_top #(
 
     // Hardware Control Plane (Fig. 4d relay set)
     output logic        relay_line_mute,      // energized = line XLR unmuted
-    output logic        relay_hp_mute,        // energized = HP jack live
-    output logic        relay_hp_rails,       // energized = HP stage powered
+    // relay_hp_mute / relay_hp_rails removed 2026-11-14: no headphone stage
+    // (OUTSEL register retired; line XLR is the only output).
     output logic [1:0]  relay_level,          // IDLE (driven 0): level is a digital gain cap since bom 7 ruling 2026-10-07; pins kept in the XDC, no-connect on J1
 
     // Debug / Status LED (BC33) + board-level debug LEDs (J1)
@@ -219,10 +219,6 @@ module acku15s_dac_top #(
     logic level_switch_req_sync;
     logic [2:0] level_target;
     logic [2:0] level_target_sync;
-    logic outsel_switch_req;
-    logic outsel_switch_req_sync;
-    logic outsel_target;
-    logic outsel_target_sync;
 
     // Reset synchronizer + 2-stage replicable fanout tree across SLRs.
     // Async assertion ensures immediate flush even while dsp_clk is stopped
@@ -249,38 +245,30 @@ module acku15s_dac_top #(
     assign sys_rst_n = dsp_rst_tree_n;
 
     // CDC: SPI control signals from clk_200m to dsp_clk domain.
-    // level_target / outsel_target are quasi-static: they are written by SPI
-    // strictly before their req pulse and only sampled by the sequencer many
-    // cycles later (while muted), so 2-FF chains per bit are sufficient.
+    // level_target is quasi-static: it is written by SPI strictly before its
+    // req pulse and only sampled by the sequencer many cycles later (while
+    // muted), so a 2-FF chain per bit is sufficient.
     (* ASYNC_REG = "TRUE" *) logic [1:0] unmute_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] rate_sel_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] level_req_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [5:0] level_target_sync_chain;  // 3 bits x 2 stages
-    (* ASYNC_REG = "TRUE" *) logic [1:0] outsel_req_sync_chain;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] outsel_target_sync_chain;
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             unmute_sync_chain        <= '0;
             rate_sel_sync_chain      <= '0;
             level_req_sync_chain     <= '0;
             level_target_sync_chain  <= '0;
-            outsel_req_sync_chain    <= '0;
-            outsel_target_sync_chain <= '0;
         end else begin
             unmute_sync_chain        <= {unmute_sync_chain[0], spi_unmute};
             rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
             level_req_sync_chain     <= {level_req_sync_chain[0], level_switch_req};
             level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
-            outsel_req_sync_chain    <= {outsel_req_sync_chain[0], outsel_switch_req};
-            outsel_target_sync_chain <= {outsel_target_sync_chain[0], outsel_target};
         end
     end
     assign spi_unmute_sync        = unmute_sync_chain[1];
     assign base_rate_sel_sync     = rate_sel_sync_chain[1];
     assign level_switch_req_sync  = level_req_sync_chain[1] && !level_req_sync_chain[0]; // edge pulse
     assign level_target_sync      = level_target_sync_chain[5:3];
-    assign outsel_switch_req_sync = outsel_req_sync_chain[1] && !outsel_req_sync_chain[0]; // edge pulse
-    assign outsel_target_sync     = outsel_target_sync_chain[1];
 
     logic cell_clk;
 
@@ -359,8 +347,6 @@ module acku15s_dac_top #(
     // Mute / relay control (dsp_clk domain)
     (* MARK_DEBUG = "TRUE" *) logic force_zero;
     (* MARK_DEBUG = "TRUE" *) logic line_mute_drive;
-    (* MARK_DEBUG = "TRUE" *) logic hp_mute_drive;
-    logic                          hp_rails_drive;
     logic [2:0]                    level_relay_drive;
     logic                          switch_busy;
 
@@ -765,8 +751,6 @@ module acku15s_dac_top #(
         .fpga_irq_n             (fpga_irq_n),
         .level_switch_req       (level_switch_req),
         .level_target           (level_target),
-        .outsel_switch_req      (outsel_switch_req),
-        .outsel_target          (outsel_target),
         .mgr_busy               (mgr_busy),
         .bank_valid             (bank_valid),
         .coef_load_done         (coef_load_done),
@@ -779,7 +763,6 @@ module acku15s_dac_top #(
         .clk_locked             (clk_locked),
         .ddr4_init_calib_complete (ddr4_init_calib_complete),
         .line_mute_status       (line_mute_drive),
-        .hp_mute_status         (hp_mute_drive),
         .sys_volume             (sys_volume),
         .base_rate_sel          (base_rate_sel),
         .clk_source_sel         (clk_source_sel),
@@ -907,11 +890,7 @@ module acku15s_dac_top #(
         .i2s_err          (i2s_err || core_stream_fault),
         .level_switch_req (level_switch_req_sync),
         .level_target     (level_target_sync),
-        .outsel_switch_req(outsel_switch_req_sync),
-        .outsel_target    (outsel_target_sync),
         .line_mute_drive  (line_mute_drive),
-        .hp_mute_drive    (hp_mute_drive),
-        .hp_rails_drive   (hp_rails_drive),
         .level_relay_drive(level_relay_drive),
         .force_zero       (force_zero),
         .switch_busy      (switch_busy)
@@ -919,8 +898,6 @@ module acku15s_dac_top #(
 
     assign relay_line_mute = line_mute_drive && stream_clock_ready && stream_source_valid &&
                              !stream_fault_sync[1] && !bench_busy;
-    assign relay_hp_mute   = hp_mute_drive;
-    assign relay_hp_rails  = hp_rails_drive;
     assign relay_level     = 2'b00;   // no level relays on the board (bom 7, 2026-10-07)
 
     assign led_debug = {clk_locked, ddr4_init_calib_complete, (i2s_err || core_stream_fault), force_zero};
@@ -931,9 +908,9 @@ module acku15s_dac_top #(
         .PROBE_WIDTH (16)
     ) u_ila_ctrl (
         .clk   (clk_200m),
-        .probe ({spi_unmute, level_switch_req, outsel_switch_req, fpga_irq_n,
-                 line_mute_drive, hp_mute_drive, hp_rails_drive,
-                 force_zero, i2s_err, 7'b0})
+        .probe ({spi_unmute, level_switch_req, fpga_irq_n,
+                 line_mute_drive,
+                 force_zero, i2s_err, 10'b0})
     );
 
     // ==============================================================
@@ -963,7 +940,7 @@ module acku15s_dac_top #(
         .cell_test_cfg          (cell_test_cfg),
         .cell_test_req          (cell_test_req),
         .cell_test_ack          (cell_test_ack),
-        .cell_test_safe         (force_zero && !line_mute_drive && !hp_mute_drive && pg_all_sync[1]),
+        .cell_test_safe         (force_zero && !line_mute_drive && pg_all_sync[1]),
         .bench_req              (bench_req),
         .bench_cmd              (bench_cmd),
         .bench_ack              (bench_ack),

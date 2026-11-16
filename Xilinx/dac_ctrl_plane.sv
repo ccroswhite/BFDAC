@@ -28,8 +28,6 @@ module dac_ctrl_plane (
     // Relay control (to automute controller, Fig. 4d set)
     output logic        level_switch_req,   // Single-cycle pulse (legacy; sequencer now acts on target != applied)
     output logic [2:0]  level_target,       // digital level cap: 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms
-    output logic        outsel_switch_req,  // Single-cycle pulse
-    output logic        outsel_target,      // 0 = line XLR, 1 = headphone
 
     // Status inputs (for SPI readback)
     input  logic        mgr_busy,
@@ -43,7 +41,6 @@ module dac_ctrl_plane (
     input  logic        clk_locked,
     input  logic        ddr4_init_calib_complete,
     input  logic        line_mute_status,   // dsp_clk domain, will be synchronised
-    input  logic        hp_mute_status,     // dsp_clk domain, will be synchronised
 
     // Control outputs
     output logic [31:0] sys_volume,       // Internal Q16.16 gain in NS code units
@@ -167,7 +164,6 @@ module dac_ctrl_plane (
     logic [31:0] spi_tx_data_a;   // AP port readback register
     logic        spi_crc_err_d;
     logic [2:0]  cmd_level;
-    logic        cmd_outsel;
     logic        cmd_unmute;
 
     // Filter toggle list storage (TODO-23: 32 entries, 2026-09-03)
@@ -196,12 +192,10 @@ module dac_ctrl_plane (
     logic        i2s_err_r;
     logic        switch_busy_r;
     logic        line_mute_r;
-    logic        hp_mute_r;
 
     (* ASYNC_REG = "TRUE" *) logic [1:0] i2s_err_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] switch_busy_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] line_mute_sync;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] hp_mute_sync;
     // ddr4_init_calib_complete comes from the MIG ui_clk domain (f9wc route
     // review 2026-08-15: it was consumed raw — the last unconstrained CDC).
     // Monotonic level, safe through a 2-FF sync.
@@ -212,13 +206,11 @@ module dac_ctrl_plane (
             i2s_err_sync     <= '0;
             switch_busy_sync <= '0;
             line_mute_sync   <= '0;
-            hp_mute_sync     <= '0;
             ddr4_calib_sync  <= '0;
         end else begin
             i2s_err_sync     <= {i2s_err_sync[0], i2s_err};
             switch_busy_sync <= {switch_busy_sync[0], switch_busy};
             line_mute_sync   <= {line_mute_sync[0], line_mute_status};
-            hp_mute_sync     <= {hp_mute_sync[0], hp_mute_status};
             ddr4_calib_sync  <= {ddr4_calib_sync[0], ddr4_init_calib_complete};
         end
     end
@@ -231,7 +223,6 @@ module dac_ctrl_plane (
         i2s_err_r         <= i2s_err_sync[1];
         switch_busy_r     <= switch_busy_sync[1];
         line_mute_r       <= line_mute_sync[1];
-        hp_mute_r         <= hp_mute_sync[1];
     end
 
     // Sticky error register (bits cleared by writing 1 to the bit from ARM)
@@ -260,7 +251,7 @@ module dac_ctrl_plane (
         case (wr_addr)
             `SPI_W_NOP,
             `SPI_W_VOLUME,        `SPI_W_LEVEL,          `SPI_W_RATE,
-            `SPI_W_UNMUTE,        `SPI_W_BANK_LOAD,      `SPI_W_OUTSEL,
+            `SPI_W_UNMUTE,        `SPI_W_BANK_LOAD,
             `SPI_W_FILTER_LIST_CTRL, `SPI_W_FILTER_LIST_APP, `SPI_W_FILTER_SELECT,
             `SPI_W_DAC_MODE,      `SPI_W_CAL_ADDR,       `SPI_W_CAL_DATA,
             `SPI_W_CAL_COMMIT,    `SPI_W_CAL_RDADDR,     `SPI_W_FLASH_ADDR_LO,
@@ -284,8 +275,8 @@ module dac_ctrl_plane (
         wr_denied = 1'b0;
         if (ctrl_bus_src == SRC_XMOS) begin
             case (wr_addr)
-                `SPI_W_NOP,           `SPI_W_VOLUME,        `SPI_W_LEVEL,
-                `SPI_W_RATE,          `SPI_W_UNMUTE,        `SPI_W_OUTSEL,
+                `SPI_W_NOP,
+                `SPI_W_RATE,          `SPI_W_UNMUTE,
                 `SPI_W_DAC_MODE,      `SPI_W_STICKY_W1C,
                 `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID,  `SPI_W_I2S_RX_TRIM:
                     wr_denied = 1'b0;
@@ -358,7 +349,7 @@ module dac_ctrl_plane (
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (ctrl_bus_data[7] &&
-                             (cmd_unmute || line_mute_r || hp_mute_r || switch_busy_r)) begin
+                             (cmd_unmute || line_mute_r || switch_busy_r)) begin
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
@@ -559,17 +550,11 @@ module dac_ctrl_plane (
         if (!ext_rst_n) begin
             level_target      <= 3'b000;
             level_switch_req  <= 1'b0;
-            outsel_target     <= 1'b0;
-            outsel_switch_req <= 1'b0;
         end else begin
             level_switch_req <= wr_exec && (wr_addr == `SPI_W_LEVEL) &&
                                 (ctrl_bus_data[2:0] != cmd_level);
             if (wr_exec && (wr_addr == `SPI_W_LEVEL))
                 level_target <= ctrl_bus_data[2:0];
-            outsel_switch_req <= wr_exec && (wr_addr == `SPI_W_OUTSEL) &&
-                                 (ctrl_bus_data[0] != cmd_outsel);
-            if (wr_exec && (wr_addr == `SPI_W_OUTSEL))
-                outsel_target <= ctrl_bus_data[0];
         end
     end
 
@@ -608,7 +593,6 @@ module dac_ctrl_plane (
             // the AP has written VOLUME. (Was 0xFFFFFFFF = full scale at unmute.)
             sys_volume      <= 32'h0000_0000;
             cmd_level       <= 3'b000;
-            cmd_outsel      <= 1'b0;
             base_rate_sel   <= 1'b0;
             stream_rate_request <= 0;
             stream_rate_toggle <= 0;
@@ -693,7 +677,8 @@ module dac_ctrl_plane (
                         // 7'h06: RESERVED (was clk_source_sel; merged into 0x03 —
                         //        a separate clock register allowed the DSP family and
                         //        the physical mclk to disagree)
-                        `SPI_W_OUTSEL: cmd_outsel    <= ctrl_bus_data[0]; // 0=line XLR, 1=headphone
+                        // 7'h07: RESERVED (was OUTSEL 0=line/1=HP; headphone
+                        //        output stage removed 2026-11-14 — no HP hw)
                         `SPI_W_FILTER_LIST_CTRL: begin // [0]=clear, [1]=select entry 0
                             // [1] is the list "commit": after appending, one write
                             // loads the user's default (entry 0). Ignored when [0]
@@ -799,7 +784,7 @@ module dac_ctrl_plane (
             // 0x11: Sticky error register (readback; W1C via WRITE addr 0x16)
             `SPI_R_STICKY_ERR: reg_read = {24'd0, sticky_err};
             // 0x12: Control state
-            `SPI_R_CTRL_STATE: reg_read = {25'd0, last_wr_src, clk_source_sel, base_rate_sel, cmd_outsel, cmd_level};
+            `SPI_R_CTRL_STATE: reg_read = {25'd0, last_wr_src, clk_source_sel, base_rate_sel, 1'b0, cmd_level};
             // 0x13: Coefficient loader status
             //       {bank_valid[12], mgr_busy[11], load_done[10], clk_src[9],
             //        base_rate[8], current_bank_id[7:4], coef_bank_id[3:0]}
@@ -808,7 +793,7 @@ module dac_ctrl_plane (
                                     coef_bank_id};
             // 0x14: Mute / relay status
             `SPI_R_MUTE_STATUS: reg_read = {27'd0, i2s_err_r, switch_busy_r,
-                                    hp_mute_r, line_mute_r, cmd_unmute};
+                                    1'b0, line_mute_r, cmd_unmute};
             // 0x15: Clock / PLL status (+ DPD enable readback, bit 2)
             `SPI_R_CLK_STATUS: reg_read = {29'd0, dpd_enable, ddr4_calib_sync[1], clk_locked};
             // 0x16: Filter list status {video_mode[11], list_len[10:5], cur_index[4:0]}

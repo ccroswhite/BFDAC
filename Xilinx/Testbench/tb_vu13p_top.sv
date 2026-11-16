@@ -54,8 +54,6 @@ module tb_vu13p_top;
     // Outputs
     wire        fpga_irq_n;
     wire        relay_line_mute;
-    wire        relay_hp_mute;
-    wire        relay_hp_rails;
     wire [1:0]  relay_level;
     wire        led_status;
     wire [3:0]  led_debug;   // [3]=clk_locked [2]=ddr4_calib [1]=i2s_err [0]=force_zero
@@ -112,19 +110,19 @@ module tb_vu13p_top;
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
         .i2s_data       (i2s_data),
-        .spi_xmos_sclk          (spi_sclk),
-        .spi_xmos_cs_n           (spi_cs_n),
-        .spi_xmos_mosi           (spi_mosi),
-        .spi_xmos_miso           (spi_miso),
-        .spi_ap_sclk            (1'b0),
-        .spi_ap_cs_n            (1'b1),
-        .spi_ap_mosi            (1'b0),
-        .spi_ap_miso            (),
+        // Drive the AP bus: VOLUME/LEVEL are AP-only since the 2026-11-14
+        // access ruling (XMOS is restricted to the audio-path subset).
+        .spi_xmos_sclk          (1'b0),
+        .spi_xmos_cs_n           (1'b1),
+        .spi_xmos_mosi           (1'b0),
+        .spi_xmos_miso           (),
+        .spi_ap_sclk            (spi_sclk),
+        .spi_ap_cs_n            (spi_cs_n),
+        .spi_ap_mosi            (spi_mosi),
+        .spi_ap_miso            (spi_miso),
         .spi_ap_irq_n           (),
         .fpga_irq_n     (fpga_irq_n),
         .relay_line_mute(relay_line_mute),
-        .relay_hp_mute  (relay_hp_mute),
-        .relay_hp_rails (relay_hp_rails),
         .relay_level    (relay_level),
         .led_status     (led_status),
         .led_debug      (led_debug),
@@ -237,13 +235,12 @@ module tb_vu13p_top;
 
         // --- TEST 2: reset/mute state ------------------------------------
         repeat (200) @(posedge clk_49m);
-        if (led_debug[0] === 1'b1 && relay_line_mute === 1'b0 &&
-            relay_hp_mute === 1'b0 && relay_hp_rails === 1'b0) begin
-            $display("[%0t] PASS: muted state after reset (force_zero=1, relays off)", $time);
+        if (led_debug[0] === 1'b1 && relay_line_mute === 1'b0) begin
+            $display("[%0t] PASS: muted state after reset (force_zero=1, relay off)", $time);
             pass_count++;
         end else begin
-            $display("[%0t] FAIL: bad mute state: fz=%b line=%b hp=%b rails=%b",
-                     $time, led_debug[0], relay_line_mute, relay_hp_mute, relay_hp_rails);
+            $display("[%0t] FAIL: bad mute state: fz=%b line=%b",
+                     $time, led_debug[0], relay_line_mute);
             fail_count++;
         end
         if (fpga_irq_n === 1'b0)
@@ -276,14 +273,6 @@ module tb_vu13p_top;
             pass_count++;
         end else begin
             $display("[%0t] FAIL: relay_line_mute never asserted (CRC or automute path)", $time);
-            fail_count++;
-        end
-        if (relay_hp_mute === 1'b0 && relay_hp_rails === 1'b0) begin
-            $display("[%0t] PASS: HP relays stay off (outsel=line default)", $time);
-            pass_count++;
-        end else begin
-            $display("[%0t] FAIL: HP relay energized on line output (hp=%b rails=%b)",
-                     $time, relay_hp_mute, relay_hp_rails);
             fail_count++;
         end
 

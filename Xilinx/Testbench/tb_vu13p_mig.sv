@@ -75,7 +75,7 @@ module tb_vu13p_mig;
     // ---- SPI / misc pins ----------------------------------------------------------------------
     logic spi_sclk = 0, spi_cs_n = 1, spi_mosi = 0;
     wire  spi_miso, fpga_irq_n;
-    wire  relay_line_mute, relay_hp_mute, relay_hp_rails;
+    wire  relay_line_mute;
     wire  [1:0]  relay_level;
     wire         led_status;
     wire  [3:0]  led_debug;     // [3]=clk_locked [2]=ddr4_calib [1]=i2s_err [0]=force_zero
@@ -116,19 +116,19 @@ module tb_vu13p_mig;
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
         .i2s_data       (i2s_data),
-        .spi_xmos_sclk          (spi_sclk),
-        .spi_xmos_cs_n           (spi_cs_n),
-        .spi_xmos_mosi           (spi_mosi),
-        .spi_xmos_miso           (spi_miso),
-        .spi_ap_sclk            (1'b0),
-        .spi_ap_cs_n            (1'b1),
-        .spi_ap_mosi            (1'b0),
-        .spi_ap_miso            (),
+        // Drive the AP bus: filter-list registers are AP-only (XMOS bus is
+        // restricted to the audio-path subset).
+        .spi_xmos_sclk          (1'b0),
+        .spi_xmos_cs_n           (1'b1),
+        .spi_xmos_mosi           (1'b0),
+        .spi_xmos_miso           (),
+        .spi_ap_sclk            (spi_sclk),
+        .spi_ap_cs_n            (spi_cs_n),
+        .spi_ap_mosi            (spi_mosi),
+        .spi_ap_miso            (spi_miso),
         .spi_ap_irq_n           (),
         .fpga_irq_n     (fpga_irq_n),
         .relay_line_mute(relay_line_mute),
-        .relay_hp_mute  (relay_hp_mute),
-        .relay_hp_rails (relay_hp_rails),
         .relay_level    (relay_level),
         .led_status     (led_status),
         .led_debug      (led_debug),
