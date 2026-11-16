@@ -38,7 +38,7 @@ module tb_dac_ctrl_plane;
     logic        coef_load_start;
     logic [15:0] filter_id, filter_next_id;
     logic        filter_load_req;
-    logic        spi_unmute, fpga_irq_n;
+    logic        fpga_irq_n;
     logic        level_switch_req;
     logic [2:0]  level_target;
     logic bench_busy = 0;
@@ -75,7 +75,7 @@ module tb_dac_ctrl_plane;
         .coef_bank_id(coef_bank_id), .coef_load_start(coef_load_start),
         .filter_id(filter_id), .filter_next_id(filter_next_id),
         .filter_load_req(filter_load_req),
-        .spi_unmute(spi_unmute), .fpga_irq_n(fpga_irq_n),
+        .fpga_irq_n(fpga_irq_n),
         .bench_busy(bench_busy), .bench_status(32'h12345678), .bench_available(),
         .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req),
         .stream_rate_request(stream_request), .stream_rate_toggle(stream_toggle),
@@ -315,13 +315,13 @@ module tb_dac_ctrl_plane;
             check("T10 bank_valid=1 readback", rd[12], 1'b1);
         end
 
-        spi_write(7'h04, 24'd1);
-        check("unmute before local takeover", spi_unmute, 1);
+        spi_write(7'h1B, 24'd1);
+        check("stream armed before local takeover", source_valid, 1);
         bench_busy = 1;
         repeat(10) @(negedge clk);
-        check("local takeover latches mute", spi_unmute, 0);
-        spi_write(7'h04, 24'd1);
-        check("unmute blocked during local test", spi_unmute, 0);
+        check("local takeover disarms stream", source_valid, 0);
+        spi_write(7'h1B, 24'd1);
+        check("stream arm blocked during local test", source_valid, 0);
         spi_write(7'h18, 24'h80);
         check("SPI cell config blocked during local test", cell_cfg[0], 0);
         xmos_write(7'h03, 24'd1);
@@ -330,14 +330,14 @@ module tb_dac_ctrl_plane;
         check("local status readback", rd, 32'h12345678);
         bench_busy = 0;
         repeat(10) @(negedge clk);
-        check("no automatic unmute on local exit", spi_unmute, 0);
-        spi_write(7'h04, 24'd1);
-        check("explicit unmute after exit", spi_unmute, 1);
+        check("no automatic re-arm on local exit", source_valid, 0);
+        spi_write(7'h1B, 24'd1);
+        check("explicit stream arm after exit", source_valid, 1);
 
         for (int r=0; r<8; r++) begin
             xmos_write(7'h1A, 24'(r));
             check("requested stream rate", stream_request, r);
-            check("request clears unmute", spi_unmute, 0);
+            check("request clears source ready", source_valid, 0);
             check("request clears source ready", source_valid, 0);
         end
         xmos_write(7'h1A, 24'd8);
@@ -356,12 +356,10 @@ module tb_dac_ctrl_plane;
         spi_write(7'h1C, 24'd31);
         check("capture trim while stopped", rx_trim, 31);
         stream_audio_ready=0;
-        spi_write(7'h04, 24'd1);
-        check("unmute blocked before first valid PCM frame", spi_unmute, 0);
+        spi_write(7'h1B, 24'd1);
+        check("stream arm (0x1B) still works — frame-readiness gate moved to automute/top", source_valid, 1);
         stream_audio_ready=1;
-        spi_write(7'h04, 24'd1);
-        check("unmute after clocks, bank and first valid frame", spi_unmute, 1);
-        spi_write(7'h04, 24'd0);
+        spi_write(7'h1B, 24'd0);
         spi_read(7'h20, rd);
         check("applied stream rate status", rd[7:5], 5);
         check("requested stream rate status", rd[10:8], 7);

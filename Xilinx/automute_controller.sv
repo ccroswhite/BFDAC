@@ -43,7 +43,7 @@ module automute_controller #(
     // Control Plane
     input  logic sys_ready,     // 1 = clocks locked + pg_all (safe to expose XLR)
     input  logic test_active,   // 1 = cell-test/bench active -> open relay (isolation)
-    input  logic spi_unmute,    // digital unmute request (stream-gated in top)
+    input  logic unmute_req,    // digital unmute request (stream-gated in top)
     input  logic base_rate_sel,
     input  logic i2s_err,
     input  logic level_switch_req,   // legacy pulse, unused (pending = target != applied)
@@ -107,7 +107,7 @@ module automute_controller #(
             line_mute_drive <= 1'b0;
             force_zero      <= 1'b1;
         end else if (state != ST_OPEN && state != ST_SETTLING &&
-                     (i2s_err || rate_changed || !spi_unmute)) begin
+                     (i2s_err || rate_changed || !unmute_req)) begin
             // Digital mute ONLY — the relay stays closed (no click). Every
             // runtime mute event lands here.
             state           <= ST_ARMED;
@@ -144,7 +144,7 @@ module automute_controller #(
                     if (level_switch_pending) begin
                         state <= ST_SWITCHING;
                         timer <= '0;
-                    end else if (spi_unmute) begin
+                    end else if (unmute_req) begin
                         state <= ST_FLUSHING;
                         timer <= '0;
                     end
@@ -187,7 +187,7 @@ module automute_controller #(
                     if (timer < SETTLE_CYCLES) begin
                         timer <= timer + 1'b1;
                     end else begin
-                        state <= spi_unmute ? ST_PLAYING : ST_ARMED;
+                        state <= unmute_req ? ST_PLAYING : ST_ARMED;
                         timer <= '0;
                     end
                 end

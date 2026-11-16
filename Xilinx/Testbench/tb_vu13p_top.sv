@@ -222,7 +222,7 @@ module tb_vu13p_top;
             dbg_events++;
             $display("[%0t] DBG-FSM: %0d->%0d (i2s_err=%b rate_chg=%b unmute=%b rst=%b)",
                      $time, st_q, u_dut.u_automute.state, u_dut.i2s_err,
-                     u_dut.u_automute.rate_changed, u_dut.spi_unmute_sync,
+                     u_dut.u_automute.rate_changed, u_dut.stream_valid_dsp,
                      u_dut.sys_rst_n);
         end
     end
@@ -285,10 +285,10 @@ module tb_vu13p_top;
         force u_dut.bank_valid = 1'b1;
         spi_write(7'h1B, 24'd1);
         spi_write(7'h01, 24'h123456);            // volume (smoke: CRC path)
-        spi_write(7'h04, 24'h000001);            // unmute
+        // unmute is now implicit: stream_valid + clocks-ready + bank_valid
         repeat (100) @(posedge clk_200m);
-        $display("[%0t] DBG: spi_unmute=%b sticky_err=%b sys_volume=%h automute_state=%0d",
-                 $time, u_dut.spi_unmute, u_dut.u_ctrl_plane.sticky_err,
+        $display("[%0t] DBG: svalid=%b sticky_err=%b sys_volume=%h automute_state=%0d",
+                 $time, u_dut.stream_valid_dsp, u_dut.u_ctrl_plane.sticky_err,
                  u_dut.u_ctrl_plane.sys_volume, u_dut.u_automute.state);
         // Three-tier model: unmute releases the digital clamp (force_zero)
         // while the relay stays closed — it energized at startup ready, long
@@ -299,7 +299,7 @@ module tb_vu13p_top;
             if (wdog % 400000 == 0)
                 $display("[%0t] DBG: automute state=%0d timer=%0d i2s_err=%b unmute_sync=%b",
                          $time, u_dut.u_automute.state, u_dut.u_automute.timer,
-                         u_dut.i2s_err, u_dut.spi_unmute_sync);
+                         u_dut.i2s_err, u_dut.stream_valid_dsp);
         end
         if (u_dut.force_zero === 1'b0 && relay_line_mute === 1'b1) begin
             $display("[%0t] PASS: digital unmute after SPI unmute (relay closed, clamp released)", $time);
@@ -380,11 +380,10 @@ module tb_vu13p_top;
             @(posedge clk_200m); wdog++;
         end
         wait (u_dut.stream_clock_ready);
-        if (!u_dut.force_zero || u_dut.spi_unmute || u_dut.stream_source_valid)
+        if (!u_dut.force_zero || u_dut.stream_source_valid)
             $fatal(1, "rate change automatically resumed playback");
         force u_dut.bank_valid = 1'b1;
         spi_write(7'h1B, 24'd1);
-        spi_write(7'h04, 24'd1);
         wdog = 0;
         while (relay_line_mute !== 1'b1 && wdog < 400000) begin
             @(posedge clk_49m); wdog++;

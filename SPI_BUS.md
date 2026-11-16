@@ -34,7 +34,7 @@ Ruling column = review checkbox.
 | 0x01 | VOLUME | [23:0] Q0.24 | normalized volume → Q16.16 internal gain; 0xFFFFFF=FS | AP | **AP-only** (ruled 11-14: UAC2 volume disabled; app sets volume) | [x] ruled |
 | 0x02 | LEVEL | [2:0] | digital level cap 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied muted | AP | **AP-only** (ruled 11-14: app-controlled) | [x] ruled |
 | 0x03 | RATE | [2:0] | alias of STREAM_RATE | **XMOS-only** (ruled 11-15: XMOS is the sole audio source — USB or AP-network relay — rate always originates there; AP writes denied) | [x] ruled |
-| 0x04 | UNMUTE | [0] | digital unmute req — releases force_zero clamp (relay untouched post-R1); stream-gated at top | both | **open** (R1a — XMOS-only vs both) | [ ] open |
+| 0x04 | — | — | **REMOVED** (was UNMUTE — retired 11-15; stream arm = STREAM_VALID 0x1B, user mute = VOLUME) | — | — | [x] removed |
 | 0x05 | BANK_LOAD | [3:0] | legacy DDR4 slot id + coef_load_start trigger | AP | | [ ] |
 | 0x06 | — | — | RESERVED (was clk_source_sel, merged 0x03) | — | — | [x] reserved |
 | 0x07 | — | — | **REMOVED** (was OUTSEL 0=line/1=HP; no headphone output stage — ruled 11-14) | — | — | [x] removed |
@@ -96,12 +96,12 @@ E TEST_FORMAT, F FILT_RATE.
 
 ## 5. Current draft partition (implemented)
 
-- **XMOS-allowed (7)**: NOP, RATE/STREAM_RATE (XMOS-only), UNMUTE,
+- **XMOS-allowed (6)**: NOP, RATE/STREAM_RATE (XMOS-only),
   STICKY_W1C, STREAM_VALID, I2S_RX_TRIM
 - **XMOS-only**: RATE (0x03) / STREAM_RATE (0x1A) — AP writes denied
   (ruled 2026-11-15)
-- Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15)
-  — both now reserved, writes → BAD_ADDR
+- Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15),
+  UNMUTE 0x04 (2026-11-15) — all now reserved, writes → BAD_ADDR
 - **AP-only (17)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
   FILTER_SELECT_ID, CAL_ADDR/DATA/COMMIT/RDADDR, FLASH_ADDR_LO/HI/CMD/DATA/PTR,
   DPD_EN, CELL_TEST_L/R
@@ -144,10 +144,14 @@ E TEST_FORMAT, F FILT_RATE.
   relay_line_mute = line_mute_drive && pg_all_sync (no stream/fault
   gating); test_mode_active opens the relay for cell-test isolation.
   tb_automute rewritten, tb_cell_measurement + tb_vu13p_top updated.
-- [ ] R1a UNMUTE (0x04) semantics/ownership: **still open**. Under the new
-  model UNMUTE is purely digital (releases the force_zero clamp; stream-
-  readiness gating in top still applies). Ownership options: both (AP can
-  force-mute/kill) vs XMOS-only (consistent with RATE/STREAM_VALID).
+- [x] R1a UNMUTE (0x04) → **RETIRED** (ruled 11-15). User clarified the
+  semantics: only two mute notions exist — (a) zero output voltage
+  (VOLUME / stream transitions / STREAM_VALID), (b) relay disconnect
+  (startup + major power events only). A dedicated unmute register was a
+  third path duplicating STREAM_VALID, so it was removed: writes to 0x04
+  → BAD_ADDR; automute's unmute input is now stream_source_valid &&
+  stream_clocks_ready && bank_valid. STREAM_VALID=1 gained the
+  cell-test/bench reject that UNMUTE had. MUTE_STATUS[0] now reserved-0.
 - [ ] R3 I2S_RX_TRIM (0x1C): **[PARKED — review in detail as todo]**
   `[4:0]` trim = FPGA-master I2S capture-point adjustment (round-trip skew
   to XMOS) — likely still useful. `[5]` src_sel muxes i2s_data2 (host

@@ -212,9 +212,8 @@ module acku15s_dac_top #(
     );
 
     // SPI control signals (clk_200m -> dsp_clk)
-    (* MARK_DEBUG = "TRUE" *) logic spi_unmute;
     (* MARK_DEBUG = "TRUE" *) logic level_switch_req;
-    logic spi_unmute_sync;
+    logic stream_valid_dsp;
     logic base_rate_sel_sync;
     logic level_switch_req_sync;
     logic [2:0] level_target;
@@ -248,24 +247,24 @@ module acku15s_dac_top #(
     // level_target is quasi-static: it is written by SPI strictly before its
     // req pulse and only sampled by the sequencer many cycles later (while
     // muted), so a 2-FF chain per bit is sufficient.
-    (* ASYNC_REG = "TRUE" *) logic [1:0] unmute_sync_chain;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] svalid_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] rate_sel_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] level_req_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [5:0] level_target_sync_chain;  // 3 bits x 2 stages
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            unmute_sync_chain        <= '0;
+            svalid_sync_chain        <= '0;
             rate_sel_sync_chain      <= '0;
             level_req_sync_chain     <= '0;
             level_target_sync_chain  <= '0;
         end else begin
-            unmute_sync_chain        <= {unmute_sync_chain[0], spi_unmute};
+            svalid_sync_chain        <= {svalid_sync_chain[0], stream_source_valid};
             rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
             level_req_sync_chain     <= {level_req_sync_chain[0], level_switch_req};
             level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
         end
     end
-    assign spi_unmute_sync        = unmute_sync_chain[1];
+    assign stream_valid_dsp       = svalid_sync_chain[1];
     assign base_rate_sel_sync     = rate_sel_sync_chain[1];
     assign level_switch_req_sync  = level_req_sync_chain[1] && !level_req_sync_chain[0]; // edge pulse
     assign level_target_sync      = level_target_sync_chain[5:3];
@@ -770,7 +769,6 @@ module acku15s_dac_top #(
         .filter_id              (filter_id),
         .filter_next_id         (filter_next_id),
         .filter_load_req        (filter_load_req),
-        .spi_unmute             (spi_unmute),
         .cal_wr_toggle          (cal_wr_toggle),
         .cal_wr_addr            (cal_wr_addr),
         .cal_wr_data            (cal_wr_data),
@@ -892,7 +890,7 @@ module acku15s_dac_top #(
         .rst_n            (sys_rst_n),
         .sys_ready        (clk_locked && pg_all_sync[1]),
         .test_active      (test_mode_active),
-        .spi_unmute       (spi_unmute_sync && stream_automute_sync[1] && bank_valid),
+        .unmute_req       (stream_valid_dsp && stream_automute_sync[1] && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
         .i2s_err          (i2s_err || core_stream_fault),
         .level_switch_req (level_switch_req_sync),
@@ -916,7 +914,7 @@ module acku15s_dac_top #(
         .PROBE_WIDTH (16)
     ) u_ila_ctrl (
         .clk   (clk_200m),
-        .probe ({spi_unmute, level_switch_req, fpga_irq_n,
+        .probe ({stream_valid_dsp, level_switch_req, fpga_irq_n,
                  line_mute_drive,
                  force_zero, i2s_err, 10'b0})
     );

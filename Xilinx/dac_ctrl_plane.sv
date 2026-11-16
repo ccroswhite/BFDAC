@@ -54,7 +54,6 @@ module dac_ctrl_plane (
     output logic [15:0] filter_id,        // Currently selected filter (DDR4 directory ID)
     output logic [15:0] filter_next_id,   // Next list entry — bank manager preload target
     output logic        filter_load_req,  // Single-cycle pulse on select/advance
-    output logic        spi_unmute,       // Raw clk_49m-domain unmute command (CDC in top)
     output logic        fpga_irq_n,       // Active-low IRQ to XMOS (sticky errors)
     output logic        spi_ap_irq_n,     // Active-low IRQ to AP (same sticky source)
 
@@ -163,7 +162,6 @@ module dac_ctrl_plane (
     logic [31:0] spi_tx_data_a;   // AP port readback register
     logic        spi_crc_err_d;
     logic [2:0]  cmd_level;
-    logic        cmd_unmute;
 
     // Filter toggle list storage (TODO-23: 32 entries, 2026-09-03)
     localparam int FLIST_MAX = `SPI_FLIST_MAX;
@@ -250,7 +248,7 @@ module dac_ctrl_plane (
         case (wr_addr)
             `SPI_W_NOP,
             `SPI_W_VOLUME,        `SPI_W_LEVEL,          `SPI_W_RATE,
-            `SPI_W_UNMUTE,        `SPI_W_BANK_LOAD,
+            `SPI_W_BANK_LOAD,
             `SPI_W_FILTER_LIST_CTRL, `SPI_W_FILTER_LIST_APP, `SPI_W_FILTER_SELECT,
             `SPI_W_CAL_ADDR,       `SPI_W_CAL_DATA,
             `SPI_W_CAL_COMMIT,    `SPI_W_CAL_RDADDR,     `SPI_W_FLASH_ADDR_LO,
@@ -275,7 +273,7 @@ module dac_ctrl_plane (
         if (ctrl_bus_src == SRC_XMOS) begin
             case (wr_addr)
                 `SPI_W_NOP,
-                `SPI_W_RATE,          `SPI_W_UNMUTE,
+                `SPI_W_RATE,
                 `SPI_W_STICKY_W1C,
                 `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID,  `SPI_W_I2S_RX_TRIM:
                     wr_denied = 1'b0;
@@ -355,7 +353,7 @@ module dac_ctrl_plane (
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (ctrl_bus_data[7] &&
-                             (cmd_unmute || line_mute_r || switch_busy_r)) begin
+                             (stream_source_valid || line_mute_r || switch_busy_r)) begin
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
@@ -373,7 +371,8 @@ module dac_ctrl_plane (
                 if (ctrl_bus_data[23:1] != 0) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
-                end else if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault)) begin
+                end else if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault ||
+                                                cell_test_enabled || |cell_test_busy)) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
@@ -382,15 +381,10 @@ module dac_ctrl_plane (
                 if (ctrl_bus_data[23:6] != 0) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
-                end else if (cmd_unmute || stream_source_valid || bench_busy || stream_busy) begin
+                end else if (stream_source_valid || bench_busy || stream_busy) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
-            end
-            `SPI_W_UNMUTE: if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || !stream_audio_ready || stream_fault ||
-                                          bench_busy || cell_test_enabled || |cell_test_busy)) begin
-                wr_rejected = 1'b1;
-                wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
             end
             `SPI_W_FILTER_LIST_APP: if (filter_list_len >= FLIST_LW'(FLIST_MAX)) begin
                 wr_rejected   = 1'b1;
@@ -420,7 +414,7 @@ module dac_ctrl_plane (
             end
             `SPI_W_DPD_EN: if (ctrl_bus_data[0] != dpd_enable) begin
                 if (bench_busy || stream_busy || cal_commit_pending ||
-                    cmd_unmute || stream_source_valid) begin
+                    stream_source_valid) begin
                     wr_rejected = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_BUSY;
                 end else if (ctrl_bus_data[0] &&
@@ -594,9 +588,10 @@ module dac_ctrl_plane (
 
     always_ff @(posedge clk) begin
         if (!ext_rst_n) begin
-            // Fail-safe (2026-10-09): volume resets to ZERO. Relays unmute only on
-            // an explicit UNMUTE write, and even then nothing leaves the XLR until
-            // the AP has written VOLUME. (Was 0xFFFFFFFF = full scale at unmute.)
+            // Fail-safe (2026-10-09): volume resets to ZERO. The digital clamp
+            // releases only once stream_source_valid is armed (0x1B), and even
+            // then nothing leaves the XLR until the AP has written VOLUME.
+            // (Was 0xFFFFFFFF = full scale at unmute.)
             sys_volume      <= 32'h0000_0000;
             cmd_level       <= 3'b000;
             base_rate_sel   <= 1'b0;
@@ -605,7 +600,6 @@ module dac_ctrl_plane (
             stream_source_valid <= 0;
             i2s_rx_trim <= 5'd8;
             i2s_src_sel <= 1'b0;
-            cmd_unmute      <= 1'b0;
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
             read_addr_reg   <= `SPI_W_NOP;
@@ -639,7 +633,6 @@ module dac_ctrl_plane (
             flash_cmd_trigger <= 1'b0;
             flash_buf_we      <= 1'b0;
             if (bench_busy || stream_busy || !stream_clocks_ready || stream_fault) begin
-                cmd_unmute <= 0;
                 stream_source_valid <= 0;
             end
             if (stream_busy || !stream_clocks_ready) dpd_enable <= 0;
@@ -658,19 +651,14 @@ module dac_ctrl_plane (
                             base_rate_sel <= ctrl_bus_data[0];
                             stream_rate_request <= ctrl_bus_data[2:0];
                             stream_rate_toggle <= ~stream_rate_toggle;
-                            cmd_unmute <= 0;
                             stream_source_valid <= 0;
                             dpd_enable <= 0;
                         end
-                        `SPI_W_STREAM_VALID: if (!wr_rejected) begin
-                            stream_source_valid <= ctrl_bus_data[0];
-                            if (!ctrl_bus_data[0]) cmd_unmute <= 0;
-                        end
+                        `SPI_W_STREAM_VALID: if (!wr_rejected) stream_source_valid <= ctrl_bus_data[0];
                         `SPI_W_I2S_RX_TRIM: if (!wr_rejected) begin
                             i2s_rx_trim <= ctrl_bus_data[4:0];
                             i2s_src_sel <= ctrl_bus_data[5];
                         end
-                        `SPI_W_UNMUTE: if (!wr_rejected) cmd_unmute <= ctrl_bus_data[0];
                         `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: if (!wr_rejected) begin
                             cell_test_cfg[cell_test_channel] <= ctrl_bus_data[7:0];
                             cell_test_req[cell_test_channel] <= ~cell_test_req[cell_test_channel];
@@ -799,7 +787,7 @@ module dac_ctrl_plane (
                                     coef_bank_id};
             // 0x14: Mute / relay status
             `SPI_R_MUTE_STATUS: reg_read = {27'd0, i2s_err_r, switch_busy_r,
-                                    1'b0, line_mute_r, cmd_unmute};
+                                    1'b0, line_mute_r, 1'b0};
             // 0x15: Clock / PLL status (+ DPD enable readback, bit 2)
             `SPI_R_CLK_STATUS: reg_read = {29'd0, dpd_enable, ddr4_calib_sync[1], clk_locked};
             // 0x16: Filter list status {rsvd[11], list_len[10:5], cur_index[4:0]}
@@ -846,7 +834,6 @@ module dac_ctrl_plane (
     // around the physical mux flip.
     assign clk_source_sel = base_rate_sel;
 
-    assign spi_unmute = cmd_unmute;
 
     // Next list entry (wrap) — informational readback (0x17); no preload (TODO-16 ruling)
     always_comb begin

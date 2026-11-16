@@ -35,7 +35,7 @@ module tb_cell_measurement;
     ) auto (
         .clk(dsp_clk), .rst_n(rst_n),
         .sys_ready(1'b1), .test_active(1'b0),
-        .spi_unmute(unmute && !manual_busy), .base_rate_sel(1'b0),
+        .unmute_req(unmute && !manual_busy), .base_rate_sel(1'b0),
         .i2s_err(1'b0), .level_switch_req(1'b0), .level_target(3'b000),
         .line_mute_drive(),
         .level_relay_drive(), .force_zero(), .switch_busy(relay_switch_busy)
@@ -49,7 +49,7 @@ module tb_cell_measurement;
         .clk_locked(1'b1), .ddr4_init_calib_complete(1'b1),
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
         .boot_crc_fail(1'b0), .boot_axi_fail(1'b0), .flash_cmd_err(1'b0),
-        .spi_unmute(unmute), .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack),
+        .stream_source_valid(unmute), .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack),
         .bench_busy(manual_busy), .bench_available(manual_available), .bench_status(manual_status)
     );
 
@@ -168,13 +168,13 @@ module tb_cell_measurement;
 
     initial begin
         #100 rst_n = 1;
-        wr(`SPI_W_UNMUTE, 24'd1);
+        wr(`SPI_W_STREAM_VALID, 24'd1);
         if (!relay_switch_busy) $fatal(1, "automute did not report its live relay transition");
         wr(`SPI_W_CELL_TEST_L, 24'h80);
         if (cfg !== 16'd0) $fatal(1, "diagnostics accepted while unmute requested");
         read_reg(`SPI_R_CMD_ERR_INFO, rd);
         if (rd[3:0] != `SPI_ERR_TEST_UNSAFE) $fatal(1, "missing unsafe-command error");
-        wr(`SPI_W_UNMUTE, 24'd0);
+        wr(`SPI_W_STREAM_VALID, 24'd0);
         safe = 0;
         wr(`SPI_W_CELL_TEST_R, 24'hbf);
         if (cfg !== 16'd0) $fatal(1, "diagnostics accepted before relay release");
@@ -209,7 +209,7 @@ module tb_cell_measurement;
         if (rd !== 32'hc0) $fatal(1, "L readback %h", rd);
         read_reg(`SPI_R_CELL_TEST_R, rd);
         if (rd !== 32'hbf) $fatal(1, "R readback %h", rd);
-        wr(`SPI_W_UNMUTE, 24'd1);
+        wr(`SPI_W_STREAM_VALID, 24'd1);
         if (unmute !== 0) $fatal(1, "unmuted during diagnostics");
         wr(`SPI_W_CELL_TEST_R, 24'h100);
         if (cfg[1] !== 8'hbf) $fatal(1, "accepted reserved bits");
@@ -225,9 +225,9 @@ module tb_cell_measurement;
         release core.dem_valid_l;
         release core.dem_out_l;
         release core.dem_out_r;
-        wr(`SPI_W_UNMUTE, 24'd1);
+        wr(`SPI_W_STREAM_VALID, 24'd1);
         if (unmute !== 1) $fatal(1, "normal unmute blocked after diagnostics");
-        wr(`SPI_W_UNMUTE, 24'd0);
+        wr(`SPI_W_STREAM_VALID, 24'd0);
         wr(`SPI_W_CELL_TEST_L, 24'hff);
         #7 rst_n = 0;
         repeat (20) @(negedge cell_clk);
@@ -236,12 +236,12 @@ module tb_cell_measurement;
         rst_n = 1;
         repeat (32) @(negedge cell_clk);
         if (out_l !== 0 || out_r !== 0) $fatal(1, "stale diagnostic replay after reset");
-        wr(`SPI_W_UNMUTE, 24'd1);
+        wr(`SPI_W_STREAM_VALID, 24'd1);
         button_press(0); manual_hold(1,0,0);
         check_patterns(baseline(0), 64'hffffffff);
         button_press(1); manual_hold(1,0,1);
         check_patterns(baseline(0)|64'h1, 64'hffffffff);
-        wr(`SPI_W_UNMUTE, 24'd1);
+        wr(`SPI_W_STREAM_VALID, 24'd1);
         if (unmute) $fatal(1, "SPI unmute bypassed manual interlock");
         button_press(0);
         for (int n=0; n<2000 && ui.state != ui.SELECTING; n++) @(negedge ctrl_clk);

@@ -59,7 +59,7 @@ module tb_spi_ctrl_plane;
     logic        clk_source_sel;
     logic [3:0]  coef_bank_id;
     logic        coef_load_start;
-    logic        spi_unmute;
+    logic        source_valid;
 
     dac_ctrl_plane u_dut (
         .clk                    (clk),
@@ -96,7 +96,7 @@ module tb_spi_ctrl_plane;
         .clk_source_sel         (clk_source_sel),
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
-        .spi_unmute             (spi_unmute)
+        .stream_source_valid    (source_valid)
     );
 
     // Clock generation
@@ -350,14 +350,14 @@ module tb_spi_ctrl_plane;
         else
             $display("PASS: [3a] level addr=0x02 target=%0b, level_switch_req pulsed", level_target);
 
-        // 4. Write spi_unmute (addr=0x04)
-        //    Verifies mute control register; spi_unmute drives the relay/DSP mute path
-        spi_write(7'h04, 24'h00_0001);
+        // 4. Write STREAM_VALID (addr=0x1B) — UNMUTE 0x04 retired 2026-11-15;
+        //    stream arm is now the only "unmute" path
+        spi_write(7'h1B, 24'h00_0001);
         #(CLK_PERIOD_NS * 20);
-        if (spi_unmute !== 1)
-            $display("FAIL: [4] spi_unmute addr=0x04 got=%0b exp=1", spi_unmute);
+        if (source_valid !== 1)
+            $display("FAIL: [4] stream_source_valid addr=0x1B got=%0b exp=1", source_valid);
         else
-            $display("PASS: [4] spi_unmute addr=0x04 = %0b", spi_unmute);
+            $display("PASS: [4] stream_source_valid addr=0x1B = %0b", source_valid);
 
         // 5. Inject i2s_err pulse and verify sticky error latches -> fpga_irq_n deasserts
         //    Verifies the sticky error register captures async faults and drives the IRQ line
@@ -425,20 +425,20 @@ module tb_spi_ctrl_plane;
                          rd[5:0], rd[5], rd[4], rd[2:0]);
 
             // 10. Read mute/relay status register (addr=0x14)
-            //     Fields: {i2s_err_r[4], switch_busy_r[3], rsvd[2], line_mute_r[1], cmd_unmute[0]}
-            //     Inject switch_busy=1, line_mute=1; unmute=1 from test 4;
-            //     i2s_err deasserted (live status, not sticky) -> expect 0x0B
-            //     (bit2 was hp_mute before the headphone path was removed)
+            //     Fields: {i2s_err_r[4], switch_busy_r[3], rsvd[2], line_mute_r[1], rsvd[0]}
+            //     Inject switch_busy=1, line_mute=1; i2s_err deasserted (live
+            //     status, not sticky) -> expect 0x0A
+            //     (bit2 was hp_mute, bit0 was unmute — both now reserved-0)
             switch_busy      = 1;
             line_mute_status = 1;
             #(CLK_PERIOD_NS * 20); // allow 2-stage sync + re-register to propagate
             spi_read(7'h14, rd);
-            if (rd[4:0] !== 5'b01011)
-                $display("FAIL: [10] status addr=0x14 [4:0]=0x%X exp=0x0B {i2s_err,sw_busy,rsvd,line_mute,unmute}",
+            if (rd[4:0] !== 5'b01010)
+                $display("FAIL: [10] status addr=0x14 [4:0]=0x%X exp=0x0A {i2s_err,sw_busy,rsvd,line_mute,rsvd}",
                          rd[4:0]);
             else
-                $display("PASS: [10] status addr=0x14 = 0x%08X {i2s_err=%0b,sw_busy=%0b,line_mute=%0b,unmute=%0b}",
-                         rd, rd[4], rd[3], rd[1], rd[0]);
+                $display("PASS: [10] status addr=0x14 = 0x%08X {i2s_err=%0b,sw_busy=%0b,line_mute=%0b}",
+                         rd, rd[4], rd[3], rd[1]);
             switch_busy      = 0;
             line_mute_status = 0;
 

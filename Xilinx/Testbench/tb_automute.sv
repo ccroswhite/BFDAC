@@ -24,7 +24,7 @@ module tb_automute;
     logic rst_n;
     logic sys_ready;
     logic test_active;
-    logic spi_unmute;
+    logic unmute_req;
     logic base_rate_sel;
     logic i2s_err;
     logic level_switch_req;
@@ -45,7 +45,7 @@ module tb_automute;
         .rst_n            (rst_n),
         .sys_ready        (sys_ready),
         .test_active      (test_active),
-        .spi_unmute       (spi_unmute),
+        .unmute_req       (unmute_req),
         .base_rate_sel    (base_rate_sel),
         .i2s_err          (i2s_err),
         .level_switch_req (level_switch_req),
@@ -95,7 +95,7 @@ module tb_automute;
         rst_n            = 0;
         sys_ready        = 0;
         test_active      = 0;
-        spi_unmute       = 0;
+        unmute_req       = 0;
         base_rate_sel    = 0;
         i2s_err          = 0;
         level_switch_req = 0;
@@ -106,7 +106,7 @@ module tb_automute;
         repeat(2) @(posedge clk);
 
         // 1. Power-up but NOT ready: relay must stay open even with unmute
-        spi_unmute = 1;
+        unmute_req = 1;
         repeat(10) @(posedge clk);
         check(line_mute_drive === 0 && force_zero === 1,
               "relay open while system not ready (unmute ignored)");
@@ -159,12 +159,12 @@ module tb_automute;
         $display("PASS: playing at 6V after level switch");
 
         // 7. Level survives digital mute
-        spi_unmute = 0;
+        unmute_req = 0;
         repeat(5) @(posedge clk);
         check(level_relay_drive === 3'b010 && line_mute_drive === 1,
               "level held + relay closed through SPI mute");
         level_target = 3'b100;
-        spi_unmute = 1;
+        unmute_req = 1;
         wait (level_relay_drive === 3'b100);
         wait (force_zero === 0);
         $display("PASS: playing at 0.2V after muted level write");

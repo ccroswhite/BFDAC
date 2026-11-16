@@ -84,7 +84,7 @@ create_generated_clock -name cell_clk [get_pins u_clk_gen/u_mmcm/CLKOUT1]
 
 # clk_200m (SPI control plane) -> dsp_clk single-bit synchronizer first stages.
 set_false_path -to [get_pins {
-    unmute_sync_chain_reg[0]/D
+    svalid_sync_chain_reg[0]/D
     rate_sel_sync_chain_reg[0]/D
     level_req_sync_chain_reg[0]/D
     vol_tog_sync_reg[0]/D

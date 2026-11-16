@@ -11,14 +11,15 @@
 //  DUAL-PORT (2026-11): two independent SPI slaves share this register file —
 //  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
 //  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
-//  XMOS owns the audio-path subset {NOP, RATE, UNMUTE,
+//  XMOS owns the audio-path subset {NOP, RATE,
 //  STICKY_W1C, STREAM_RATE, STREAM_VALID, I2S_RX_TRIM}; all other
 //  write registers (volume/level, filter/bank, cal, flash/update,
 //  bench/cell-test) are AP-only — a denied XMOS write reports BAD_ADDR and
 //  does not execute. Ruled 2026-11-14: VOLUME and LEVEL are AP-owned (UAC2
 //  volume control disabled; the application sets level/volume — XMOS has no
 //  access). OUTSEL/headphone path removed entirely (2026-11-14 ruling: no
-//  headphone output stage). UNMUTE ownership under review.
+//  headphone output stage). UNMUTE retired 2026-11-15: stream arm is
+//  STREAM_VALID (0x1B); user mute is VOLUME (0x01).
 //  Ruled 2026-11-15: RATE/STREAM_RATE are XMOS-ONLY (the XMOS is the sole
 //  audio source to the FPGA — USB or AP-network relay — so the rate always
 //  originates there; AP writes are denied). DAC_MODE/video_mode removed —
@@ -37,7 +38,7 @@
                                       //        000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied by the
                                       //        automute sequencer while muted (click-free); reset = 2 V
 `define SPI_W_RATE             7'h03  // Alias of STREAM_RATE: 0/1 retain base 44.1/48k semantics
-`define SPI_W_UNMUTE           7'h04  // [0]    spi_unmute
+// 7'h04 RESERVED (was UNMUTE — retired 2026-11-15; stream arm = STREAM_VALID)
 `define SPI_W_BANK_LOAD        7'h05  // [3:0]  legacy fixed DDR4 slot + load trigger
 //                             7'h06     RESERVED (was clk_source_sel; merged into 0x03)
 //                             7'h07     RESERVED (was OUTSEL 0=line/1=HP;

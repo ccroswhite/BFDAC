@@ -5617,3 +5617,25 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   fir_stage1b_interp8.sv added to tb_cell_measurement file list.
 - Results: tb_automute TB_PASS, tb_cell_measurement TB_PASS (262 windows),
   tb_vu13p_top ALL TESTS PASSED (9).
+
+### 2026-11-15 UNMUTE (0x04) retired — stream arm = STREAM_VALID
+- RULING (user): two mute notions only — zero output voltage (VOLUME /
+  stream transitions / STREAM_VALID) vs relay disconnect (startup +
+  major power events only). A dedicated UNMUTE register duplicated
+  STREAM_VALID, so 0x04 was retired -> writes now BAD_ADDR.
+- automute unmute_req = stream_source_valid && stream_clocks_ready &&
+  bank_valid (combinational from stream state, no explicit request).
+- STREAM_VALID=1 inherited the cell-test/bench reject UNMUTE had (a live
+  stream cannot arm while diagnostics own the output).
+- cmd_unmute/spi_unmute struck from dac_ctrl_plane; CELL_TEST/RX_TRIM/
+  DPD unsafe paths now key on stream_source_valid; MUTE_STATUS[0] rsvd 0.
+  Top: unmute_sync_chain -> svalid_sync_chain (carries source_valid);
+  XDC pin name updated.
+- TBs: tb_dac_ctrl_plane unmute tests converted to stream-arm checks
+  (source_valid clears on takeover/rate/fault, arm blocked during local
+  test + diagnostics); tb_spi_ctrl_plane test[4] -> STREAM_VALID write,
+  test[10] expected 0x0A (bit0 rsvd); tb_cell_measurement UNMUTE writes
+  -> STREAM_VALID; tb_vu13p_top 0x04 writes removed.
+- Results: tb_dac_ctrl_plane TB_PASS (107), tb_spi_ctrl_plane 25/0,
+  tb_automute TB_PASS, tb_cell_measurement TB_PASS (262 windows),
+  tb_vu13p_top ALL 9 PASS.
