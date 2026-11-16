@@ -52,7 +52,7 @@ Ruling column = review checkbox.
 | 0x13 | FLASH_DATA | [7:0] | page-buffer byte, auto-incr | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x14 | FLASH_PTR | [15:0] | page-buffer w/r pointer | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x15 | DPD_EN | [0] | DPD engine enable | AP | | **AP-only** (ruled 11-16) | [x] ruled |
-| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO; XMOS masked to {0,1,4} (its bus errors + I2S) | masked | **AP full, XMOS masked** (ruled 11-15) | [x] ruled | **PARKED** — review in detail (XMOS can clear AP-domain errors) | [ ] parked |
+| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO; XMOS masked to {0,1,4} (its bus errors + I2S) | masked | **AP full, XMOS masked** (ruled 11-15) | [x] ruled |
 | 0x17 | FILTER_SELECT_ID | [15:0] | direct directory filter_id, bypasses toggle list | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
