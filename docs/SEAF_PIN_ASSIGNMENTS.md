@@ -29,7 +29,7 @@ AP signal and return assignments retain the existing row-A pin order. Dual-SPI r
 | 21 | `AP_SCL` | 22 | `GND_AP` |
 | 23 | `SOM_PG` | 24 | `GND_AP` |
 | 25 | `VAP_IO` | 26 | `GND_AP` |
-| 27 | `AP_I2S_DATA2` | 28 | `GND_AP` |
+| 27 | `GND_AP` (was `AP_I2S_DATA2` — second host I²S source removed 2026-11-15; XMOS is the sole source) | 28 | `GND_AP` |
 | 29 | `AP_SPI_SCLK` | 30 | `GND_AP` |
 | 31 | `AP_SPI_CS_N` | 32 | `GND_AP` |
 | 33 | `AP_SPI_MOSI` | 34 | `GND_AP` |

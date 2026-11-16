@@ -5700,3 +5700,26 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
             CELL_TEST_L/R
 - Removed : OUTSEL 0x07, DAC_MODE 0x0B, UNMUTE 0x04, I2S_RX_TRIM 0x1C
 - Reads   : unrestricted on both ports
+
+### 2026-11-16 Board-side headphone/second-source cleanup (todo #6/#7)
+- AUDIT RESULT: no headphone-amp circuitry was ever drawn in the KiCad
+  sheets (bom 8 struck 2026-10-05). K601/K602 line-mute relays +
+  U601/U602/U603 unmute gate = the only relay path (correct, kept).
+  Transformers T900-T903 already carry no HP-dedicated winding.
+- RESIDUE REMOVED: the dead AP second-I2S-source path (board side of the
+  src_sel/i2s_data2 RTL removal 2026-11-15):
+  * CTRL_PINS: I2S_DATA2 (B71_L11_N/H28) dropped -> J1 pin no-connect.
+    (Correctness: H28 is reassigned to cascode_l[53] on the ACKU15S
+    pinmap - a driven input there would have fought a cascode output.)
+  * seaf_conn1_map: Conn1 pad 27 AP_I2S_DATA2 -> GND_AP (also updates the
+    J7705 pre-reg mate - same map feeds both).
+  * U503 ch2 -> spare (IN2 to GNDA, OUT2 NC), R506 10k pull-down removed.
+  * AP sheet J855 pin 69 (MCASP0_AXR0) -> no-connect.
+- STALE ANNOTATIONS FIXED (fpga/ctrl/ap sheets): hp pins now say REMOVED
+  from RTL (not "struck, ports exist"); I2S_DATA2 gone; relay_level pins
+  correctly noted as REUSED (P26->SPI_AP_IRQ_N, N29->PG_ALL).
+- docs/SEAF_PIN_ASSIGNMENTS.md pad 27 -> GND_AP; bom.md struck-style
+  notes appended to the U503 + AP-interface entries.
+- Sheets regenerated; check_seaf_pinmap PASS x3. kicad_xcheck FAIL(1) =
+  pre-existing VAP_IO/GND_AP bringup issue (verified on clean HEAD -
+  todo #1, not introduced here).

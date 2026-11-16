@@ -180,8 +180,8 @@ CTRL_PINS = {
     "B71_L13_P": "SPI_AP_SCLK", "B71_L13_N": "SPI_AP_CS_N", "B71_L14_P": "SPI_AP_MOSI", "B71_L14_N": "SPI_AP_MISO",       # J26 H26 G26 G27
     "B71_L6_P": "SPI_AP_IRQ_N",                                                                                         # P26 (was struck RLY_LEVEL0)
     "B71_L5_P": "FPGA_IRQ_N", "B71_L2_N": "EXT_RST_N",                                                  # P28 R27
-    "B71_L11_P": "I2S_BCLK", "B71_L2_P": "I2S_LRCLK", "B71_L5_N": "I2S_DATA", "B71_L11_N": "I2S_DATA2", # H27 T27 N28 H28
-    "B71_L1_N": "RLY_LINE_MUTE",                                                                    # R28; RLY_LEVEL0/1 (P26/N29) STRUCK 2026-10-07: level is digital (bom 7 ruling), RTL ports remain -> no-connect
+    "B71_L11_P": "I2S_BCLK", "B71_L2_P": "I2S_LRCLK", "B71_L5_N": "I2S_DATA",                          # H27 T27 N28; B71_L11_N/H28 freed 2026-11-15 (I2S_DATA2 second source removed with src_sel/i2s_data2 RTL)
+    "B71_L1_N": "RLY_LINE_MUTE",                                                                    # R28; RLY_LEVEL0/1 struck 2026-10-07 (level is digital, bom 7 ruling) - pins REUSED: P26->SPI_AP_IRQ_N, N29->PG_ALL
     "B71_L4_N": "PG_ALL",                                                                           # J1-B7 / N29: wired-AND rail power-good -> FPGA (bom 17(m), LVCMOS18; xdc port TBD)
     "B71_L18_N": "LED_DBG0", "B71_L18_P": "LED_DBG1", "B71_L10_N": "LED_DBG2", "B71_L10_P": "LED_DBG3",  # D28 E28 K27 K26
 }
@@ -1122,7 +1122,7 @@ def seaf_conn1_map():
         "AP_I2S_DATA", "GND_AP", "AP_IRQ_N", "GND_AP",
         "AP_RST_N", "GND_AP", "AP_SDA", "GND_AP",
         "AP_SCL", "GND_AP", "SOM_PG", "GND_AP",
-        "VAP_IO", "GND_AP", "AP_I2S_DATA2", "GND_AP",
+        "VAP_IO", "GND_AP", "GND_AP", "GND_AP",  # pad 27 was AP_I2S_DATA2 (second host source; removed 2026-11-15)
         "AP_SPI_SCLK", "GND_AP", "AP_SPI_CS_N", "GND_AP",
         "AP_SPI_MOSI", "GND_AP", "AP_SPI_MISO", "GND_AP",
         "AP_SPI_IRQ_N", "GND_AP", "GND_AP", "GND_AP",
@@ -1567,7 +1567,7 @@ CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation bar
     "isoF":   ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs: U502 I2S, sides swapped for FPGA-as-master - side A = FPGA (V18): BCLK/LRCLK/FPGA_IRQ_N -> AP; side B = AP (VAP_IO): SDATA -> FPGA. SDATA = silence with the AP off (bom 21, ruled 2026-10-09)"),
     "isoC2":  ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U509 host-AP SPI (SCLK/CS_N/MOSI AP->FPGA, MISO back) - second FPGA SPI slave port (2026-11-14 dual-SPI: AP has direct register access; CS_N deselected with AP off). Side A = AP (VAP_IO), side B = FPGA (V18)"),
     "isoF2":  ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs, sides swapped: U513 AP IRQ - side A = FPGA (V18): SPI_AP_IRQ_N -> AP; side B = AP (VAP_IO). IRQ_N reads asserted while the FPGA domain is down (same convention as U502); IN2/IN3/IN4 spare (tied), OUT2/OUT3/OUT4 NC"),
-    "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), ch2 AP_I2S_DATA2 -> I2S_DATA2 (second AP source, 2026-10-30), IN3/IN4 spare (tied to GNDA), OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
+    "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), IN2/IN3/IN4 spare (tied to GNDA; ch2 was AP_I2S_DATA2 -> I2S_DATA2, removed 2026-11-15 - XMOS is the sole I2S source), OUT2/OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
     "isoi2c": ("ISO1640", FP["SOIC8"], "ISO1640BDR", "bidirectional I2C isolator: TMP117 sensor bus (side 1, V33D, 3.0-5.5 V) <-> AP (side 2, VAP_IO, 2.25-5.5 V) (bom 20, ruled 2026-10-05; ISO1610 was a non-existent MPN, corrected 2026-10-08). VAP_IO MUST be >= 2.25 V - a 1.8 V AP needs a different isolator or a level shifter"),
     "tmp":    ("TMP117", FP["WSON6"], "TMP117AIDRVR", "+-0.1 C sensor; 4 on one bus via ADD0 (GND 0x48, V+ 0x49, SDA 0x4A, SCL 0x4B); placement per bom 20"),
     "jap":    ("AP DIG + PWR", FP["SEAF40"], "SEAF-40-05.0-L-06-2-A-K-TR", "Samtec SEAF-40 40x6, 240 passive contacts. Conn1/J506 row A preserves AP nets 1-40; rows B-F carry V12SOM/GND surround, V33_IF_IN/GND guard and AP-ground return field per docs/SEAF_PIN_ASSIGNMENTS.md. West edge closest to FPGA, B.Cu."),
@@ -2417,9 +2417,9 @@ def main():
     for u in range(4):
         fpga.place(LIB("ACVU13P_J6"), "J6", v, 60 + 90 * u, 100, conn_nets(J, used, "J6", G, GND), unit=u + 1, **k)
         fpga.place(LIB("ACVU13P_J1"), "J1", v, 440 + 90 * u, 100, conn_nets(J, used, "J1", G, GND), unit=u + 1, **k)
-    fpga.text("J1 control-plane pins (bank 71, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N (R27, new 2026-10-07), I2S_BCLK/LRCLK/DATA/DATA2 (H28, second AP source 2026-10-30),"
-              " RLY_LINE_MUTE (-> OUT sheet unmute gate), LED_DBG0..3. relay_hp_mute (T28) / relay_hp_rails (N26) struck with bom 8, relay_level[1:0] (P26/N29) struck 2026-10-07"
-              " (level is digital, bom 7) - all left no-connect; RTL ports still exist. DATR01..64 = cascode_r (bank 67 on J5 + bank 66 on J6; moved off J1 bank 69 2026-10-08 so both channels' drive leaves the SoM on the analog edge) -> the 64 R-channel CELL sheets (root). JTAG_* and SOM_PG from J6 -> SOM sheet.", 20, 27)
+    fpga.text("J1 control-plane pins (bank 71, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N (R27, new 2026-10-07), I2S_BCLK/LRCLK/DATA (XMOS is the sole I2S source - I2S_DATA2/H28 freed 2026-11-15, no-connect),"
+              " RLY_LINE_MUTE (-> OUT sheet unmute gate), LED_DBG0..3. relay_hp_mute (T28) / relay_hp_rails (N26) REMOVED from RTL 2026-11-14 (no headphone stage - no-connect), relay_level[1:0] struck 2026-10-07"
+              " (level is digital, bom 7) - pins reused: P26->SPI_AP_IRQ_N, N29->PG_ALL. DATR01..64 = cascode_r (bank 67 on J5 + bank 66 on J6; moved off J1 bank 69 2026-10-08 so both channels' drive leaves the SoM on the analog edge) -> the 64 R-channel CELL sheets (root). JTAG_* and SOM_PG from J6 -> SOM sheet.", 20, 27)
     # --- oscillators, enable mux, FPGA copy
     kr_, vr_ = fp_("rser")
     kc_, vc_ = fp_("cdec")
@@ -2630,13 +2630,9 @@ def main():
     k, v = cp_("iso1")
     ctrl.place(LIB("MAX22444"), "U503", v, 130, 145,
                {"VDDA": G("VAP_IO"), "GNDA": G("GND_AP"), "GNDAB": G("GND_AP"), "IC": G("GND_AP"),
-                "IN1": G("AP_RST_N"), "IN2": G("AP_I2S_DATA2"), "IN3": G("GND_AP"), "IN4": G("GND_AP"),
+                "IN1": G("AP_RST_N"), "IN2": G("GND_AP"), "IN3": G("GND_AP"), "IN4": G("GND_AP"),
                 "VDDB": G("v18"), "GNDB": GND, "GNDBB": GND, "ENB": G("v18"),
-                "OUT1": G("EXT_RST_N"), "OUT2": G("I2S_DATA2"), "OUT3": ("NC", ""), "OUT4": ("NC", "")}, **k)
-    # I2S_DATA2 pull-down: U503 is default-HIGH with the AP domain off, so an
-    # absent host would read as all-ones (not silence); 10k parks it low.
-    k, v = cp_("rpu10k")
-    ctrl.place("Device:R", "R506", v, 165, 150, {"1": G("I2S_DATA2"), "2": GND}, **k)
+                "OUT1": G("EXT_RST_N"), "OUT2": ("NC", ""), "OUT3": ("NC", ""), "OUT4": ("NC", "")}, **k)
     k, v = cp_("isoi2c")
     ctrl.place(LIB("ISO1640"), "U504", v, 130, 175,
                {"VCC1": G("V33D"), "GND1": GND, "SDA1": G("SENS_SDA"), "SCL1": G("SENS_SCL"),
@@ -2687,7 +2683,7 @@ def main():
         ctrl.place("Transistor_BJT:MMBT3904", "Q50%d" % (1 + i), vq, x0, 95, {"B": ("L", "QB%d" % i), "E": GND, "C": ("L", "LK%d" % i)}, **kq)
         ctrl.place("Device:LED", "D50%d" % (1 + i), vd, x0, 80, {"K": ("L", "LK%d" % i), "A": ("L", "LA%d" % i)}, **kd)
         ctrl.place("Device:R", "R52%d" % i, vr, x0, 68, {"1": G("V33D"), "2": ("L", "LA%d" % i)}, **kr)
-    ctrl.text("RLY_LINE_MUTE (J1 R28) terminates on the OUT sheet (bom 7): U602 AND gate with FPGA_DONE and PG_ALL -> UNMUTE_EN -> U601 ULN2003V12 inputs AND U603 TPS7A2033 EN (V33RLY coil rail). relay_level[1:0] struck (digital level).", 230, 130)
+    ctrl.text("RLY_LINE_MUTE (J1 R28) terminates on the OUT sheet (bom 7): U602 AND gate with FPGA_DONE and PG_ALL -> UNMUTE_EN -> U601 ULN2003V12 inputs AND U603 TPS7A2033 EN (V33RLY coil rail). relay_level[1:0] struck (digital level); pins reused for SPI_AP_IRQ_N/PG_ALL. relay_hp_mute/hp_rails removed 2026-11-14 (no headphone stage).", 230, 130)
 
     # ---------------- V33D board rail + dual UCD90120A rail telemetry (bom 17(m2)/(m3); two devices with
     # distinct resistor-strapped PMBus addresses, user ruling 2026-10-12).  TELEMETRY ONLY: the UCDs are not
@@ -2980,7 +2976,7 @@ def main():
         # I2S slave-TX on shared FPGA clocks - McASP0
         m[117] = G("AP_I2S_BCLK")                          # MCASP0_ACLKX
         m[72]  = G("AP_I2S_LRCLK")                         # MCASP0_AFSX (no-ALP pin - VERIFY)
-        m[69]  = G("AP_I2S_DATA2")                         # MCASP0_AXR0
+        m[69]  = ("NC", "")                                # MCASP0_AXR0 - was AP_I2S_DATA2; freed 2026-11-15 (XMOS sole source)
         m[83]  = ("L", "SOM_UART_RX"); m[85] = ("L", "SOM_UART_TX")   # console
         # USB unexposed in v1 - PHY VBUS pins left NC (USB disabled; VERIFY)
         for p in (94, 106, 82, 104): m[p] = ("NC", "")
@@ -3026,7 +3022,7 @@ def main():
             " master) -> XMOS slave; HOST_IRQ_N = XMOS doorbell.  FPGA link = MCSPI2 (host master) -> FPGA"
             " AP-SPI slave via carrier isolators U509/U513 (2026-11-14 dual-SPI; AP_SPI_* nets, SPI2 IOSet"
             " VERIFY pending pin-list cross-check); AP_SPI_IRQ_N = FPGA status IRQ -> host GPIO.  I2S:"
-            " McASP0 slave-TX on shared FPGA BCLK/LRCLK, SDATA -> AP_I2S_DATA2.  UART0 = console.  USB"
+            " McASP0 unused (XMOS is the sole I2S source - AP_I2S_DATA2 removed 2026-11-15).  UART0 = console.  USB"
             " unexposed (single-USB-face ruling: J852/XMOS only).  Ethernet-only ruling 2026-11-03 - no radio"
             " antenna needed.  VERIFY: MDI pair assignment, McASP0_AFSX pin (72 = no-ALP option), IRQ/RST"
             " GPIO picks, USB VBUS NC = USB off.", 500, 300)
