@@ -5654,3 +5654,15 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   tb_cell_measurement TB_PASS (262 windows), tb_vu13p_top ALL 9 PASS.
 - Split is now clean: XMOS owns stream lifecycle {RATE, VALID, TRIM},
   AP owns user-facing {VOLUME, LEVEL} + provisioning/diagnostics.
+
+### 2026-11-15 I2S_RX_TRIM (0x1C) removed entirely (R3 ruled)
+- RULING (user): [4:0] capture-delay trim is calculable/negligible —
+  ignore for now -> hardware fixed at reset value (i2s_rx_trim = 5'd8
+  constant; STREAM_STATUS[15:11] now reports the fixed value).
+- RULING (user): [5] src_sel dead — XMOS is the sole audio source.
+  Removed: i2s_src_sel output, the i2s_src_sel?i2s_data2:i2s_data mux,
+  the i2s_data2 top-level port, and pin B2/J1-A6 constraints (freed).
+- 0x1C writes now -> BAD_ADDR. STREAM_STATUS[15:11] = fixed 8.
+- TBs: tb_dac_ctrl_plane trim tests converted to fixed-8/deny checks;
+  trim status readback expected 8.
+- Results: tb_dac_ctrl_plane TB_PASS, tb_vu13p_top ALL 9 PASS.

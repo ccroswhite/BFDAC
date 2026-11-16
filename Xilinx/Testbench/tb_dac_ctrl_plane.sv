@@ -363,7 +363,7 @@ module tb_dac_ctrl_plane;
         spi_read(7'h20, rd);
         check("applied stream rate status", rd[7:5], 5);
         check("requested stream rate status", rd[10:8], 7);
-        check("capture trim status", rd[15:11], 31);
+        check("capture trim status", rd[15:11], 8);
         check("valid PCM frame status", rd[16], 1);
         stream_fault=1;
         xmos_write(7'h1B, 24'd1);

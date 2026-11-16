@@ -58,7 +58,7 @@ Ruling column = review checkbox.
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | [ ] |
 | 0x1A | STREAM_RATE | [2:0] | {rate_shift[1:0],family48}; resets unmute/src-valid/dpd | **XMOS-only** (same ruling as 0x03) | [x] ruled |
 | 0x1B | STREAM_VALID | [0] | "stream actually live" flag; IS the stream-arm path (gates unmute_req at top); rejects while busy/not-ready/fault/diagnostics | **XMOS-only** | **XMOS-only** (ruled 11-15: whole stream lifecycle is XMOS-owned) | [x] ruled |
-| 0x1C | I2S_RX_TRIM | [4:0]trim [5]src_sel | [4:0] FPGA-master I2S capture-point trim; [5] src_sel muxes i2s_data2 host path | both | **PARKED** — review in detail | [ ] parked |
+| 0x1C | — | — | **REMOVED** (was I2S_RX_TRIM: trim [4:0] calculable/negligible → fixed at 8; src_sel [5] + i2s_data2 pin/mux dead — XMOS sole source) | — | — | [x] removed |
 
 Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 
@@ -96,12 +96,13 @@ E TEST_FORMAT, F FILT_RATE.
 
 ## 5. Current draft partition (implemented)
 
-- **XMOS-allowed (6)**: NOP, STICKY_W1C, I2S_RX_TRIM
+- **XMOS-allowed (5)**: NOP, STICKY_W1C
 - **XMOS-only**: RATE 0x03, STREAM_RATE 0x1A, STREAM_VALID 0x1B
   (AP writes denied BAD_ADDR)
 
 - Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15),
-  UNMUTE 0x04 (2026-11-15) — all now reserved, writes → BAD_ADDR
+  UNMUTE 0x04, I2S_RX_TRIM 0x1C (2026-11-15) — all now reserved,
+  writes → BAD_ADDR
 - **AP-only (17)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
   FILTER_SELECT_ID, CAL_ADDR/DATA/COMMIT/RDADDR, FLASH_ADDR_LO/HI/CMD/DATA/PTR,
   DPD_EN, CELL_TEST_L/R
@@ -152,11 +153,11 @@ E TEST_FORMAT, F FILT_RATE.
   → BAD_ADDR; automute's unmute input is now stream_source_valid &&
   stream_clocks_ready && bank_valid. STREAM_VALID=1 gained the
   cell-test/bench reject that UNMUTE had. MUTE_STATUS[0] now reserved-0.
-- [ ] R3 I2S_RX_TRIM (0x1C): **[PARKED — review in detail as todo]**
-  `[4:0]` trim = FPGA-master I2S capture-point adjustment (round-trip skew
-  to XMOS) — likely still useful. `[5]` src_sel muxes i2s_data2 (host
-  audio path) — dead if XMOS is the only source. Open: keep trim + drop
-  src_sel/i2s_data2 mux?
+- [x] R3 I2S_RX_TRIM (0x1C) → **REMOVED ENTIRELY** (ruled 11-15): the
+  `[4:0]` capture-delay trim is calculable/negligible — ignored for now,
+  hardware fixed at the reset value 8 (`i2s_rx_trim = 5'd8` constant).
+  `[5]` src_sel + the i2s_data2 host-path pin/mux removed (B2/J1-A6
+  freed). Writes to 0x1C → BAD_ADDR.
 - [ ] R4 STICKY_W1C (0x16): **[PARKED — review in detail as todo]**
   write-1-clear port for the shared sticky-error register + CMD_ERR_INFO;
   releases fpga_irq_n/spi_ap_irq_n. XMOS can currently clear shared
