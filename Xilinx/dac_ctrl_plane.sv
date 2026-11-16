@@ -293,6 +293,10 @@ module dac_ctrl_plane (
 
     // CMD_ERR_INFO reason codes (read 0x1C [3:0])
     localparam logic [3:0] ERR_NONE       = `SPI_ERR_NONE;
+    // XMOS-owned sticky bits it may write-1-clear (2026-11-15 ruling):
+    // SPI_CRC[0] + I2S_ERR[1] + FRAME_LEN[4]. Everything else is AP-domain.
+    localparam logic [7:0] STICKY_XMOS_W1C_MASK = 8'b0001_0011;
+
     localparam logic [3:0] ERR_BAD_ADDR   = `SPI_ERR_BAD_ADDR;   // unknown/reserved write addr
     localparam logic [3:0] ERR_FLASH_BUSY = `SPI_ERR_FLASH_BUSY; // FLASH_CMD while busy (dropped)
     localparam logic [3:0] ERR_FLASH_OP   = `SPI_ERR_FLASH_OP;   // FLASH_CMD opcode not 01/02/03 (dropped)
@@ -521,10 +525,19 @@ module dac_ctrl_plane (
             // Clear on write to register 0x16 (write-1-to-clear;
             // moved from 0x11, which is FLASH_ADDR_HI)
             if (wr_exec && (wr_addr == `SPI_W_STICKY_W1C)) begin
-                sticky_err      <= sticky_err & ~ctrl_bus_data[7:0];
-                err_info_addr   <= 7'd0;
-                err_info_reason <= ERR_NONE;
-                err_info_filter_axi <= 1'b0;
+                if (ctrl_bus_src == SRC_XMOS) begin
+                    // XMOS clears only its own domain (2026-11-15 ruling):
+                    // SPI_CRC/FRAME_LEN (its bus errors; the bits are shared)
+                    // and I2S_ERR. AP-domain bits — DDR4_CALIB, PLL_UNLOCK,
+                    // BAD_ADDR, CMD_REJECT, BOOT_FLASH — are masked off, and
+                    // the CMD_ERR_INFO debug record is never cleared by XMOS.
+                    sticky_err <= sticky_err & ~(ctrl_bus_data[7:0] & STICKY_XMOS_W1C_MASK);
+                end else begin
+                    sticky_err          <= sticky_err & ~ctrl_bus_data[7:0];
+                    err_info_addr       <= 7'd0;
+                    err_info_reason     <= ERR_NONE;
+                    err_info_filter_axi <= 1'b0;
+                end
             end
             if (cal_write_reject_evt)
                 cal_write_reject_seen <= cal_write_reject_sync[2];

@@ -62,7 +62,7 @@
 `define SPI_W_FLASH_DATA       7'h13  // [7:0]  page-buffer byte, auto-increment
 `define SPI_W_FLASH_PTR        7'h14  // [7:0] write ptr, [15:8] read ptr
 `define SPI_W_DPD_EN           7'h15  // [0]    dpd_enable
-`define SPI_W_STICKY_W1C       7'h16  // [7:0]  clear sticky bits (also clears CMD_ERR_INFO)
+`define SPI_W_STICKY_W1C        7'h16  // [7:0] write-1-clear; XMOS masked to {CRC,I2S,FRMLEN}
 `define SPI_W_FILTER_SELECT_ID 7'h17  // [15:0] direct directory filter_id (bypasses list)
 
 `define SPI_W_CELL_TEST_L      7'h18

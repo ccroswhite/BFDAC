@@ -163,6 +163,29 @@ module tb_dac_ctrl_plane;
         miso_data = rx[39:8];
     endtask
 
+    // XMOS frame with a corrupted CRC — exercises the SPI_CRC sticky path
+    task automatic xmos_frame_badcrc(input [31:0] payload, output [31:0] miso_data);
+        logic [39:0] tx;
+        logic [39:0] rx;
+        tx = {payload, crc8_32(payload) ^ 8'hA5};
+        rx = '0;
+        xmos_cs_n = 0;
+        #100;
+        for (int i = 39; i >= 0; i--) begin
+            xmos_mosi = tx[i];
+            #50 xmos_sclk = 1;
+            rx = {rx[38:0], xmos_miso};
+            if (i == 0) begin
+                #1 xmos_cs_n = 1;
+                #49 xmos_sclk = 0;
+            end else begin
+                #50 xmos_sclk = 0;
+            end
+        end
+        #200;
+        miso_data = rx[39:8];
+    endtask
+
     task automatic xmos_write(input [6:0] addr, input [23:0] data);
         logic [31:0] dc;
         xmos_frame({1'b0, addr, data}, dc);
@@ -470,6 +493,33 @@ module tb_dac_ctrl_plane;
             xmos_write(7'h1B, 24'h000000);
             spi_read  (7'h12, rd);
             check("T13 last_wr_src=XMOS", rd[6], 1'b0);
+        end
+
+        // T14: STICKY_W1C is masked for XMOS (2026-11-15 ruling): it may
+        //      clear its own bits {SPI_CRC[0], I2S_ERR[1], FRAME_LEN[4]} but
+        //      never AP-domain bits or the CMD_ERR_INFO record. AP clears all.
+        begin
+            logic [31:0] dump;
+            spi_write (7'h16, 24'h0000FF);          // AP clears everything
+            // Set XMOS-owned bit0 (SPI_CRC on its bus) + AP-domain bit5
+            // (BAD_ADDR from a denied XMOS write to AP-only VOLUME).
+            xmos_frame_badcrc({1'b0, 7'h00, 24'h0}, dump);
+            xmos_write(7'h01, 24'h000001);          // denied -> sticky[5]
+            spi_read  (7'h11, rd);
+            check("T14 sticky[0]+[5] set", {rd[5], rd[0]}, 2'b11);
+            // XMOS writes 0xFF: only its own bits may clear.
+            xmos_write(7'h16, 24'h0000FF);
+            spi_read  (7'h11, rd);
+            check("T14 XMOS W1C cleared bit0", rd[0], 1'b0);
+            check("T14 XMOS W1C left bit5",    rd[5], 1'b1);
+            spi_read  (7'h1C, rd);
+            check("T14 CMD_ERR_INFO kept",   rd[10:0], {7'h01, 4'h1});
+            // AP clears the rest.
+            spi_write (7'h16, 24'h0000FF);
+            spi_read  (7'h11, rd);
+            check("T14 AP W1C clears all",   rd[7:0], 8'h00);
+            spi_read  (7'h1C, rd);
+            check("T14 AP clears ERR_INFO",  rd[10:0], 11'h0);
         end
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");

@@ -52,7 +52,7 @@ Ruling column = review checkbox.
 | 0x13 | FLASH_DATA | [7:0] | page-buffer byte, auto-incr | AP | | [ ] |
 | 0x14 | FLASH_PTR | [15:0] | page-buffer w/r pointer | AP | | [ ] |
 | 0x15 | DPD_EN | [0] | DPD engine enable | AP | | [ ] |
-| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO | both | **PARKED** — review in detail (XMOS can clear AP-domain errors) | [ ] parked |
+| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO; XMOS masked to {0,1,4} (its bus errors + I2S) | masked | **AP full, XMOS masked** (ruled 11-15) | [x] ruled | **PARKED** — review in detail (XMOS can clear AP-domain errors) | [ ] parked |
 | 0x17 | FILTER_SELECT_ID | [15:0] | direct directory filter_id, bypasses toggle list | AP | | [ ] |
 | 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | [ ] |
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | [ ] |
@@ -96,7 +96,7 @@ E TEST_FORMAT, F FILT_RATE.
 
 ## 5. Current draft partition (implemented)
 
-- **XMOS-allowed (5)**: NOP, STICKY_W1C
+- **XMOS-allowed (5)**: NOP, STICKY_W1C (masked to own bits)
 - **XMOS-only**: RATE 0x03, STREAM_RATE 0x1A, STREAM_VALID 0x1B
   (AP writes denied BAD_ADDR)
 
@@ -158,11 +158,12 @@ E TEST_FORMAT, F FILT_RATE.
   hardware fixed at the reset value 8 (`i2s_rx_trim = 5'd8` constant).
   `[5]` src_sel + the i2s_data2 host-path pin/mux removed (B2/J1-A6
   freed). Writes to 0x1C → BAD_ADDR.
-- [ ] R4 STICKY_W1C (0x16): **[PARKED — review in detail as todo]**
-  write-1-clear port for the shared sticky-error register + CMD_ERR_INFO;
-  releases fpga_irq_n/spi_ap_irq_n. XMOS can currently clear shared
-  AP-domain bits (BOOT_FLASH/FLASH_OP/DDR4_CALIB). Open: AP-only, or XMOS
-  restricted mask (only SPI_CRC/I2S_ERR/FRAME_LEN)?
+- [x] R4 STICKY_W1C (0x16) → **MASKED** (ruled 11-15): XMOS may clear
+  only its own bits — {SPI_CRC[0], I2S_ERR[1], FRAME_LEN[4]} — via a
+  write mask (AP-domain bits DDR4_CALIB/PLL_UNLOCK/BAD_ADDR/CMD_REJECT/
+  BOOT_FLASH are masked off, and CMD_ERR_INFO is never cleared by XMOS —
+  it's the AP's debug record). AP retains full W1C + CMD_ERR_INFO clear
+  (debugging access to XMOS-domain bits too).
 - [x] R4b STREAM_VALID (0x1B) → **XMOS-only** (ruled 11-15): XMOS
   controls all streaming — bit rate, stream type — so the stream arm
   flag is XMOS-owned like RATE. AP writes denied BAD_ADDR. Post-R1 it

@@ -5666,3 +5666,19 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - TBs: tb_dac_ctrl_plane trim tests converted to fixed-8/deny checks;
   trim status readback expected 8.
 - Results: tb_dac_ctrl_plane TB_PASS, tb_vu13p_top ALL 9 PASS.
+
+### 2026-11-15 STICKY_W1C (0x16) -> masked XMOS W1C (R4 ruled)
+- RULING (user): AP owns BOOT_FLASH/FLASH_OP/DDR4_CALIB and its own SPI
+  bus errors; XMOS owns its SPI bus errors + I2S errors; AP keeps full
+  access for debugging.
+- Implemented as a write mask rather than denial: XMOS W1C writes are
+  ANDed with STICKY_XMOS_W1C_MASK = 8'b0001_0011 {SPI_CRC[0], I2S_ERR[1],
+  FRAME_LEN[4]}. AP-domain bits (DDR4_CALIB[2], PLL_UNLOCK[3],
+  BAD_ADDR[5], CMD_REJECT[6], BOOT_FLASH[7]) are masked off, and XMOS
+  writes never clear the CMD_ERR_INFO debug record. AP W1C clears all
+  bits + CMD_ERR_INFO.
+- TB: tb_dac_ctrl_plane T14 verifies the mask (bad-CRC XMOS frame sets
+  bit0, denied write sets bit5; XMOS W1C 0xFF clears only bit0, leaves
+  bit5 + CMD_ERR_INFO; AP W1C clears all). TB_PASS.
+- NOTE: bits 0/4 are bus-shared — either bus can raise them; the mask
+  lets XMOS clear them regardless of which bus errored (documented).
