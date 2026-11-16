@@ -34,6 +34,7 @@ module tb_cell_measurement;
         .SWITCH_CYCLES(28'd100)
     ) auto (
         .clk(dsp_clk), .rst_n(rst_n),
+        .sys_ready(1'b1), .test_active(1'b0),
         .spi_unmute(unmute && !manual_busy), .base_rate_sel(1'b0),
         .i2s_err(1'b0), .level_switch_req(1'b0), .level_target(3'b000),
         .line_mute_drive(),
@@ -42,8 +43,8 @@ module tb_cell_measurement;
 
     dac_ctrl_plane ctrl (
         .clk(ctrl_clk), .ext_rst_n(rst_n),
-        .spi_xmos_sclk          (spi_sclk), .spi_xmos_cs_n           (spi_cs_n), .spi_xmos_mosi           (spi_mosi), .spi_xmos_miso           (spi_miso),
-        .spi_ap_sclk(1'b0), .spi_ap_cs_n(1'b1), .spi_ap_mosi(1'b0), .spi_ap_miso(), .spi_ap_irq_n(),
+        .spi_xmos_sclk(1'b0), .spi_xmos_cs_n(1'b1), .spi_xmos_mosi(1'b0), .spi_xmos_miso(),
+        .spi_ap_sclk(spi_sclk), .spi_ap_cs_n(spi_cs_n), .spi_ap_mosi(spi_mosi), .spi_ap_miso(spi_miso), .spi_ap_irq_n(),
         .line_mute_status(!safe), .switch_busy(relay_switch_busy),
         .clk_locked(1'b1), .ddr4_init_calib_complete(1'b1),
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),

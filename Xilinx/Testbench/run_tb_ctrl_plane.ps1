@@ -12,7 +12,7 @@ param([string]$tb = "tb_dac_ctrl_plane",
       [Parameter(ValueFromRemainingArguments=$true)][string[]]$rtl)
 if (-not $rtl) {
     switch ($tb) {
-        "tb_cell_measurement" { $rtl = @("spi_slave.sv", "dac_ctrl_plane.sv", "dac_dsp_core.sv", "fir_polyphase_stereo.sv", "fir_polyphase_interpolator.sv", "polyphase_mac_engine.sv", "polyphase_adder_tree.sv", "halfband_x2.sv", "tpdf_dither_gen.sv", "noise_shaper_ef3.sv", "dem_sort.sv", "dpd_engine.sv", "bench_test_stimulus.sv", "bench_test_controller.sv") }
+        "tb_cell_measurement" { $rtl = @("spi_slave.sv", "dac_ctrl_plane.sv", "dac_dsp_core.sv", "fir_polyphase_stereo.sv", "fir_polyphase_interpolator.sv", "fir_stage1b_interp8.sv", "polyphase_mac_engine.sv", "polyphase_adder_tree.sv", "halfband_x2.sv", "tpdf_dither_gen.sv", "noise_shaper_ef3.sv", "dem_sort.sv", "dpd_engine.sv", "bench_test_stimulus.sv", "bench_test_controller.sv", "automute_controller.sv") }
         "tb_bench_controller" { $rtl = @("bench_test_controller.sv") }
         "tb_bench_stimulus" { $rtl = @("bench_test_stimulus.sv") }
         "tb_coef_bank_manager" { $rtl = @("coef_bank_manager.sv") }

@@ -34,7 +34,7 @@ Ruling column = review checkbox.
 | 0x01 | VOLUME | [23:0] Q0.24 | normalized volume → Q16.16 internal gain; 0xFFFFFF=FS | AP | **AP-only** (ruled 11-14: UAC2 volume disabled; app sets volume) | [x] ruled |
 | 0x02 | LEVEL | [2:0] | digital level cap 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied muted | AP | **AP-only** (ruled 11-14: app-controlled) | [x] ruled |
 | 0x03 | RATE | [2:0] | alias of STREAM_RATE | **XMOS-only** (ruled 11-15: XMOS is the sole audio source — USB or AP-network relay — rate always originates there; AP writes denied) | [x] ruled |
-| 0x04 | UNMUTE | [0] | unmute req; gated by stream_busy/ready/fault | both | **DEFERRED** — "probably needs to change" | [ ] deferred |
+| 0x04 | UNMUTE | [0] | digital unmute req — releases force_zero clamp (relay untouched post-R1); stream-gated at top | both | **open** (R1a — XMOS-only vs both) | [ ] open |
 | 0x05 | BANK_LOAD | [3:0] | legacy DDR4 slot id + coef_load_start trigger | AP | | [ ] |
 | 0x06 | — | — | RESERVED (was clk_source_sel, merged 0x03) | — | — | [x] reserved |
 | 0x07 | — | — | **REMOVED** (was OUTSEL 0=line/1=HP; no headphone output stage — ruled 11-14) | — | — | [x] removed |
@@ -52,13 +52,13 @@ Ruling column = review checkbox.
 | 0x13 | FLASH_DATA | [7:0] | page-buffer byte, auto-incr | AP | | [ ] |
 | 0x14 | FLASH_PTR | [15:0] | page-buffer w/r pointer | AP | | [ ] |
 | 0x15 | DPD_EN | [0] | DPD engine enable | AP | | [ ] |
-| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO | both | DISCUSS — XMOS can clear shared AP-domain errors (BOOT_FLASH/FLASH_OP/DDR4) | [ ] open |
+| 0x16 | STICKY_W1C | [7:0] | write-1-clear sticky bits + CMD_ERR_INFO | both | **PARKED** — review in detail (XMOS can clear AP-domain errors) | [ ] parked |
 | 0x17 | FILTER_SELECT_ID | [15:0] | direct directory filter_id, bypasses toggle list | AP | | [ ] |
 | 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | [ ] |
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | [ ] |
 | 0x1A | STREAM_RATE | [2:0] | {rate_shift[1:0],family48}; resets unmute/src-valid/dpd | **XMOS-only** (same ruling as 0x03) | [x] ruled |
-| 0x1B | STREAM_VALID | [0] | "stream actually live" flag; gates relay_line_mute + UNMUTE reject; 0 also clears unmute | both | DISCUSS — still needed; keep AP (force-stop) or XMOS-only? | [ ] open |
-| 0x1C | I2S_RX_TRIM | [4:0]trim [5]src_sel | [4:0] FPGA-master I2S capture-point trim (XMOS round-trip skew); [5] src_sel muxes i2s_data2 host path — dead if XMOS-only | both | DISCUSS — keep trim? drop src_sel/i2s_data2? | [ ] open |
+| 0x1B | STREAM_VALID | [0] | "stream actually live" flag; gates digital unmute (top-level AND + UNMUTE reject); 0 also clears unmute. No relay gating post-R1 | both | open (§6 R4b — XMOS-only vs both) | [ ] open |
+| 0x1C | I2S_RX_TRIM | [4:0]trim [5]src_sel | [4:0] FPGA-master I2S capture-point trim; [5] src_sel muxes i2s_data2 host path | both | **PARKED** — review in detail | [ ] parked |
 
 Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 
@@ -68,9 +68,9 @@ Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 |---|---|---|
 | 0x10 | MAGIC | 0xDAC02026 |
 | 0x11 | STICKY_ERR | sticky bits below |
-| 0x12 | CTRL_STATE | last_wr_src[6], clk_source_sel[5], base_rate_sel[4], outsel[3], level[2:0] |
+| 0x12 | CTRL_STATE | last_wr_src[6], clk_source_sel[5], base_rate_sel[4], rsvd[3]=0, level[2:0] |
 | 0x13 | COEF_STATUS | bank_valid[12], mgr_busy[11], load_done[10], clk_src[9], base_rate[8], cur_bank[7:4], bank_id[3:0] |
-| 0x14 | MUTE_STATUS | i2s_err, switch_busy, hp_mute, line_mute, unmute |
+| 0x14 | MUTE_STATUS | i2s_err[4], switch_busy[3], rsvd[2]=0, line_mute[1], unmute[0] |
 | 0x15 | CLK_STATUS | dpd_enable, ddr4_calib, clk_locked |
 | 0x16 | FILTER_LIST_STAT | video_mode[11], list_len[10:5], cur_index[4:0] |
 | 0x17 | FILTER_IDS | next_in_list_id[31:16], cur_filter_id[15:0] |
@@ -130,17 +130,40 @@ E TEST_FORMAT, F FILT_RATE.
 
 **Open rulings — review checklist:**
 
-- [ ] R1 UNMUTE (0x04): keep XMOS-writable (guarded by stream/fault gates) or AP-only? **Deferred by user — revisit.**
-- [ ] R3 I2S_RX_TRIM (0x1C): `[4:0]` trim = FPGA-master I2S capture-point
-  adjustment (round-trip skew to XMOS) — still useful with XMOS-only source.
-  `[5]` src_sel muxes i2s_data2 (host audio path) — dead if XMOS is the only
-  source. DISCUSS: keep trim + drop src_sel/i2s_data2 mux?
-- [ ] R4 STICKY_W1C (0x16): XMOS can currently clear shared sticky bits
-  incl. AP-domain BOOT_FLASH/FLASH_OP/DDR4_CALIB errors. DISCUSS: AP-only,
-  or XMOS restricted mask (only SPI_CRC/I2S_ERR/FRAME_LEN)?
-- [ ] R4b STREAM_VALID (0x1B): still needed — it is the "stream actually
-  live" flag that gates relay_line_mute/UNMUTE. XMOS must write it; keep
-  AP too (AP can force-stop by writing 0) or XMOS-only?
+- [x] R1 MUTE ARCHITECTURE (ruled + implemented 11-15): three tiers —
+  (a) no stream/stream stops → digital clamp (force_zero+volume),
+  (b) user mute → same digital path, (c) not-ready/unsafe → relay.
+  Relay transitions are AUDIBLE so the relay must not cycle mid-session:
+  it energizes ONCE at startup (sys_ready = clk_locked && pg_all) and
+  stays closed for the session. Mid-session relay open ONLY on pg_all
+  loss (extreme power error) or cell-test/bench entry (factory-only).
+  i2s_err/rate-change/unmute=0/stream-stop are all digital clamp only —
+  no click on dropped USB or format changes. Implemented:
+  automute_controller rewritten (ST_OPEN→SETTLING→ARMED→FLUSHING→
+  PLAYING + ST_SWITCHING/ST_LVL_SETTLE for the level cap);
+  relay_line_mute = line_mute_drive && pg_all_sync (no stream/fault
+  gating); test_mode_active opens the relay for cell-test isolation.
+  tb_automute rewritten, tb_cell_measurement + tb_vu13p_top updated.
+- [ ] R1a UNMUTE (0x04) semantics/ownership: **still open**. Under the new
+  model UNMUTE is purely digital (releases the force_zero clamp; stream-
+  readiness gating in top still applies). Ownership options: both (AP can
+  force-mute/kill) vs XMOS-only (consistent with RATE/STREAM_VALID).
+- [ ] R3 I2S_RX_TRIM (0x1C): **[PARKED — review in detail as todo]**
+  `[4:0]` trim = FPGA-master I2S capture-point adjustment (round-trip skew
+  to XMOS) — likely still useful. `[5]` src_sel muxes i2s_data2 (host
+  audio path) — dead if XMOS is the only source. Open: keep trim + drop
+  src_sel/i2s_data2 mux?
+- [ ] R4 STICKY_W1C (0x16): **[PARKED — review in detail as todo]**
+  write-1-clear port for the shared sticky-error register + CMD_ERR_INFO;
+  releases fpga_irq_n/spi_ap_irq_n. XMOS can currently clear shared
+  AP-domain bits (BOOT_FLASH/FLASH_OP/DDR4_CALIB). Open: AP-only, or XMOS
+  restricted mask (only SPI_CRC/I2S_ERR/FRAME_LEN)?
+- [ ] R4b STREAM_VALID (0x1B): still needed — the "stream actually live"
+  flag; gates the digital unmute path (spi_unmute top-level AND + UNMUTE
+  reject + auto-clears unmute on 0). Post-R1 it NO LONGER gates
+  relay_line_mute (relay is startup/fault/test only), so it is now
+  purely digital-mute/UX state. Ownership: XMOS-only (consistent with
+  RATE) vs both (AP can force-stop by writing 0)?
 - [ ] R5 DPD_EN (0x15): confirm AP-only.
 - [ ] R7 CELL_TEST_L/R: confirm AP-only (bench feature).
 - [ ] R8 FILTER_*: confirm all four AP-only per user ruling "XMOS should not choose filters".

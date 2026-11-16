@@ -5589,3 +5589,31 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   sole source. I2S_RX_TRIM[4:0] = FPGA-master I2S capture-point trim
   (still useful); [5] src_sel muxes i2s_data2 host path (dead if XMOS-only).
   STICKY_W1C lets XMOS clear shared AP-domain errors - ownership TBD.
+
+### 2026-11-15 Three-tier mute architecture implemented (R1 ruled)
+- RULING (user): relay transitions are AUDIBLE -> relay must never cycle
+  mid-session. It energizes ONCE at startup (sys_ready = clk_locked &&
+  pg_all) and stays closed for the session. Mid-session relay open ONLY
+  on pg_all loss (extreme power error) or cell-test/bench entry
+  (factory-only path; calibration is a factory option).
+- Runtime mute events (i2s_err, rate change, unmute=0, stream stop) are
+  ALL handled by the digital clamp (force_zero) - no click on dropped
+  USB or format changes.
+- RTL: automute_controller rewritten - states ST_OPEN/SETTLING/ARMED/
+  FLUSHING/PLAYING + ST_SWITCHING/ST_LVL_SETTLE for the level cap; new
+  inputs sys_ready + test_active; i2s_err/rate/unmute now land in ARMED
+  (digital clamp, relay stays). acku15s top: test_mode_active =
+  cell_test_cfg[*][7] | bench_busy; relay_line_mute = line_mute_drive &&
+  pg_all_sync (stream/fault/bench gating removed).
+- cell_test_safe unchanged (force_zero && !line_mute && pg_all) - test
+  entry now sequences relay open via test_active first.
+- UNMUTE (0x04) is now purely digital (releases clamp; stream-readiness
+  gating at top unchanged). Ownership still open (SPI_BUS R1a).
+- TBs: tb_automute rewritten for the new model (16 checks incl. relay
+  never cycles on i2s_err/rate/level, opens on test_active + pg_all
+  drop); tb_cell_measurement moved to AP SPI port (CELL_TEST is AP-only)
+  + automute ports; tb_vu13p_top TEST 2/3/5/6 re-scoped to digital
+  clamp semantics; stale RAIL_SETTLE_CYCLES defparam removed;
+  fir_stage1b_interp8.sv added to tb_cell_measurement file list.
+- Results: tb_automute TB_PASS, tb_cell_measurement TB_PASS (262 windows),
+  tb_vu13p_top ALL TESTS PASSED (9).

@@ -880,9 +880,18 @@ module acku15s_dac_top #(
         else            stream_automute_sync <= {stream_automute_sync[0], stream_unmute_ok_200m};
     end
 
+    // Test modes (cell-test enable bit / bench) are the only mid-session
+    // relay-open events besides pg_all loss — factory/calibration path
+    // (ruling 2026-11-15: relay clicks only at startup + hard faults).
+    logic test_mode_active;
+    assign test_mode_active = cell_test_cfg[0][7] | cell_test_cfg[1][7] |
+                              bench_busy;
+
     automute_controller u_automute (
         .clk              (dsp_clk),
         .rst_n            (sys_rst_n),
+        .sys_ready        (clk_locked && pg_all_sync[1]),
+        .test_active      (test_mode_active),
         .spi_unmute       (spi_unmute_sync && stream_automute_sync[1] && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
         .i2s_err          (i2s_err || core_stream_fault),
@@ -894,8 +903,9 @@ module acku15s_dac_top #(
         .switch_busy      (switch_busy)
     );
 
-    assign relay_line_mute = line_mute_drive && stream_clock_ready && stream_source_valid &&
-                             !stream_fault_sync[1] && !bench_busy;
+    // Relay follows the drive FSM; pg_all is an independent hard drop on top
+    // of the FSM's sys_ready gate (belt-and-suspenders power-fault cut).
+    assign relay_line_mute = line_mute_drive && pg_all_sync[1];
     assign relay_level     = 2'b00;   // no level relays on the board (bom 7, 2026-10-07)
 
     assign led_debug = {clk_locked, ddr4_init_calib_complete, (i2s_err || core_stream_fault), force_zero};

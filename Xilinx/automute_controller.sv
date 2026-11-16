@@ -1,56 +1,69 @@
 `timescale 1ns / 1ps
 
-// Relay sequencer per schematic Fig. 4d:
-//   mute -> switch select -> settle -> unmute
-// De-energized = muted (line mute open+shunt).
-// Headphone output path removed 2026-11-14 ruling: there is no HP jack, no HP
-// mute relay, and no HP rail relay — the line XLR is the only output, so no
-// outsel muxing remains. The mute/flush/switch/settle/play sequence is kept:
-// the digital level cap may only change while muted and force-zeroed, so a
-// 10-30 dB gain step never reaches the output as a click.
+// Mute/output relay controller — three-tier mute model (ruling 2026-11-15):
+//
+//   (a) no stream / stream stops  -> digital clamp (force_zero) + volume 0
+//   (b) user mute                 -> same digital path
+//   (c) system not ready / unsafe -> line XLR relay physically disconnects
+//
+// Relay transitions are AUDIBLE (mechanical click), so the relay must not
+// cycle during normal operation. It energizes exactly once at power-up when
+// sys_ready (clocks locked + pg_all) and stays closed for the session. Mid-
+// session it opens ONLY on:
+//   - !sys_ready  (extreme power/clock error — pg_all loss or unlock)
+//   - test_active (cell-test / bench mode — factory/calibration path; the
+//                  test requires the XLR output isolated from the amplifier)
+// Every other mute event (i2s_err, rate change, unmute=0, stream stop) is
+// handled by the digital clamp — no clicks on dropped USB connections,
+// format changes, or level changes.
+//
 // LEVEL (bom 7 ruling 2026-10-07: DIGITAL, K1/K2 relays struck): the level
-// code is no longer a relay tap but a digital gain cap applied in the DSP
-// volume stage (top: level_gain LUT x boot_envelope_gain). It is still only
-// changed here, in ST_SWITCHING, while muted and force-zeroed. The 'relay'
-// naming is kept for the port map; relay_level pins are no-connects on the
-// board.
+// code is a digital gain cap applied in the DSP volume stage (top:
+// level_gain LUT x boot_envelope_gain). It may only change while clamped
+// (ST_SWITCHING below), so a 10-30 dB gain step never reaches the output.
+// The 'relay' naming is kept for the port map; relay_level pins are
+// no-connects on the board.
 //   level code: 000 = 2 Vrms, 001 = 4 Vrms, 010 = 6 Vrms, 011 = 0.6 Vrms,
 //               100 = 0.2 Vrms (others reserved -> treated as 2 V in top)
 // Pending is derived from (target != applied) rather than from the req
-// pulse: the target is quasi-static, so no single-cycle pulse has to survive
-// the clk_200m -> dsp_clk crossing, and a LEVEL write made while muted is
-// not lost. The level registers reset only on rst_n (NOT on mute / i2s_err /
-// rate change) so the applied level is never silently reverted to 2 V.
+// pulse: the target is quasi-static, so no single-cycle pulse has to
+// survive the clk_200m -> dsp_clk crossing, and a LEVEL write made while
+// muted is not lost. The level registers reset only on rst_n (NOT on mute /
+// i2s_err / rate change) so the applied level is never silently reverted.
 module automute_controller #(
     // Defaults provide at least the requested wall time at 302.474 MHz, the
     // faster family DSP clock. Simulation may override these parameters.
     parameter logic [27:0] FLUSH_CYCLES  = 28'd15_125_000,  // ~50ms pipeline drain
     parameter logic [27:0] SETTLE_CYCLES = 28'd3_025_000,   // ~10ms contact settle
-    parameter logic [27:0] SWITCH_CYCLES = 28'd3_025_000    // ~10ms relay transition
+    parameter logic [27:0] SWITCH_CYCLES = 28'd3_025_000    // ~10ms level-apply window
 )(
     input  logic clk,           // audio-family DSP clock (277.898/302.474 MHz)
     input  logic rst_n,
 
     // Control Plane
-    input  logic spi_unmute,
+    input  logic sys_ready,     // 1 = clocks locked + pg_all (safe to expose XLR)
+    input  logic test_active,   // 1 = cell-test/bench active -> open relay (isolation)
+    input  logic spi_unmute,    // digital unmute request (stream-gated in top)
     input  logic base_rate_sel,
     input  logic i2s_err,
     input  logic level_switch_req,   // legacy pulse, unused (pending = target != applied)
     input  logic [2:0] level_target, // level code, see header (quasi-static, 2-FF synced)
 
     // Hardware Plane
-    output logic line_mute_drive,    // Line XLR mute relay (energized = unmuted)
+    output logic line_mute_drive,    // Line XLR mute relay (energized = connected)
     output logic [2:0] level_relay_drive, // applied level code (digital gain cap select)
     output logic force_zero,         // 1 = Clamp audio to 0, 0 = Allow live audio
-    output logic switch_busy         // 1 while any relay sequence is in progress
+    output logic switch_busy         // 1 while a transition sequence is in progress
 );
 
     typedef enum logic [2:0] {
-        ST_MUTED,
-        ST_FLUSHING,
-        ST_SWITCHING,
-        ST_SETTLING,
-        ST_PLAYING
+        ST_OPEN,        // relay open (startup / hard fault / test isolation)
+        ST_SETTLING,    // relay energizing, contacts bouncing
+        ST_ARMED,       // relay closed, output digitally muted (armed)
+        ST_FLUSHING,    // unmute requested: pipeline drains while clamped
+        ST_PLAYING,     // audio flows
+        ST_SWITCHING,   // level cap applies here while clamped
+        ST_LVL_SETTLE   // analog settle after level change
     } state_t;
     state_t state;
 
@@ -85,50 +98,65 @@ module automute_controller #(
     assign rate_changed = (base_rate_sel ^ rate_sel_q);
 
     always_ff @(posedge clk) begin
-        if (!rst_n || i2s_err || rate_changed || !spi_unmute) begin
-            state           <= ST_MUTED;
+        if (!rst_n || !sys_ready || test_active) begin
+            // Hard path: output physically disconnected. Relay drops on power/
+            // clock loss and on factory test entry — the ONLY mid-session
+            // relay opens (ruling 2026-11-15).
+            state           <= ST_OPEN;
             timer           <= '0;
-            line_mute_drive <= 1'b0;   // de-energized = muted (open+shunt)
+            line_mute_drive <= 1'b0;
+            force_zero      <= 1'b1;
+        end else if (state != ST_OPEN && state != ST_SETTLING &&
+                     (i2s_err || rate_changed || !spi_unmute)) begin
+            // Digital mute ONLY — the relay stays closed (no click). Every
+            // runtime mute event lands here.
+            state           <= ST_ARMED;
+            timer           <= '0;
+            line_mute_drive <= 1'b1;
             force_zero      <= 1'b1;
         end else begin
             case (state)
-                ST_MUTED: begin
+                ST_OPEN: begin
+                    // sys_ready && !test_active already true past the outer gate:
+                    // energize the relay once — the single startup click.
                     line_mute_drive <= 1'b0;
                     force_zero      <= 1'b1;
-                    state <= ST_FLUSHING;
+                    state <= ST_SETTLING;
                     timer <= '0;
                 end
 
-                ST_FLUSHING: begin
-                    // Mute relay open, audio clamped, pipeline drains.
-                    if (timer < FLUSH_CYCLES) begin
-                        timer <= timer + 1'b1;
-                    end else begin
-                        state <= ST_SWITCHING;
-                        timer <= '0;
-                    end
-                end
-
-                ST_SWITCHING: begin
-                    // The digital level cap applies here (level block above)
-                    // while everything is muted — the only place it changes.
-                    if (timer < SWITCH_CYCLES) begin
-                        timer <= timer + 1'b1;
-                    end else begin
-                        state <= ST_SETTLING;
-                        timer <= '0;
-                    end
-                end
-
                 ST_SETTLING: begin
-                    // Energize the line mute relay; audio still clamped while
-                    // contacts bounce.
+                    // Relay energized, contacts bouncing; audio still clamped.
                     line_mute_drive <= 1'b1;
                     force_zero      <= 1'b1;
                     if (timer < SETTLE_CYCLES) begin
                         timer <= timer + 1'b1;
                     end else begin
+                        state <= ST_ARMED;
+                        timer <= '0;
+                    end
+                end
+
+                ST_ARMED: begin
+                    // Armed: XLR connected but output digitally muted.
+                    line_mute_drive <= 1'b1;
+                    force_zero      <= 1'b1;
+                    if (level_switch_pending) begin
+                        state <= ST_SWITCHING;
+                        timer <= '0;
+                    end else if (spi_unmute) begin
+                        state <= ST_FLUSHING;
+                        timer <= '0;
+                    end
+                end
+
+                ST_FLUSHING: begin
+                    // Unmute requested: let the pipeline drain while clamped.
+                    if (timer < FLUSH_CYCLES) begin
+                        timer <= timer + 1'b1;
+                    end else begin
                         state <= ST_PLAYING;
+                        timer <= '0;
                     end
                 end
 
@@ -136,7 +164,30 @@ module automute_controller #(
                     line_mute_drive <= 1'b1;
                     force_zero      <= 1'b0; // Audio flows
                     if (level_switch_pending) begin
-                        state <= ST_MUTED;
+                        state <= ST_SWITCHING;
+                        timer <= '0;
+                    end
+                end
+
+                ST_SWITCHING: begin
+                    // Level cap applies here (level block above) while clamped
+                    // — the only place it ever changes.
+                    force_zero <= 1'b1;
+                    if (timer < SWITCH_CYCLES) begin
+                        timer <= timer + 1'b1;
+                    end else begin
+                        state <= ST_LVL_SETTLE;
+                        timer <= '0;
+                    end
+                end
+
+                ST_LVL_SETTLE: begin
+                    // Analog settle after the gain-cap step, then resume.
+                    force_zero <= 1'b1;
+                    if (timer < SETTLE_CYCLES) begin
+                        timer <= timer + 1'b1;
+                    end else begin
+                        state <= spi_unmute ? ST_PLAYING : ST_ARMED;
                         timer <= '0;
                     end
                 end
@@ -145,8 +196,9 @@ module automute_controller #(
     end
 
     assign level_relay_drive = level_relay_int;
-    assign switch_busy       = (state == ST_FLUSHING) ||
-                               (state == ST_SWITCHING) ||
-                               (state == ST_SETTLING);
+    assign switch_busy       = (state == ST_SETTLING)   ||
+                               (state == ST_FLUSHING)   ||
+                               (state == ST_SWITCHING)  ||
+                               (state == ST_LVL_SETTLE);
 
 endmodule

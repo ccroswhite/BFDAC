@@ -98,7 +98,6 @@ module tb_vu13p_top;
     defparam u_dut.u_automute.FLUSH_CYCLES       = 26'd400;
     defparam u_dut.u_automute.SETTLE_CYCLES      = 26'd200;
     defparam u_dut.u_automute.SWITCH_CYCLES      = 26'd200;
-    defparam u_dut.u_automute.RAIL_SETTLE_CYCLES = 26'd600;
 
     acku15s_dac_top #(
         .NUM_MACS          (4),     // sim-size FIR (production: 1024)
@@ -262,11 +261,15 @@ module tb_vu13p_top;
 
         // --- TEST 2: reset/mute state ------------------------------------
         repeat (200) @(posedge clk_49m);
-        if (led_debug[0] === 1'b1 && relay_line_mute === 1'b0) begin
-            $display("[%0t] PASS: muted state after reset (force_zero=1, relay off)", $time);
+        // Three-tier model: mute = digital clamp (force_zero). The relay may
+        // already be energizing here — it closes once clocks lock + pg_all,
+        // independent of unmute. Only the clamp is checked.
+        if (led_debug[0] === 1'b1) begin
+            $display("[%0t] PASS: clamped after reset (force_zero=1, relay=%b)",
+                     $time, relay_line_mute);
             pass_count++;
         end else begin
-            $display("[%0t] FAIL: bad mute state: fz=%b line=%b",
+            $display("[%0t] FAIL: audio not clamped after reset: fz=%b relay=%b",
                      $time, led_debug[0], relay_line_mute);
             fail_count++;
         end
@@ -287,19 +290,23 @@ module tb_vu13p_top;
         $display("[%0t] DBG: spi_unmute=%b sticky_err=%b sys_volume=%h automute_state=%0d",
                  $time, u_dut.spi_unmute, u_dut.u_ctrl_plane.sticky_err,
                  u_dut.u_ctrl_plane.sys_volume, u_dut.u_automute.state);
+        // Three-tier model: unmute releases the digital clamp (force_zero)
+        // while the relay stays closed — it energized at startup ready, long
+        // before this unmute. Wait covers ST_SETTLING + ST_FLUSHING drain.
         wdog = 0;
-        while (relay_line_mute !== 1'b1 && wdog < 200000) begin
+        while (u_dut.force_zero !== 1'b0 && wdog < 3000000) begin
             @(posedge clk_49m); wdog++;
-            if (wdog % 40000 == 0)
+            if (wdog % 400000 == 0)
                 $display("[%0t] DBG: automute state=%0d timer=%0d i2s_err=%b unmute_sync=%b",
                          $time, u_dut.u_automute.state, u_dut.u_automute.timer,
                          u_dut.i2s_err, u_dut.spi_unmute_sync);
         end
-        if (relay_line_mute === 1'b1) begin
-            $display("[%0t] PASS: relay_line_mute asserted after SPI unmute", $time);
+        if (u_dut.force_zero === 1'b0 && relay_line_mute === 1'b1) begin
+            $display("[%0t] PASS: digital unmute after SPI unmute (relay closed, clamp released)", $time);
             pass_count++;
         end else begin
-            $display("[%0t] FAIL: relay_line_mute never asserted (CRC or automute path)", $time);
+            $display("[%0t] FAIL: clamp never released (fz=%b relay=%b, CRC or automute path)",
+                     $time, u_dut.force_zero, relay_line_mute);
             fail_count++;
         end
 
@@ -334,24 +341,27 @@ module tb_vu13p_top;
         end
 
         // --- TEST 5: single-register clock switch (0x03) ------------------
-        // One write must: mute (automute rate_changed), wait relay release,
-        // flip clk_sel while MMCM is reset; recovery requires explicit
-        // source readiness, a valid filter and a fresh unmute request.
+        // Three-tier mute model (2026-11-15 ruling): a rate write must clamp
+        // audio DIGITALLY (force_zero) BEFORE the mux flips — the relay no
+        // longer cycles mid-session (no click on rate change). Recovery still
+        // requires explicit source readiness, a valid filter and a fresh
+        // unmute request.
         // Rate 0 starts on clk_sel=1 (45.1584 MHz); the first check below
         // verifies that the old source remains selected until the mute delay
         // completes. The next check expects clk_sel=0 for the new 48 kHz rate.
         release u_dut.bank_valid;
         xmos_write(7'h03, 24'h000001);           // 44.1k family -> 48k family (RATE is XMOS-only)
-        wdog = 0;                                // a) automute drops the relay
-        while (relay_line_mute !== 1'b0 && wdog < 20000) begin
+        wdog = 0;                                // a) digital clamp BEFORE mux flip
+        while (u_dut.force_zero !== 1'b1 && wdog < 20000) begin
             @(posedge clk_200m); wdog++;
         end
-        if (relay_line_mute === 1'b0 && clk_sel === 1'b1) begin
-            $display("[%0t] PASS: rate write muted BEFORE mux flip", $time);
+        if (u_dut.force_zero === 1'b1 && relay_line_mute === 1'b1 &&
+            clk_sel === 1'b1) begin
+            $display("[%0t] PASS: rate write clamped BEFORE mux flip (relay stays closed)", $time);
             pass_count++;
         end else begin
-            $display("[%0t] FAIL: mute-before-switch order: relay=%b clk_sel=%b",
-                     $time, relay_line_mute, clk_sel);
+            $display("[%0t] FAIL: clamp-before-switch order: fz=%b relay=%b clk_sel=%b",
+                     $time, u_dut.force_zero, relay_line_mute, clk_sel);
             fail_count++;
         end
         wdog = 0;                                // b) mux flips after mute delay
@@ -370,7 +380,7 @@ module tb_vu13p_top;
             @(posedge clk_200m); wdog++;
         end
         wait (u_dut.stream_clock_ready);
-        if (relay_line_mute || u_dut.spi_unmute || u_dut.stream_source_valid)
+        if (!u_dut.force_zero || u_dut.spi_unmute || u_dut.stream_source_valid)
             $fatal(1, "rate change automatically resumed playback");
         force u_dut.bank_valid = 1'b1;
         spi_write(7'h1B, 24'd1);
@@ -388,22 +398,25 @@ module tb_vu13p_top;
             fail_count++;
         end
 
-        // --- TEST 6: I2S watchdog -> automute drop ------------------------
+        // --- TEST 6: I2S watchdog -> digital clamp (relay stays closed) ---
+        // Three-tier model: a stream stop/underrun is a runtime mute event —
+        // force_zero clamps, the relay MUST NOT cycle (no click).
         spi_write(7'h1B, 24'd0);                 // AP reports source stopped/underrun
         wdog = 0;                                // first: watchdog must fire
         while (led_debug[1] !== 1'b1 && wdog < 20000) begin
             @(posedge clk_49m); wdog++;
         end
-        wdog = 0;                                // then: relay must drop
-        while (relay_line_mute !== 1'b0 && wdog < 20000) begin
+        wdog = 0;                                // then: clamp must assert
+        while (led_debug[0] !== 1'b1 && wdog < 20000) begin
             @(posedge clk_49m); wdog++;
         end
-        if (relay_line_mute === 1'b0 && led_debug[1] === 1'b1) begin
-            $display("[%0t] PASS: I2S stop -> i2s_err -> relay dropped", $time);   // TEST 6
+        if (led_debug[0] === 1'b1 && led_debug[1] === 1'b1 &&
+            relay_line_mute === 1'b1) begin
+            $display("[%0t] PASS: I2S stop -> i2s_err -> digital clamp (relay closed)", $time);  // TEST 6
             pass_count++;
         end else begin
-            $display("[%0t] FAIL: watchdog/automute: relay=%b i2s_err=%b",
-                     $time, relay_line_mute, led_debug[1]);
+            $display("[%0t] FAIL: watchdog/automute: fz=%b i2s_err=%b relay=%b",
+                     $time, led_debug[0], led_debug[1], relay_line_mute);
             fail_count++;
         end
 
