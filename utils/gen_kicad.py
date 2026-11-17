@@ -976,6 +976,28 @@ def write_local_footprints():
             [("1", -20, -20), ("2", -20, -10), ("3", -20, 0), ("4", -20, 10),
              ("5", 20, -28.75), ("6", 20, -21.25), ("7", 20, -13.75), ("8", 20, -6.25),
              ("9", 20, 1.25), ("10", 20, 8.75), ("11", 20, 16.25), ("12", 20, 23.75)], 55.0, 60.0, drill=1.5, pw=3.5)
+    # Wurth WE-CNSW-0805 4-pad SMT common-mode choke (744232090 USB data-line scrub, L851 on AP).
+    # Official "Recommended Land Pattern" from the WE-CNSW datasheet (datasheets/WE-CNSW_0805_datasheet_744231181.pdf;
+    # same package/land across the 0805 family incl. 744232090): 4 pads 0.9 x 0.4 mm, inner X gap 0.8 mm,
+    # outer Y span 1.2 mm -> pad centres (+-0.85, +-0.4). Body 2.0 x 1.2 mm.
+    W = ['(footprint "Wurth_WE-CNSW-0805_CM-Choke" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")',
+         '  (descr "Wurth WE-CNSW-0805 SMT common-mode line filter (744232090 etc); official datasheet Recommended Land Pattern")',
+         '  (tags "Wurth WE-CNSW 0805 common mode choke USB")',
+         '  (attr smd)',
+         '  (property "Reference" "REF**" (at 0 -1.5 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 0.7 0.7) (thickness 0.11))))' % U(),
+         '  (property "Value" "WE-CNSW-0805" (at 0 1.5 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.65 0.65) (thickness 0.1))))' % U(),
+         '  (property "Datasheet" "https://www.we-online.com/components/products/datasheet/744232090.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (property "Description" "Wurth WE-CNSW 0805 recommended land: 4 x 0.9x0.4 mm pads at (+-0.85, +-0.4); pins 1/4 left col, 2/3 right col" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U(),
+         '  (fp_rect (start -1.000 -0.600) (end 1.000 0.600) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % U(),
+         '  (fp_circle (center -1.30 -0.75) (end -1.25 -0.75) (stroke (width 0.1) (type default)) (fill solid) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_rect (start -1.450 -0.950) (end 1.450 0.950) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % U(),
+         '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.6 0.6) (thickness 0.1))))' % U()]
+    for num, x, y in (("1", -0.85, -0.40), ("2", 0.85, -0.40), ("3", 0.85, 0.40), ("4", -0.85, 0.40)):
+        W.append('  (pad "%s" smd roundrect (at %.3f %.3f) (size 0.900 0.400) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.20) (uuid "%s"))'
+                 % (num, x, y, U()))
+    W.append(')')
+    with open(os.path.join(d, "Wurth_WE-CNSW-0805_CM-Choke.kicad_mod"), "w", encoding="utf-8") as f:
+        f.write("\n".join(W) + "\n")
     # vendor-supplied footprints (user downloads under datasheets/<part>/KiCADv6/footprints.pretty), copied verbatim
     for src, dst in VENDOR_FOOTPRINTS:
         with open(os.path.join(ROOT, "datasheets", src), encoding="utf-8") as f:
@@ -1561,8 +1583,8 @@ AP_PARTS = {  # AP/base-board sheet 2026-11-01 (bom 23): XMOS + isolated USB fro
                " Nexperia PTVS5V0S1UR,115 (SOD-123W - different pad).  Sustained overvolt NOT covered (keyed USB-C, UFP - no PD"
                " negotiation -> 5 V only; a dead host regulator is pathological).  No series diode - drop would break the"
                " 4.25 V VBUS1 min at 4.75 V VBUS."),
-    "cmc2":   ("90R@100MHz", "", "TBD - USB data CM choke (Wurth 744232090 / Murata DLW21HN900SQ2 candidates)",
-               "common-mode scrub on D+/D- between the TVS and the ISOUSB211 (data-line coupled inductor, SMD 2-line)"),
+    "cmc2":   ("90R@100MHz", "bfdac:Wurth_WE-CNSW-0805_CM-Choke", "Wurth 744232090 (USER-SELECTED 2026-11-17; alt: Murata DLW21HN900SQ2)",
+               "common-mode scrub on D+/D- between the TVS and the ISOUSB211 (data-line coupled inductor, SMD 2-line; WE-CNSW-0805, 90R@100MHz, 370 mA, 0.3R DCR)"),
     "usbc":   ("USB-C 16P", FP["USBC"], "USB4085-GF-A (RULED 2026-11-01, user; ~27.7k Newark 2026-11;"
                " hybrid alternates HRO TYPE-C-31-M-12 (JLC) / Wurth 632723300011 / Amphenol 12401610E4-2A)",
                "USB 2.0-only USB-C receptacle at the AP-board edge, presented through a MILLED face pocket (chassis wall"
