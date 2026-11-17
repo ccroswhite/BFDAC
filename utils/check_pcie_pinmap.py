@@ -64,11 +64,22 @@ def check_symbol(size, npins, nunits):
     expected = {"A%d" % i for i in range(1, npins + 1)} | {"B%d" % i for i in range(1, npins + 1)}
     assert names == expected, (size, len(names ^ expected))
 
+    # Amphenol 10165968 Gen6 vertical SMT land (PCI-SIG CEM pad geometry):
+    # 0.53 x 2.0 mm pads @ 1.0 mm pitch, A/B rows at Y = -/+3.6 mm, 3.0 mm key
+    # gap between positions 11 and 12, SH1/SH2 solder-retention pads at the ends.
     footprint = (ROOT / "hw" / "kicad" / "bfdac.pretty" /
                  (g.PCIE_FP[size] + ".kicad_mod")).read_text(encoding="utf-8")
-    pads = set(re.findall(r'\(pad "([AB]\d+)" thru_hole', footprint))
-    assert pads == expected, (size, len(pads ^ expected))
-    assert footprint.count("np_thru_hole") == 2
+    pad_at = {m[0]: (float(m[1]), float(m[2])) for m in
+              re.findall(r'\(pad ([AB]\d+) smd rect \(at ([0-9.\-]+) ([0-9.\-]+)\)', footprint)}
+    assert set(pad_at) == expected, (size, len(set(pad_at) ^ expected))
+    assert len(re.findall(r'\(pad SH[12] smd', footprint)) == 2
+    xs = sorted({x for x, y in pad_at.values()})
+    gaps = [(a, b) for a, b in zip(xs, xs[1:]) if b - a > 1.01]
+    assert len(gaps) == 1 and abs(gaps[0][1] - gaps[0][0] - 3.0) < 0.01, gaps   # key gap
+    assert abs(gaps[0][0] - pad_at["A11"][0]) < 0.01
+    assert {y for x, y in pad_at.values()} == {-3.6, 3.6}
+    assert all(y < 0 for n, (x, y) in pad_at.items() if n[0] == "A")
+    assert all(y > 0 for n, (x, y) in pad_at.items() if n[0] == "B")
 
 
 def check_connector(sheet, labels, ref, sym_pins, expected_map):

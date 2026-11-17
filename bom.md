@@ -40,11 +40,18 @@ riser/interposer is not purchasable.** The three sites become standard PCIe
 card-edge sockets; the riser is a user-made PCB with card-edge gold fingers at
 both ends plugging vertically into sockets on the two boards. Connector size
 per link follows signal + current count (user ruling): **Conn1/J506 = PCIe x16**
-(164 contacts, `PCIe_x16` symbol, `PCIe_x16_CardEdge_TBD` footprint); **Conn2/J603
-and Conn3/J604 = PCIe x4** (64 contacts, `PCIe_x4` symbol, `PCIe_x4_CardEdge_TBD`).
-Different sizes prevent mis-mating. Socket MPN + land pattern are TBD — the
-generated footprints are provisional parametric THT patterns pending a vendor
-drawing. Contact current rating is ~1.1 A/finger.
+(164 contacts, `PCIe_x16` symbol, `PCIe_x16_Amphenol_10165968` footprint); **Conn2/J603
+and Conn3/J604 = PCIe x4** (64 contacts, `PCIe_x4` symbol, `PCIe_x4_Amphenol_10165968`).
+Different sizes prevent mis-mating. **Sockets selected 2026-11-16: Amphenol
+PCIe Gen 6 vertical SMT family `10165968`** (footprint-interchangeable with
+Gen 1-5; 1.00 mm pitch; 1.57 mm card; ~11.25 mm above board; solder-retention
+hold-downs): Conn1 = **`10165968-113Y000LF`** (164 pos, x16), Conn2/Conn3 =
+**`10165968-111T300LF`** (64 pos, x4) — 2 x x16 + 4 x x4 sockets across the
+two boards, plus 3 user riser PCBs. Land patterns `PCIe_x16_Amphenol_10165968`
+(SnapEDA/Amphenol-derived) and `PCIe_x4_Amphenol_10165968` (derived, same
+PCI-SIG CEM geometry; far-end hold-down pending x4 drawing confirm).
+Contact current rating 1.1 A min/pin on the 8 CEM power + 8 nearest ground
+pins; all contacts identical, so the V12SOM bank runs ~0.75 A/contact.
 
 The main circuit board has three bottom-side sites: Conn1/J506 west, closest
 to the FPGA; Conn2/J603 north-center; Conn3/J604 south-center. Conn1 side A

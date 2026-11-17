@@ -2,11 +2,28 @@
 
 ## Part and numbering
 
-- Board-side part: standard PCIe card-edge socket (vertical THT). MPN + land pattern TBD —
-  generated footprints `PCIe_x16_CardEdge_TBD` / `PCIe_x4_CardEdge_TBD` are provisional
-  parametric THT patterns; verify against the chosen vendor drawing before layout.
+- Board-side part: **Amphenol Communications Solutions PCIe Gen 6 vertical SMT card-edge
+  socket, family `10165968`** (backward compatible + footprint-interchangeable with
+  Gen 1-5). 1.00 mm pitch, 1.57 mm card slot, 30 uin gold contacts, ~11.25 mm above
+  board, metal solder-retention hold-downs. Family datasheet:
+  `datasheets/Amphenol_PCIe_Gen6_10165968.pdf`.
+  - Conn1 (x16, 164 pos): **`10165968-113Y000LF`** (Newark 25AM4158; ~$10 ea)
+  - Conn2/Conn3 (x4, 64 pos): **`10165968-111T300LF`**
+  - Current rating per family datasheet: 1.1 A min per pin for the 8 CEM power pins
+    and 8 nearest ground pins; all contacts are the same copper-alloy cantilever.
+    The V12SOM 20-contact bank carries ~15 A -> 0.75 A/contact nominal.
+- Land patterns (project lib `bfdac.pretty`): `PCIe_x16_Amphenol_10165968` is the
+  SnapEDA/Amphenol-derived land (imported `AMPHENOL_10165968-113Y000LF.kicad_mod`);
+  `PCIe_x4_Amphenol_10165968` is derived from it with the same PCI-SIG CEM pad
+  geometry (0.53 x 2.0 mm SMT pads, A/B rows at +/-3.6 mm, 3.0 mm key gap between
+  positions 11/12, SH1/SH2 retention pads at the ends). The x4 far-end hold-down
+  position should be confirmed against the -111T300LF drawing before release.
 - Interposer: **user-made riser PCB** with card-edge gold fingers at both ends (no purchased
   interposer — replaces the SEAR-40, which was not purchasable, 2026-11-16 ruling).
+  Riser spec: 1.57 mm board, hard-gold (>=30 uin) edge fingers on BOTH faces at both
+  ends, 1.0 mm finger pitch, beveled insertion edge, key notch between positions
+  11 and 12; use >=2 oz copper under the V12SOM/GND fingers and flood the return
+  fingers. Finger land = PCI-SIG CEM add-in card edge.
 - Numbering follows the PCIe convention: `B1..Bn` = solder side, `A1..An` = component side.
   Socket pads `A1..An`/`B1..Bn` map 1:1 to the riser fingers at the same position.
 - Schematic symbols: `PCIe_x16` (4 units: A1-42, A43-82, B1-42, B43-82),

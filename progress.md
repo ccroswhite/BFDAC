@@ -5787,3 +5787,25 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - Verify: regen clean; check_pcie_pinmap PASS x3; kicad_xcheck FAIL(1) =
   pre-existing VAP_IO/GND_AP merge (unchanged); zero live SEAF/SEAR refs in
   generated sheets (struck-history annotations only).
+
+2026-11-16b: PCIe socket MPN + land locked - Amphenol 10165968 Gen6 SMT
+- User supplied SnapEDA download (10165968_113Y000LF): Amphenol PCIe Gen 6
+  vertical SMT card-edge family; backward compatible + footprint-
+  interchangeable with Gen 1-5; 1.0mm pitch, 1.57mm card, ~11.25mm above
+  board, 30uin gold, solder-retention hold-downs.
+- MPNs: Conn1 x16 = 10165968-113Y000LF (164pos, Newark 25AM4158 ~$10);
+  Conn2/3 x4 = 10165968-111T300LF (64pos). Family datasheet saved:
+  datasheets/Amphenol_PCIe_Gen6_10165968.pdf (CODICO mirror).
+- Land: PCIe_x16_Amphenol_10165968 imported from the SnapEDA Amphenol
+  drawing-derived footprint (0.53x2.0mm SMT pads, A/B rows +/-3.6mm, 3.0mm
+  key gap between positions 11/12, SH1/SH2 retention pads at body ends).
+  PCIe_x4_Amphenol_10165968 derived from it (64 pads, 39mm body) - far-end
+  SH position flagged for x4 drawing confirm. STEP + ref symbol in datasheets/.
+- Current rating caveat (family datasheet): 1.1A min/pin applies to the 8
+  CEM power + 8 nearest ground pins; all contacts identical copper-alloy,
+  V12SOM bank runs ~0.75A/contact - documented in bom/PCIE_PIN_ASSIGNMENTS.
+- gen_kicad.py: PCIE_FP -> Amphenol names, PCIE_MPN table added,
+  write_pcie_footprints() + TBD files deleted; symbol datasheet property ->
+  family PDF. Checker updated: unquoted smd pads, SH pads, key-gap geometry.
+- Verify: regen clean; check_pcie_pinmap PASS x3 (incl. new geometry
+  asserts); xcheck FAIL(1) = pre-existing VAP_IO/GND_AP (unchanged).

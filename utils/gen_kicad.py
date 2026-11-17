@@ -277,8 +277,9 @@ def _pcie_symbol(size):
             half = (len(col) + 1) // 2
             unum += 1
             units.append(_box_unit(name, unum, col[:half], col[half:], width=45.72))
-    return _sym(name, "".join(units), FP["PCIE" + size.upper()], "https://www.pcisig.com",
-                "PCIe %s card-edge socket, %d positions x 2 sides (pins A1..A%d / B1..B%d); pre-reg<->carrier board link, riser = user PCB (replaces SEAF-40/SEAR-40, 2026-11-16)" % (size, n, n, n),
+    return _sym(name, "".join(units), FP["PCIE" + size.upper()],
+                "datasheets/Amphenol_PCIe_Gen6_10165968.pdf",
+                "PCIe %s card-edge socket, %d positions x 2 sides (pins A1..A%d / B1..B%d); Amphenol %s, Gen6 vertical SMT, 1.0mm pitch, 1.57mm card; pre-reg<->carrier board link, riser = user PCB (replaces SEAF-40/SEAR-40, 2026-11-16)" % (size, n, n, n, PCIE_MPN[size]),
                 ref="J")
 
 def _sodimm200_symbol_units():
@@ -1108,7 +1109,8 @@ def U():
 #   Conn3/J604 <-> J7704 = PCIe x4  (same)
 PCIE_PINS = {"x4": 32, "x16": 82}          # contact positions per side
 PCIE_UNITS = {"x4": 2, "x16": 4}           # schematic units (each side split at 42 pins)
-PCIE_FP = {"x4": "PCIe_x4_CardEdge_TBD", "x16": "PCIe_x16_CardEdge_TBD"}
+PCIE_FP = {"x4": "PCIe_x4_Amphenol_10165968", "x16": "PCIe_x16_Amphenol_10165968"}
+PCIE_MPN = {"x4": "10165968-111T300LF", "x16": "10165968-113Y000LF"}   # Amphenol PCIe Gen6 vertical SMT card-edge
 
 def pcie_conn1_map():
     """Conn1/J506 (+ pre-reg mate J7705) PCIe x16 pin -> net name.
@@ -1176,45 +1178,6 @@ def pcie_conn23(*branches):
         nets["A%d" % col] = "GND"
         col += 1
     return nets
-
-def write_pcie_footprints():
-    """Provisional PCIe card-edge socket land patterns (PROVISIONAL - verify against the
-    chosen vendor drawing before layout; part selection is open).  Per side, tails stagger
-    into two rows at 2.0 mm effective pitch (odd positions inner row, even outer) - the
-    usual staggered-tail arrangement on vertical PCIe slots."""
-    for size in ("x4", "x16"):
-        n = PCIE_PINS[size]
-        name = PCIE_FP[size]
-        span = (n - 1) * 1.0
-        body_x = span / 2 + 4.5      # slot overhang + latch end (TBD vs vendor)
-        body_y = 4.6
-        L = [
-            '(footprint "%s" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")' % name,
-            '  (descr "PCIe %s card-edge socket, %d x 2 contacts - PROVISIONAL parametric THT land (2 staggered rows per side, 2.0 mm effective pitch); VERIFY against the chosen vendor part")' % (size, n),
-            '  (tags "PCIe card edge socket %s TBD")' % size,
-            '  (attr through_hole)',
-            '  (property "Reference" "REF**" (at 0 -8.0 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-            '  (property "Value" "%s" (at 0 8.0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % (name, U()),
-            '  (property "Datasheet" "" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-            '  (property "Description" "PCIe %s edge socket; pads A1..A%d / B1..B%d; PROVISIONAL land pattern pending vendor MPN" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % (size, n, n, U()),
-            '  (fp_rect (start %.3f %.3f) (end %.3f %.3f) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % (-body_x, -body_y, body_x, body_y, U()),
-            '  (fp_rect (start %.3f %.3f) (end %.3f %.3f) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % (-body_x - 0.5, -body_y - 0.5, body_x + 0.5, body_y + 0.5, U()),
-            '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U(),
-        ]
-        for side, sgn in (("A", -1), ("B", 1)):
-            for i in range(1, n + 1):
-                row = 0 if i % 2 else 1
-                x = -span / 2 + (i - 1) * 1.0
-                y = sgn * (1.0 + row * 2.0)
-                L.append('  (pad "%s%d" thru_hole rect (at %.3f %.3f) (size 0.9 1.9) (drill 0.55) (layers "*.Cu" "*.Mask") (uuid "%s"))'
-                         % (side, i, x, y, U()))
-        for x in (-body_x - 2.0, body_x + 2.0):
-            L.append('  (pad "" np_thru_hole circle (at %.3f 0) (size 2.5 2.5) (drill 2.5) (layers "*.Cu" "*.Mask") (uuid "%s"))' % (x, U()))
-        L.append(')')
-        out_dir = os.path.join(OUT, LOCALLIB + ".pretty")
-        os.makedirs(out_dir, exist_ok=True)
-        with open(os.path.join(out_dir, name + ".kicad_mod"), "w", encoding="utf-8") as f:
-            f.write("\n".join(L) + "\n")
 
 FONT = "(effects (font (size 1.27 1.27)))"
 STUB = 2.54
@@ -1574,7 +1537,7 @@ CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation bar
     "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), IN2/IN3/IN4 spare (tied to GNDA; ch2 was AP_I2S_DATA2 -> I2S_DATA2, removed 2026-11-15 - XMOS is the sole I2S source), OUT2/OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
     "isoi2c": ("ISO1640", FP["SOIC8"], "ISO1640BDR", "bidirectional I2C isolator: TMP117 sensor bus (side 1, V33D, 3.0-5.5 V) <-> AP (side 2, VAP_IO, 2.25-5.5 V) (bom 20, ruled 2026-10-05; ISO1610 was a non-existent MPN, corrected 2026-10-08). VAP_IO MUST be >= 2.25 V - a 1.8 V AP needs a different isolator or a level shifter"),
     "tmp":    ("TMP117", FP["WSON6"], "TMP117AIDRVR", "+-0.1 C sensor; 4 on one bus via ADD0 (GND 0x48, V+ 0x49, SDA 0x4A, SCL 0x4B); placement per bom 20"),
-    "jap":    ("AP DIG + PWR", FP["PCIEX16"], "PCIE-X16-EDGE-TBD", "PCIe x16 card-edge socket, 2x82 contacts @1.0mm. Conn1/J506<->J7705 AP digital + power link; riser = user PCB with card-edge fingers (SEAF-40/SEAR-40 struck 2026-11-16 - SEAR not purchasable). Side A = carrier power (V12SOM x20, GND, V33_IF_IN), side B = AP domain (signals, VAP_IO, GND_AP) per docs/PCIE_PIN_ASSIGNMENTS.md. MPN + land TBD. West edge closest to FPGA, B.Cu."),
+    "jap":    ("AP DIG + PWR", FP["PCIEX16"], "10165968-113Y000LF", "Amphenol PCIe x16 Gen6 vertical SMT card-edge socket, 164 pos (2x82) @1.0mm, 1.57mm card, 11.25mm above board, solder-retention hold-downs. Conn1/J506<->J7705 AP digital + power link; riser = user PCB with card-edge fingers both ends (SEAF-40/SEAR-40 struck 2026-11-16 - SEAR not purchasable). Side A = carrier power (V12SOM x20, GND, V33_IF_IN), side B = AP domain (signals, VAP_IO, GND_AP) per docs/PCIE_PIN_ASSIGNMENTS.md. Land = PCIe_x16_Amphenol_10165968 (SnapEDA-verified Amphenol drawing). West edge closest to FPGA, B.Cu."),
     "npn":    ("MMBT3904", FP["SOT23"], "MMBT3904LT1G", "LED sink driver from a 1.8 V FPGA IO (LVCMOS18 cannot drive a 2 V LED directly)"),
     "led":    ("GREEN", FP["LED0603"], "APT1608SGC", "Kingbright 0603 green LED, ~2 mA"),
     "rled":   ("470", FP["R0603"], "CRCW0603470RFKEA", "LED current set from V33D (~2 mA)"),
@@ -1746,7 +1709,7 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     "tps3890": ("TPS389001", FP["TI_DSE6"], "TPS389001DSET", "V33FF supervisor, adjustable VITN = 1.15 V: 162k/100k divider = ~3.01 V trip; VDD = V4P3 (stays alive when V33FF collapses), MR->VDD, CT open (assert immediate, deassert ~25 us), RESET open-drain -> PG_ALL. Pin map verified SBVS227 2026-10-12"),
     "ldo33d":  ("TPS7A2033", FP["SOT23_5"], "TPS7A2033PDBVR", "board digital 3.3 V rail V33D from V4P3 (~120 mA: 4x TMP117 + ISO1640 side 1 + 2x UCD90120A @ 50 mA + LEDs); EN->IN always-on"),
     "ucd":     ("UCD90120A", FP["TI_RGC64"], "UCD90120ARGCR", "13-input PMBus rail monitor, VQFN-64 RGC; TELEMETRY ONLY - not in the mute path (17(m2)/(m3)); AP pushes config over the sensor I2C bus at boot; 2 on the board (UCD_L / UCD_R). Pin map verified SLVSAN9C 2026-10-12 ** VERIFY: footprint EP, BPCAP value, V33FB/CNTRL/TRCK strapping **"),
-    "pwrc":    ("PRE-REG", FP["PCIEX4"], "PCIE-X4-EDGE-TBD", "PCIe x4 card-edge socket, 2x32 contacts @1.0mm. Conn2/J603<->J7703 (north) + Conn3/J604<->J7704 (south) pre-reg rail links; riser = user PCB. Side B = P16A/N16A/V8P3 + GND, side A = V4P3 branch rails + GND per docs/PCIE_PIN_ASSIGNMENTS.md. MPN + land TBD, B.Cu."),
+    "pwrc":    ("PRE-REG", FP["PCIEX4"], "10165968-111T300LF", "Amphenol PCIe x4 Gen6 vertical SMT card-edge socket, 64 pos (2x32) @1.0mm, 1.57mm card, solder-retention hold-downs. Conn2/J603<->J7703 (north) + Conn3/J604<->J7704 (south) pre-reg rail links; riser = user PCB. Side B = P16A/N16A/V8P3 + GND, side A = V4P3 branch rails + GND per docs/PCIE_PIN_ASSIGNMENTS.md. Land = PCIe_x4_Amphenol_10165968 (derived from verified x16 land, same PCI-SIG CEM pad geometry; SH2 end verified vs x4 drawing pending). B.Cu."),
     "hdr4":    ("PMBUS", FP["HDR1x4"], "TSW-104-07-G-S", "UCD PMBus service header (USB-TO-GPIO2 4-wire subset: SDA/SCL/GND/3V3), on the SENS bus - DNP, bring-up/debug only"),
     "rcset":   ("4.7u", FP["C0805"], "GRM21BR71E475KA73L", "LT3045/LT3094 C_SET, X7R 25 V 0805"),
     "cldo10":  ("10u", FP["C1206"], "GRM31CR71E106KA12L", "LDO IN/OUT ceramic, X7R 25 V 1206"),
@@ -2322,7 +2285,6 @@ def main():
     else:
         write_local_lib()
         write_local_footprints()
-        write_pcie_footprints()
         write_som_seed_board()
     root = Sheet("%s.kicad_sch" % PROJECT, "BFDAC analog board - root (L + R channels)", "A1")
     root.inst_path = "/" + root.uuid

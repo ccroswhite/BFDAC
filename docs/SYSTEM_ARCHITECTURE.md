@@ -877,8 +877,10 @@ because the SEAR riser is not purchasable. The three sites are standard PCIe
 card-edge sockets — Conn1/J506 = x16 (2x82), Conn2/J603 and Conn3/J604 = x4
 (2x32) — and each riser is a user-made PCB with card-edge fingers at both ends.
 The risers are mechanical/BOM-adjacent only; they do not receive a PCB
-footprint or participate in the chassis 3MF. Socket MPN + land pattern are TBD;
-the generated footprints are provisional.
+footprint or participate in the chassis 3MF. Sockets: Amphenol PCIe Gen 6
+vertical SMT family `10165968` — `10165968-113Y000LF` (x16/164) and
+`10165968-111T300LF` (x4/64); lands `PCIe_x16/x4_Amphenol_10165968` in
+bfdac.pretty (PCI-SIG CEM pad geometry, key gap between positions 11/12).
 
 On the main circuit board, all three card-edge sites are bottom-side: Conn1/J506
 on the west edge closest to the FPGA; Conn2/J603 north-center; and Conn3/J604
@@ -934,9 +936,10 @@ the local electrical/routing requirements justify them.
 
 The hardware handoff must include an approved floorplan, verified PCIe
 socket/riser mating drawings, thermal mounting details, stackup, electrical
-constraints and assembly variants. The PCIe socket MPN + land pattern are TBD;
-contact-map review, tolerance/alignment analysis, board keepouts and routed
-clearance remain manufacturing gates.
+constraints and assembly variants. The PCIe sockets are Amphenol `10165968`
+(-113Y000LF x16 / -111T300LF x4); contact-map review, tolerance/alignment
+analysis, riser edge-finger geometry (1.57 mm, hard gold, bevel, key notch),
+board keepouts and routed clearance remain manufacturing gates.
 
 The first article may populate one analog channel while retaining shared
 infrastructure. The population matrix must explicitly preserve shared
