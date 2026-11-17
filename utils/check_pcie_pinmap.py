@@ -73,6 +73,11 @@ def check_symbol(size, npins, nunits):
               re.findall(r'\(pad ([AB]\d+) smd rect \(at ([0-9.\-]+) ([0-9.\-]+)\)', footprint)}
     assert set(pad_at) == expected, (size, len(set(pad_at) ^ expected))
     assert len(re.findall(r'\(pad SH[12] smd', footprint)) == 2
+    # locating-peg holes (Amphenol drawing 10165968 p3: 2X dia 1.2; positions
+    # verified vs DIM "K" + the connector STEP model pegs)
+    khole = {"x16": "73.15", "x4": "23.15"}[size]
+    assert re.search(r'\(pad \S* np_thru_hole circle \(at 0\.0 0\.0\)', footprint)
+    assert re.search(r'\(pad \S* np_thru_hole circle \(at %s 0\.0\)' % re.escape(khole), footprint)
     xs = sorted({x for x, y in pad_at.values()})
     gaps = [(a, b) for a, b in zip(xs, xs[1:]) if b - a > 1.01]
     assert len(gaps) == 1 and abs(gaps[0][1] - gaps[0][0] - 3.0) < 0.01, gaps   # key gap

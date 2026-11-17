@@ -12,18 +12,30 @@
   - Current rating per family datasheet: 1.1 A min per pin for the 8 CEM power pins
     and 8 nearest ground pins; all contacts are the same copper-alloy cantilever.
     The V12SOM 20-contact bank carries ~15 A -> 0.75 A/contact nominal.
-- Land patterns (project lib `bfdac.pretty`): `PCIe_x16_Amphenol_10165968` is the
-  SnapEDA/Amphenol-derived land (imported `AMPHENOL_10165968-113Y000LF.kicad_mod`);
-  `PCIe_x4_Amphenol_10165968` is derived from it with the same PCI-SIG CEM pad
-  geometry (0.53 x 2.0 mm SMT pads, A/B rows at +/-3.6 mm, 3.0 mm key gap between
-  positions 11/12, SH1/SH2 retention pads at the ends). The x4 far-end hold-down
-  position should be confirmed against the -111T300LF drawing before release.
+- Land patterns (project lib `bfdac.pretty`): `PCIe_x16_Amphenol_10165968` (SnapEDA
+  import) and `PCIe_x4_Amphenol_10165968` (derived) are VERIFIED against the
+  Amphenol customer drawing `datasheets/10165968.pdf` (PDS rev A):
+  0.53x2.00 mm SMT pads, A/B rows at +/-3.60 mm, 3.00 mm key gap between positions
+  11/12, SH pads 3.0x5.0 mm at the ends, TWO dia-1.2 locating holes (drill 1.25 in
+  the footprints) at x=0.0 (key notch) and x=DIM-K inside the right SH pad's left
+  edge with a dia-1.8 copper-free annulus (K=73.15 x16 / 23.15 x4, peg positions
+  confirmed in the x16 STEP model: housing pegs dia 1.0).
+  Drawing notes now part of the layout contract: (a) mask all top-layer copper
+  under the connector bounded region - the housing carries a conductive ground-
+  bussing bar (drawing note + note 7: ground bussing exists inside the connector
+  system); (b) SH1/SH2 = soldered metal retention clips - tie them to the local
+  dominant ground at layout (carrier GND) or leave floating; do not put signal
+  nets on them.
 - Interposer: **user-made riser PCB** with card-edge gold fingers at both ends (no purchased
   interposer — replaces the SEAR-40, which was not purchasable, 2026-11-16 ruling).
-  Riser spec: 1.57 mm board, hard-gold (>=30 uin) edge fingers on BOTH faces at both
-  ends, 1.0 mm finger pitch, beveled insertion edge, key notch between positions
-  11 and 12; use >=2 oz copper under the V12SOM/GND fingers and flood the return
-  fingers. Finger land = PCI-SIG CEM add-in card edge.
+  Riser spec per Amphenol drawing sheet 2 (mating card edge):
+  board 1.57+/-0.13 mm; fingers 0.60+/-0.05 wide, 1.00 mm pitch; fingers B1-B11
+  (10.00 mm field), 1.90+/-0.06 mm key notch (3.00 mm pad-field gap), then N
+  fingers (x16: N=70 spaces/71 pads; x4: N=20/21); card edge to B1 CL = 12.15 mm;
+  insertion bevel 20 deg +/-5 deg, 1.30+/-0.25 deep; 4x C0.5x45deg corner chamfers;
+  hard-gold >=30 uin fingers on BOTH faces at both ends; no tie bar between card
+  edge and pads A1/last (drawing note 1); >=2 oz copper under the V12SOM/GND
+  fingers and flood the return fingers.
 - Numbering follows the PCIe convention: `B1..Bn` = solder side, `A1..An` = component side.
   Socket pads `A1..An`/`B1..Bn` map 1:1 to the riser fingers at the same position.
 - Schematic symbols: `PCIe_x16` (4 units: A1-42, A43-82, B1-42, B43-82),

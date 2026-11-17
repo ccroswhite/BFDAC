@@ -48,8 +48,9 @@ Gen 1-5; 1.00 mm pitch; 1.57 mm card; ~11.25 mm above board; solder-retention
 hold-downs): Conn1 = **`10165968-113Y000LF`** (164 pos, x16), Conn2/Conn3 =
 **`10165968-111T300LF`** (64 pos, x4) — 2 x x16 + 4 x x4 sockets across the
 two boards, plus 3 user riser PCBs. Land patterns `PCIe_x16_Amphenol_10165968`
-(SnapEDA/Amphenol-derived) and `PCIe_x4_Amphenol_10165968` (derived, same
-PCI-SIG CEM geometry; far-end hold-down pending x4 drawing confirm).
+(SnapEDA-derived) and `PCIe_x4_Amphenol_10165968` (derived) — both VERIFIED
+against Amphenol customer drawing `datasheets/10165968.pdf` rev A (pad/SH/key
+geometry + locating-hole positions, DIM K = 73.15/23.15).
 Contact current rating 1.1 A min/pin on the 8 CEM power + 8 nearest ground
 pins; all contacts identical, so the V12SOM bank runs ~0.75 A/contact.
 

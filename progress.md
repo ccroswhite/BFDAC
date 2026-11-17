@@ -5809,3 +5809,22 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   family PDF. Checker updated: unquoted smd pads, SH pads, key-gap geometry.
 - Verify: regen clean; check_pcie_pinmap PASS x3 (incl. new geometry
   asserts); xcheck FAIL(1) = pre-existing VAP_IO/GND_AP (unchanged).
+
+2026-11-16c: PCIe lands VERIFIED vs Amphenol customer drawing 10165968 rev A
+- User supplied datasheets/10165968.pdf = official 4-sheet customer drawing
+  (PDS rev A): p1 connector, p2 mating card-edge (riser) spec, p3 recommended
+  PCB layout + per-size DIM table (36/64/98/164), p4 PN code + notes.
+- x16 land fully verified: 0.53x2.00 pads @1.00, rows +/-3.60, 3.00 key gap
+  at pos 11/12, SH pads 3.0x5.0, TWO dia-1.2 locating holes (x=0.0 in key
+  notch + x=73.15 inside SH2's left edge, dia-1.8 copper annulus) - already
+  in the SnapEDA footprint; confirmed vs DIM K=73.15 AND STEP-model dia-1.0
+  pegs at the same coords.
+- x4 land: fixed derived footprint's end locating hole 73.15 -> 23.15
+  (=DIM K for 64pos, 1.2 left of SH2); now drawing-verified too.
+- New doc facts: PN code decode (housing/plating/positions/pickup/pkg);
+  note 7 = ground bussing inside connector -> mask top-layer copper under
+  the body bounded region; SH clips = soldered metal -> tie to local GND or
+  float at layout. Riser card-edge spec captured (1.57+-0.13, 0.60 fingers
+  @1.00, 1.90 notch, 12.15 edge->B1, 20deg bevel, no tie bar at A1/last).
+- Verify: regen clean; check_pcie_pinmap PASS x3 (incl. hole asserts);
+  xcheck FAIL(1) = pre-existing VAP_IO/GND_AP only.

@@ -681,9 +681,10 @@ Conn1/J506 = PCIe x16 (2x82), Conn2/J603 + Conn3/J604 = PCIe x4 (2x32); the
 different sizes prevent mis-mating. **Sockets selected 2026-11-16: Amphenol
 PCIe Gen 6 vertical SMT family `10165968`** — Conn1 = `10165968-113Y000LF`
 (164 pos), Conn2/3 = `10165968-111T300LF` (64 pos). Lands
-`PCIe_x16_Amphenol_10165968` (SnapEDA/Amphenol-derived) /
-`PCIe_x4_Amphenol_10165968` (derived, same PCI-SIG CEM geometry; far-end
-hold-down pending x4 drawing confirm). Rating 1.1 A min/pin on the CEM power
+`PCIe_x16_Amphenol_10165968` (SnapEDA-derived) /
+`PCIe_x4_Amphenol_10165968` (derived) — both verified against Amphenol
+customer drawing `datasheets/10165968.pdf` rev A, incl. the dia-1.2 locating
+holes (DIM K = 73.15 / 23.15) and the masked-copper bounded-region note. Rating 1.1 A min/pin on the CEM power
 region; V12SOM bank ~0.75 A/contact.
 
 Conn1/J506 side A carries the carrier power — 20 `V12SOM` contacts (A1-A20,
