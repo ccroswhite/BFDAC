@@ -5723,3 +5723,37 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - Sheets regenerated; check_seaf_pinmap PASS x3. kicad_xcheck FAIL(1) =
   pre-existing VAP_IO/GND_AP bringup issue (verified on clean HEAD -
   todo #1, not introduced here).
+
+### 2026-11-16 ACKU15S carrier migration: 8x ADM6 (ACVU13P) -> 4x ADM6 (ACKU15S)
+- DATA LAYER REWRITTEN (gen_kicad.py): alinx_connectors/cascode_map/
+  CTRL_PINS/CFLASH_PINS -> som_connectors() (datasheets/acku15s_pins.csv,
+  manual V1.0 tables) + xdc_port_map() (acku15s_dac_top.xdc ';#' comments =
+  authoritative port->conn-pin map) + PORT_LABELS (port->net names) +
+  som_used().  som_used() ASSERTS the XDC pin map matches the manual CSV
+  pin-for-pin - generation would have failed on any disagreement (it passed).
+- CONNECTOR ROLES (4x Samtec ADM6-60-01.5-L-4-2-A-TR, 240 pins each):
+  J4 = both cascode buses -> DATnn/DATRnn (col-mirrored, ruling 5b962b0) +
+       mclk_p/n diff pair (B94_L6) + VCCO_90_91_93_94 + PMBus NC;
+  J1 = control plane banks 90/91 (dual SPI, I2S, IRQs, ext_rst_n,
+       RLY_LINE_MUTE, PG_ALL, LED_DBG/TEST_*, CLK_SEL);
+  J2 = coefficient flash bank 65 + JTAG + SYSMON VP/VN + VCCIO_64/65;
+  J3 = +12V x8 + SelectMAP(DONE->FPGA_DONE) + BOOT_M0..2 + VCCAUX_PG->SOM_PG
+       + VCCIO_69/70/71.  All MGT quads + unmapped pins no-connect, GND tied.
+- NC BY RULING: mclk_n (single-ended mclk_p drive), relay_level[0:1]
+  (struck, driven 0), led_status (on-module LED1), i2s_data2 (removed).
+- VCCO DIRECTION REVERSAL: on the ACKU15S the CARRIER feeds the SoM bank
+  VCCOs (manual: "J2 connects to the carrier's adjustable VCCIO_64/65,
+  J4 -> carrier VCCO_90_91_93_94").  V18 is now a REQUIRED carrier rail -
+  regulator part TBD (was SoM-fed on the ACVU13P).  Flagged in fpga-sheet
+  text + bom.md; part selection is a new open item.
+- +12V: 8 J3 contacts (~10-20A at 1.34A/pin) vs ~5-8A KU15P load = OK.
+- som_seed.kicad_pcb: 8-conn ACVU13P pattern replaced by a 4-conn
+  PLACEHOLDER square inside an 80x80 outline, marked TBD - the ACKU15S
+  connector XY datum is still blocking (needs Alinx DXF/STEP).
+- xcheck [BRINGUP] J1 pin expectations updated (B13/B14/A16/B12).
+  FAIL(1) remains = pre-existing VAP_IO/GND_AP merge (todo #1).
+- bom.md section 22 rewritten (4-conn table, struck history kept);
+  SYSTEM_ARCHITECTURE/IMPLEMENTATION_REVIEW SoM name + RTL/XDC links
+  updated; stale i2s_data2 row removed from acku15s_pinmap_proposal.csv.
+- Regenerated + verified: SEAF PASS x3, xcheck FAIL(1) pre-existing only,
+  no ACVU13P/J5-J8/I2S_DATA2 net labels in any generated sheet.

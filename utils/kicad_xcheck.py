@@ -123,8 +123,8 @@ def main():
             if not valid:
                 errs += 1
             print("[%s] COL_%s probe/1k/ground/output access: %s" % (ch, side, "PASS" if valid else "FAIL"))
-    ui_pins = {("J1", "D20"): "TEST_SELECT_N", ("J1", "D19"): "TEST_STEP_N",
-               ("J1", "D17"): "TEST_LED", ("J1", "B7"): "PG_ALL",
+    ui_pins = {("J1", "B13"): "TEST_SELECT_N", ("J1", "B14"): "TEST_STEP_N",   # ACKU15S map (xdc s5b)
+               ("J1", "A16"): "TEST_LED", ("J1", "B12"): "PG_ALL",
                ("R9100", "1"): "V18", ("R9102", "1"): "V18",
                ("R9101", "2"): "TEST_SELECT_N", ("R9103", "2"): "TEST_STEP_N",
                ("SW9000", "2"): "GND", ("SW9001", "2"): "GND",

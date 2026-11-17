@@ -100,8 +100,9 @@ results belong in the qualification record.
 ### 2.1 The physical assemblies and their roles
 
 The product has an application/power base assembly and a converter carrier.
-The Alinx ACVU13P SoM mounts to the carrier and provides the FPGA, DDR4,
-configuration infrastructure and local digital regulation.
+The Alinx ACKU15S SoM (XCKU15P; migrated from the ACVU13P 2026-11-15) mounts
+to the carrier and provides the FPGA, DDR4, configuration infrastructure and
+local digital regulation.
 
 ```text
   External music sources and user controls
@@ -141,7 +142,7 @@ The diagram shows functional partitioning. The final division of the base
 assembly into circuit boards, its connector mechanics and its enclosure
 implementation remain mechanical/electrical design work.
 
-The current assembly uses one main carrier board: the ACVU13P SoM/FPGA and
+The current assembly uses one main carrier board: the ACKU15S SoM/FPGA and
 octal level shifters mount on its underside; the level-shifter outputs cross
 through vias to the top-side reclock FFs. The clock fanout, converter cells,
 I/V and V/output stages are also on the top side. This is the current
@@ -801,7 +802,7 @@ and the constraints that should guide placement and routing.
 
 | Region / face | Intended contents and reason |
 |---|---|
-| Main carrier, lower face | ACVU13P SoM/FPGA, octal level shifters adjacent to the SoM interfaces, coefficient flash and base-assembly connectors. The level-shifter B-side outputs pass through vias to the top-side FFs. |
+| Main carrier, lower face | ACKU15S SoM/FPGA, octal level shifters adjacent to the SoM interfaces, coefficient flash and base-assembly connectors. The level-shifter B-side outputs pass through vias to the top-side FFs. |
 | Main carrier, upper face | Reclock FFs, clock fanout, converter cells, I/V and V/output stages, and accessible probe points. |
 | Left digital region | SoM power entry and AP/control interconnects, physically separated from low-level analog circuitry |
 | Analog/clock region | Short oscillator-to-fanout paths and matched clock/data distribution near the cells they serve |
@@ -1223,7 +1224,7 @@ BOM, component drawings or implementation evidence.
 
 | System function | Principal components / source |
 |---|---|
-| FPGA compute and local infrastructure | Alinx ACVU13P SoM, XCVU13P; [top-level RTL](../Xilinx/vu13p_dac_top.sv) |
+| FPGA compute and local infrastructure | Alinx ACKU15S SoM, XCKU15P; [top-level RTL](../Xilinx/acku15s_dac_top.sv) |
 | Stream-mode control and I²S | [stream_rate_controller](../Xilinx/stream_rate_controller.sv), [i2s_master_ingress](../Xilinx/i2s_master_ingress.sv) |
 | DSP chain | [dac_dsp_core](../Xilinx/dac_dsp_core.sv), FIR/halfband modules, [noise_shaper_ef3](../Xilinx/noise_shaper_ef3.sv), [dem_sort](../Xilinx/dem_sort.sv) |
 | Predistortion and calibration memory | [dpd_engine](../Xilinx/dpd_engine.sv), [cal_coef_store](../Xilinx/cal_coef_store.sv) |

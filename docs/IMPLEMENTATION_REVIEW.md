@@ -107,7 +107,7 @@ A reviewer should read Sections 2–3, then Section 12, before spending time on 
 | Product goals and historical rulings | [progress.md](../progress.md), especially the acceptance specification and later dated decisions |
 | Parts, topology and design rationale | [bom.md](../bom.md); contains both current and superseded material |
 | Actual FPGA behavior | [vu13p_dac_top.sv](../Xilinx/vu13p_dac_top.sv) and instantiated RTL, not their comments alone |
-| FPGA electrical/timing assumptions | [vu13p_dac_top.xdc](../Xilinx/vu13p_dac_top.xdc), [Alinx connector assignments](../Alinx/ACVU13P-Pin-Assignment-20260703.csv) |
+| FPGA electrical/timing assumptions | [acku15s_dac_top.xdc](../Xilinx/acku15s_dac_top.xdc), [ACKU15S connector assignments](../datasheets/acku15s_pins.csv) |
 | Repeatable schematic construction | [gen_kicad.py](../utils/gen_kicad.py) |
 | Current circuit capture | [bfdac_analog.kicad_sch](../hw/kicad/bfdac_analog.kicad_sch), opened through [the KiCad project](../hw/kicad/bfdac_analog.kicad_pro) |
 | Extracted analog reference connectivity | [ref_netlist.md](../hw/ref_netlist.md), [ref_netlist.json](../hw/ref_netlist.json), [reconciliation ledger](../hw/reconcile.md) |
@@ -122,7 +122,7 @@ The source snapshot is a review baseline, not a production release. The analog S
 
 ### 2.1 Intended product
 
-BFDAC is a stereo, FPGA-controlled discrete current-steering audio DAC. A single Alinx ACVU13P-class SoM containing an AMD/Xilinx XCVU13P drives 64 physical current cells per channel. The carrier implements the analog conversion, reclocking, references, I/V conversion, output muting and monitoring.
+BFDAC is a stereo, FPGA-controlled discrete current-steering audio DAC. A single Alinx ACKU15S SoM containing an AMD/Xilinx XCKU15P drives 64 physical current cells per channel. The carrier implements the analog conversion, reclocking, references, I/V conversion, output muting and monitoring.
 
 The recorded ambition is performance beyond the referenced dCS Vivaldi APEX noise benchmark without sacrificing distortion or low-level behavior. This is a design objective, not a measured product comparison. The architecture deliberately combines:
 

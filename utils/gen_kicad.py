@@ -124,29 +124,35 @@ def _seaf40_symbol_units():
         units.append('\n\t(symbol "%s_%d_1"%s\n\t)' % ("Samtec_SEAF40", row_idx + 1, body))
     return "".join(units)
 
-# --- Alinx ACVU13P carrier side: Samtec ADM6-60-01.5-L-4-2-A-TR, 4 rows x 60 = 240 pins
-ALINX_CSV = os.path.join(ROOT, "Alinx", "ACVU13P-Pin-Assignment-20260703.csv")
-CASCODE_XDC = os.path.join(ROOT, "Alinx", "cascode_pins_gen.txt")
+# --- Alinx ACKU15S SoM carrier side: 4x Samtec ADM6-60-01.5-L-4-2-A-TR (240 pins each, 4 rows x 60)
+# 2026-11-15: migrated from the 8-connector ACVU13P.  Pin tables come from the ACKU15S V1.0 manual;
+# the port->connector map comes from acku15s_dac_top.xdc ';# <sig> <Jx>-<pin>' comments (authoritative).
+ACKU15S_CSV = os.path.join(ROOT, "datasheets", "acku15s_pins.csv")
+DAC_XDC = os.path.join(ROOT, "Xilinx", "acku15s_dac_top.xdc")
 
-def alinx_connectors():
-    """{connector: {pin: (signal, fpga_pin)}} from the Alinx pin-assignment CSV."""
+def som_connectors():
+    """{connector: {pin: (signal, fpga_pin)}} from datasheets/acku15s_pins.csv (ACKU15S V1.0
+    manual connector tables; each CSV row carries two pins: A/C columns in *_a, B/D in *_b)."""
     import csv
     J = {}
-    conn = None
-    for r in csv.reader(open(ALINX_CSV, encoding="utf-8-sig")):
-        if r and r[0].startswith("Connector"):
-            conn = r[0].split()[1]; J[conn] = {}; continue
-        if len(r) >= 3 and conn and r[0] not in ("Pin", ""):
-            J[conn][r[0]] = (r[1].strip(), r[2].strip())
+    for r in csv.DictReader(open(ACKU15S_CSV, encoding="utf-8-sig")):
+        c = J.setdefault(r["conn"], {})
+        for side in ("a", "b"):
+            p = r["pin_" + side].strip()
+            if p:
+                c[p] = (r["sig_" + side].strip(), r["fpga_" + side].strip())
     return J
 
-def cascode_map(chan="l"):
-    """{index: bank signal name} for cascode_<chan>[i] from the XDC fragment."""
+def xdc_port_map():
+    """{rtl_port: (conn, jpin, bank_sig)} parsed from acku15s_dac_top.xdc - every connector-facing
+    PACKAGE_PIN carries a ';# <bank_sig> <Jx>-<pin>' comment.  Fixed SoM pins (DDR4, QSPI1) have
+    no J-pin comment and drop out automatically."""
     m = {}
-    for line in open(CASCODE_XDC):
-        mm = re.search(r"PACKAGE_PIN (\w+)\s+\[get_ports \{cascode_(\w)\[(\d+)\]\}\]\s*;#\s*(\S+)", line)
-        if mm and mm.group(2) == chan:
-            m[int(mm.group(3))] = mm.group(4)
+    pat = re.compile(r"PACKAGE_PIN\s+\w+\s+\[get_ports\s+\{?([A-Za-z_0-9]+(?:\[\d+\])?)\}?\][^;]*;#\s*(\S+)\s+(J[1-4])-([A-D]\d+)")
+    for line in open(DAC_XDC, encoding="utf-8"):
+        mm = pat.search(line)
+        if mm:
+            m[mm.group(1)] = (mm.group(3), mm.group(4), mm.group(2))
     return m
 
 def _is_gnd(sig):
@@ -171,55 +177,70 @@ def _alinx_symbol(name, pins, used):
         units += _box_unit(name, u + 1, col[:30], col[30:], width=45.72)
     return units
 
-# Control-plane IOs on J1 bank 71 (MUST match acku15s_dac_top.xdc s4-s7, s10, 5b (renamed from vu13p_dac_top.xdc 2026-11-14)).  {Alinx signal: label}
-# 2026-11-14 dual-SPI: SPI_* -> SPI_XMOS_* rename (XMOS bus, U501); SPI_AP_* = second slave port for the
-# host AP (U505 + U506; RTL ports spi_ap_*).  ACVU13P pin picks below are provisional - the ACKU15S
-# pinmap puts spi_ap_* on J1 bank 91 (datasheets/acku15s_pinmap_proposal.csv).
-CTRL_PINS = {
-    "B71_L3_P": "SPI_XMOS_SCLK", "B71_L3_N": "SPI_XMOS_CS_N", "B71_L15_P": "SPI_XMOS_MOSI", "B71_L15_N": "SPI_XMOS_MISO",   # T26 R26 H29 G29
-    "B71_L13_P": "SPI_AP_SCLK", "B71_L13_N": "SPI_AP_CS_N", "B71_L14_P": "SPI_AP_MOSI", "B71_L14_N": "SPI_AP_MISO",       # J26 H26 G26 G27
-    "B71_L6_P": "SPI_AP_IRQ_N",                                                                                         # P26 (was struck RLY_LEVEL0)
-    "B71_L5_P": "FPGA_IRQ_N", "B71_L2_N": "EXT_RST_N",                                                  # P28 R27
-    "B71_L11_P": "I2S_BCLK", "B71_L2_P": "I2S_LRCLK", "B71_L5_N": "I2S_DATA",                          # H27 T27 N28; B71_L11_N/H28 freed 2026-11-15 (I2S_DATA2 second source removed with src_sel/i2s_data2 RTL)
-    "B71_L1_N": "RLY_LINE_MUTE",                                                                    # R28; RLY_LEVEL0/1 struck 2026-10-07 (level is digital, bom 7 ruling) - pins REUSED: P26->SPI_AP_IRQ_N, N29->PG_ALL
-    "B71_L4_N": "PG_ALL",                                                                           # J1-B7 / N29: wired-AND rail power-good -> FPGA (bom 17(m), LVCMOS18; xdc port TBD)
-    "B71_L18_N": "LED_DBG0", "B71_L18_P": "LED_DBG1", "B71_L10_N": "LED_DBG2", "B71_L10_P": "LED_DBG3",  # D28 E28 K27 K26
+# RTL port -> carrier net label; the connector pin comes from the XDC ';#' comment (authoritative),
+# so this table only names nets.  Ports deliberately left unmapped -> carrier no-connect:
+#   mclk_n (single-ended mclk_p drive, pair reserved), relay_level[0:1] (driven 0, struck bom-7 level
+#   relays), led_status (on-module LED1), i2s_data2 (removed 2026-11-15 - XMOS sole source).
+PORT_LABELS = {
+    "spi_xmos_sclk": "SPI_XMOS_SCLK", "spi_xmos_cs_n": "SPI_XMOS_CS_N",
+    "spi_xmos_mosi": "SPI_XMOS_MOSI", "spi_xmos_miso": "SPI_XMOS_MISO",
+    "spi_ap_sclk": "SPI_AP_SCLK", "spi_ap_cs_n": "SPI_AP_CS_N",
+    "spi_ap_mosi": "SPI_AP_MOSI", "spi_ap_miso": "SPI_AP_MISO", "spi_ap_irq_n": "SPI_AP_IRQ_N",
+    "fpga_irq_n": "FPGA_IRQ_N", "ext_rst_n": "EXT_RST_N",
+    "i2s_bclk": "I2S_BCLK", "i2s_lrclk": "I2S_LRCLK", "i2s_data": "I2S_DATA",
+    "relay_line_mute": "RLY_LINE_MUTE", "pg_all": "PG_ALL",
+    "test_select_n": "TEST_SELECT_N", "test_step_n": "TEST_STEP_N", "test_led": "TEST_LED",
+    "led_debug[0]": "LED_DBG0", "led_debug[1]": "LED_DBG1",
+    "led_debug[2]": "LED_DBG2", "led_debug[3]": "LED_DBG3",
+    "clk_sel": "CLK_SEL", "mclk_p": "MCLK_FPGA",
 }
-CTRL_PINS.update({"B71_L7_P": "TEST_SELECT_N", "B71_L7_N": "TEST_STEP_N", "B71_L8_P": "TEST_LED"})
 JTAG_PINS = {"FPGA_TCK": "JTAG_TCK", "FPGA_TMS": "JTAG_TMS", "FPGA_TDI": "JTAG_TDI", "FPGA_TDO": "JTAG_TDO"}
 
-def alinx_used():
-    """(J, {connector: {pin: label}}) - every electrically live carrier pin on the eight
-    ACVU13P connectors.  Shared by the symbol library and the sheets so they agree."""
-    J = alinx_connectors()
-    s2p = {c: {v[0].replace(" ", ""): p for p, v in J[c].items()} for c in J}
+def som_used():
+    """(J, {connector: {pin: label}}) - every electrically live carrier pin on the four
+    ACKU15S connectors.  Shared by the symbol library and the sheets so they agree."""
+    J = som_connectors()
+    xmap = xdc_port_map()
+    # consistency: the XDC comment's bank signal must equal the manual CSV's signal at that pin
+    for port, (c, pin, sig) in xmap.items():
+        msig = J[c][pin][0].replace(" ", "")
+        assert msig == sig, ("XDC/manual pinmap mismatch", port, c, pin, sig, msig)
     used = {c: {} for c in J}
-    for i, s in cascode_map("l").items():
-        used["J6"][s2p["J6"][s]] = "DAT%02d" % (i + 1)
-    for i, s in cascode_map("r").items():   # bank 67 on J5, bank 66 on J6 (cascode_r[48..63] moved off J1 bank 69 2026-10-08)
-        c = "J5" if s in s2p["J5"] else "J6"
-        assert s in s2p[c], ("cascode_r pin not on J5/J6 (analog edge)", i, s)
-        used[c][s2p[c][s]] = "DATR%02d" % (i + 1)
-    # 2026-10-08 layout ruling: clock block sits on the analog/right side next to J6 -> its FPGA pins moved off J1 (left/noisy
-    # edge) to J6 bank 65.  MCLK on the true GC pair B65_L12 (AW28/AY28); _N reserved (no-connect) for an LVDS option.
-    used["J6"][s2p["J6"]["B65_L12_P"]] = "MCLK_FPGA"      # J6-C30 / AW28  (was J1-A17 B71_L12_P / J28)
-    used["J6"][s2p["J6"]["B65_L16_P"]] = "CLK_SEL"        # J6-A19 / AR25  (was J1-B5  B71_L13_P / J26)
-    used["J1"].update({s2p["J1"][s]: n for s, n in CFLASH_PINS.items()})
-    used["J1"].update({s2p["J1"][s]: n for s, n in CTRL_PINS.items()})
-    used["J6"].update({s2p["J6"][s]: n for s, n in JTAG_PINS.items()})
-    used["J6"][s2p["J6"]["VCCAUX_PG"]] = "SOM_PG"
-    used["J2"][s2p["J2"]["VUP_SELECTMAP_DONE"]] = "FPGA_DONE"   # configuration DONE -> OUT sheet unmute gate (bom 7)
-    used["J5"][s2p["J5"]["FPGA_VP_IN"]] = "FPGA_VP_IN"
-    used["J5"][s2p["J5"]["FPGA_VN_IN"]] = "FPGA_VN_IN"
-    for k in range(3):
-        used["J2"][s2p["J2"]["BOOT_M%d" % k if k else "BOOT_MO"]] = "BOOT_M%d" % k   # CSV spells M0 with the letter O
+    for port, (c, pin, sig) in xmap.items():
+        m = re.match(r"cascode_([lr])\[(\d+)\]$", port)
+        if m:    # both cascode buses on J4 (col-mirrored L/R on separate connector halves, 5b962b0)
+            used[c][pin] = "DAT%s%02d" % ("R" if m.group(1) == "r" else "", int(m.group(2)) + 1)
+            continue
+        m = re.match(r"cf_(sck|cs_n|dq)(?:\[(\d+)\])?$", port)
+        if m:
+            if m.group(1) == "sck":
+                used[c][pin] = "CF_CLK_J2"    # connector side of the series R -> CF_CLK flash bus
+            elif m.group(1) == "cs_n":
+                used[c][pin] = "CF_CS%s" % m.group(2)
+            else:
+                used[c][pin] = "CF_DQ%s" % m.group(2)
+            continue
+        if port in PORT_LABELS:
+            used[c][pin] = PORT_LABELS[port]
+        # else: constrained but intentionally carrier no-connect (see PORT_LABELS comment)
+    # infrastructure pins by SoM signal name (manual CSV)
     for c in J:
-        for p, (s, f) in J[c].items():
-            s = s.replace(" ", "")
-            if s.startswith("VCCIO_"):
-                used[c][p] = s
-            elif s == "+12V":
+        for p, (sig, f) in J[c].items():
+            sig = sig.replace(" ", "")
+            if sig.startswith("VCCIO_") or sig.startswith("VCCO_"):
+                used[c][p] = sig     # ACKU15S: the CARRIER feeds the SoM bank VCCOs -> v18 rail
+            elif sig == "+12V":
                 used[c][p] = "+12V"
+            elif sig in JTAG_PINS:
+                used[c][p] = JTAG_PINS[sig]
+            elif sig == "VCCAUX_PG":
+                used[c][p] = "SOM_PG"
+            elif sig == "SELECTMAP_DONE":
+                used[c][p] = "FPGA_DONE"   # config DONE -> OUT sheet unmute gate (bom 7)
+            elif sig.startswith("BOOT_M"):
+                used[c][p] = sig
+            elif sig in ("FPGA_VP_IN", "FPGA_VN_IN"):
+                used[c][p] = sig
     return J, used
 
 def conn_nets(J, used, c, G, GND):
@@ -232,8 +253,8 @@ def conn_nets(J, used, c, G, GND):
                 nets[p] = ("L", lab)
             elif lab.startswith("DAT"):
                 nets[p] = G(lab + "_1V8")      # LVCMOS18 leg -> XLAT sheet (SN74AXC8T245) -> DATnn at 3.3 V -> cell D
-            elif lab.startswith("VCCIO_"):
-                nets[p] = G("v18")
+            elif lab.startswith("VCCIO_") or lab.startswith("VCCO_"):
+                nets[p] = G("v18")          # ACKU15S: carrier V18 rail FEEDS the SoM bank VCCOs
             elif lab == "+12V":
                 nets[p] = G("v12som")
             elif lab in ("FPGA_VP_IN", "FPGA_VN_IN"):
@@ -244,15 +265,11 @@ def conn_nets(J, used, c, G, GND):
             nets[p] = GND
     return nets
 
-ALINX_DESCR = {
-    "J1": "banks 69/70/71 - coefficient-flash x1 SPI (bom 18a), control plane (SPI/I2S/IRQ/reset/relays/LEDs); mclk/clk_sel and cascode_r[48..63] moved to J6 2026-10-08 (noisy/left edge keeps digital only)",
-    "J2": "+12 V module supply (52 pins) + SelectMAP (unused) + BOOT_M0..2 mode straps",
-    "J3": "MGT quads 230-233 - unused, all no-connect; GND tied",
-    "J4": "MGT quads 224/227/228/229 - unused, all no-connect; GND tied",
-    "J5": "banks 66/67/68 - cascode_r[0..47] (bank 67), VCCIO_66/67/68, SYSMON VP/VN (tied to GND), MGT 225/226 unused",
-    "J6": "banks 64/65/66 - cascode_l data (64/65), cascode_r[48..63] (bank 66 L15-L21/L24), mclk (B65_L12_P GC, LVCMOS18), clk_sel (B65_L16_P), JTAG (FPGA_TCK/TMS/TDI/TDO), VCCAUX_PG, VCCIO_65_EX",
-    "J7": "MGT quads 125-128 - unused, all no-connect; GND tied",
-    "J8": "MGT quads 129/130/131/133 - unused, all no-connect; GND tied",
+SOM_DESCR = {
+    "J1": "banks 90/91 - control plane (dual SPI, I2S, IRQs, reset, relay, test, debug LEDs, clk_sel); MGT 227-231 unused",
+    "J2": "bank 65 - coefficient-flash x1 SPI (cf_*), JTAG, SYSMON VP/VN (tied GND), VCCIO_64/65 (carrier-fed v18); MGT 224-226 unused",
+    "J3": "power + config: +12 V feed (8 pins), SelectMAP (unused; DONE->FPGA_DONE), BOOT_M0..2 straps, VCCAUX_PG->SOM_PG, VCCIO_69/70/71 (carrier-fed v18); MGT 127-132 unused",
+    "J4": "banks 69/70/71/93/94 - cascode_l/r -> DATnn/DATRnn (col-mirrored), mclk_p/n diff pair, VCCO_90_91_93_94 (carrier-fed v18), PMBus pins (no-connect)",
 }
 
 def _sym(name, units_body, footprint, datasheet, descr, ref="Q"):
@@ -333,9 +350,9 @@ def write_local_lib():
                         ("A3", "NC_A3", "no_connect"), ("B1", "DNU_B1", "no_connect"),
                         ("B5", "DNU_B5", "no_connect"), ("C5", "NC_C5", "no_connect")])
     # Alinx module connectors (carrier side): all eight, only the live pins are electrically connected
-    J, used = alinx_used()
-    jsyms = "".join(_sym("ACVU13P_%s" % c, _alinx_symbol("ACVU13P_%s" % c, J[c], used[c]), "", "https://www.samtec.com/products/adm6",
-                         "Alinx ACVU13P module connector %s (carrier: Samtec ADM6-60-01.5-L-4-2-A-TR); %s" % (c, ALINX_DESCR[c]), ref="J")
+    J, used = som_used()
+    jsyms = "".join(_sym("ACKU15S_%s" % c, _alinx_symbol("ACKU15S_%s" % c, J[c], used[c]), "", "https://www.samtec.com/products/adm6",
+                         "Alinx ACKU15S module connector %s (carrier: Samtec ADM6-60-01.5-L-4-2-A-TR); %s" % (c, SOM_DESCR[c]), ref="J")
                     for c in sorted(J))
     # ADI/Maxim MAX22445 (W SOIC-16, 3 forward A->B + 1 reverse B->A): 1 VDDA 2 GNDA 3 IN1 4 IN2 5 IN3 6 OUT4 7 ENA 8 GNDA | 9 GNDB 10 ENB 11 IN4 12 OUT3 13 OUT2 14 OUT1 15 GNDB 16 VDDB
     # - VERIFIED 2026-10-10 against the datasheet pin-configuration figure (user) and the ADI KiCad symbol (datasheets/MAX22445FAWE_/KiCADv6); pin-for-pin the ISO7741 layout
@@ -978,38 +995,23 @@ VENDOR_FOOTPRINTS = [
     (r"CAXC8T245QWRGYRQ1\KiCADv6\footprints.pretty\VQFN25_RGY_TEX.kicad_mod", "TI_RGY_VQFN-24_3.5x5.5mm_P0.5mm_EP"),   # SN74AXC8T245 RHL/RGY VQFN-24 (nominal density; -L/-M variants left in datasheets/), pad 25 = EP
 ]
 
-# ACVU13 SoM connector placement on the carrier - extracted 2026-10-08 from the Alinx AXVU13G.1.0 carrier .brd (Allegro 16.6)
-# with KiCad 10's Allegro importer (utils/brd_connectors.py) and cross-checked against the SoM bottom DXF (utils/som_connectors.py).
-# Frame: SoM centre at the origin, x right, y UP, carrier viewed from the top (the SoM sits component-side up, so no mirror).
-# Each ADM6-60 is 240 pads 4x60 at 0.635, rows at +-0.79/+-1.75, span 37.465; all eight sit 47.499 from the centre along
-# one axis and +-22.159 along the other.  rot = KiCad footprint orientation for bfdac:Samtec_ADM6-60-01.5-L-4-2-A
-# (rot 0: pin 1 at +x, row A at -y(KiCad) = up).  Verified pad-for-pad against the Alinx board (A1/A60/D1/D60 + both NPTH).
-# SoM-native frame (SoM bottom DXF, SoM's own top view) is this table rotated -90 deg: Alinx mounts the SoM turned 90 deg.
-SOM_CONNECTORS = {  # ref: (dx, dy_up, rot_deg)   pin 1 end / row A side noted
-    "J1": (-47.499, +22.159, -90),   # left edge, upper;  pin 1 at the bottom end, row A inboard (+x)
-    "J2": (-47.499, -22.159, -90),   # left edge, lower;  pin 1 bottom, row A inboard
-    "J3": (-22.159, -47.499,   0),   # bottom edge, left; pin 1 at the right end, row A inboard (+y)
-    "J4": (+22.159, -47.499,   0),   # bottom edge, right; pin 1 right, row A inboard
-    "J5": (+47.499, -22.159,  90),   # right edge, lower; pin 1 at the top end, row A inboard (-x)
-    "J6": (+47.499, +22.159,  90),   # right edge, upper; pin 1 top, row A inboard
-    "J7": (+22.159, +47.499,   0),   # top edge, right;  pin 1 right, row A OUTBOARD (+y)
-    "J8": (-22.159, +47.499,   0),   # top edge, left;   pin 1 right, row A outboard
+# ACKU15S SoM connector placement on the carrier - POSITIONS TBD.  The old ACVU13P pattern
+# does not apply; the ACKU15S is an 80 x 80 mm module with J1..J4 and its connector XY datum is
+# BLOCKING pending the Alinx ACKU15S DXF/STEP or a baseboard reference (see todo).
+SOM_CONNECTORS = {  # ref: (dx, dy_up, rot_deg)  -- PLACEHOLDER square, NOT verified
+    "J1": (-30.0, +20.0, -90),
+    "J2": (-30.0, -20.0, -90),
+    "J3": (+30.0, -20.0, +90),
+    "J4": (+30.0, +20.0, +90),
 }
-# SoM board = 106 x 106 (DXF BG_OUTLINE), centre = connector-pattern centre.  Two hole sets (SoM STEP ACVU13.1.stp + Alinx carrier .brd):
-#  corners  (+-48.682, 97.364 mm square, 4.318 from the SoM edge): SoM 'MH_250H125' = dia 3.175 hole / 6.35 pad (M3 standoffs);
-#           the Alinx carrier drills these dia 4.0 with a 6.35 ring.
-#  inner    (+-39.0, 78 mm square): dia 4.0 hole / 5.5 ring on BOTH the SoM and the carrier = SUPPORT STANDOFFS (user 2026-10-08;
-#           the SoM's FAN90X90 heatsink shares this pattern).  Swept the Alinx carrier: no other drill >= 0.8 mm under the 106 x 106 SoM.
-#  Carrier rings are plated, each on its own isolated net (Net_2..Net_9 in the Alinx brd).
-SOM_SIZE = 106.0
-SOM_MOUNT_HOLES = ([(sx * 48.682, sy * 48.682, 4.0, 6.35, "standoff") for sx in (-1, 1) for sy in (-1, 1)]
-                   + [(sx * 39.0, sy * 39.0, 4.0, 5.5, "support standoff") for sx in (-1, 1) for sy in (-1, 1)])
+# SoM board = 80 x 80 mm (ACKU15S V1.0 manual); mount-hole pattern unknown pending DXF/STEP.
+SOM_SIZE = 80.0
+SOM_MOUNT_HOLES = []
 SOM_SEED_CENTRE = (150.0, 150.0)   # KiCad sheet position of the SoM centre in the seed board
 
 def write_som_seed_board():
-    """hw/kicad/som_seed.kicad_pcb: J1..J8 placed per SOM_CONNECTORS with the local ADM6 footprint, plus the SoM outline
-    (106 x 106) and mounting-hole marks on User.Comments.  Separate file on purpose - never overwrites a real layout; copy the
-    footprints into the board or start the layout from it and 'Update PCB from Schematic' with re-link by reference."""
+    """hw/kicad/som_seed.kicad_pcb: J1..J4 at PLACEHOLDER positions (connector XY datum TBD) with
+    the ADM6 footprint, plus an 80 x 80 outline on User.Comments.  Never overwrites a real layout."""
     fp = open(os.path.join(OUT, LOCALLIB + ".pretty", "Samtec_ADM6-60-01.5-L-4-2-A.kicad_mod"), encoding="utf-8").read().strip()
     assert fp.startswith('(footprint "Samtec_ADM6-60-01.5-L-4-2-A"') and fp.endswith(")")
     body = fp[len('(footprint "Samtec_ADM6-60-01.5-L-4-2-A"'):-1]
@@ -1039,20 +1041,14 @@ def write_som_seed_board():
                      % (cx0 + mx, cy0 - my, cx0 + mx + dia / 2, cy0 - my, U()))
         L.append('  (gr_text "%s %.1f/%.2f" (at %.3f %.3f 0) (layer "Cmts.User") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))'
                  % (what, drill, ring, cx0 + mx, cy0 - my + 4.5, U()))
-    L.append('  (gr_text "ACVU13 SoM footprint: 106 x 106 outline, 8 x ADM6-60 per Alinx AXVU13G.1.0 .brd (2026-10-08); corner standoffs 97.364 mm square, support standoffs 78 mm square (drill/ring per Alinx carrier)"'
+    L.append('  (gr_text "ACKU15S SoM: 80 x 80 outline; J1..J4 = PLACEHOLDER POSITIONS - connector XY datum TBD pending Alinx ACKU15S DXF/STEP; mount holes unknown"'
              ' (at %.3f %.3f 0) (layer "Cmts.User") (uuid "%s") (effects (font (size 1.5 1.5) (thickness 0.2))))' % (cx0, cy0, U()))
     L.append(')')
     with open(os.path.join(OUT, "som_seed.kicad_pcb"), "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
 
-# Coefficient flash bus on J1 bank 70 (bom 18a, 2026-10-05: bank 70 is 51/51 free, VCCIO_70 = V18, no clock/
-# cascode neighbours; MUST match acku15s_dac_top.xdc s11b (renamed 2026-11-14)).  {Alinx signal: schematic label}.  9 carrier IOs:
-# C, DQ0..3, S#0..3.  RESET# (A4, dedicated, internal pull-up) is strapped to V18; DQ3 (D4) = HOLD# is the pulled-up data line; no CF_RST IO.
-#   CF_CLK  J35 J1-A20 | CF_CS0 J36 J1-A19 | CF_DQ0 H36 J1-A23 | CF_DQ1 G36 J1-A22 | CF_DQ2 H34 J1-B20 | CF_DQ3 G34 J1-B19
-#   CF_CS1  H37 J1-A26 | CF_CS2 H38 J1-A25 | CF_CS3 G37 J1-B29
-CFLASH_PINS = {"B70_L3_P": "CF_CLK_J1", "B70_L3_N": "CF_CS0", "B70_L4_P": "CF_DQ0", "B70_L4_N": "CF_DQ1",
-               "B70_L5_P": "CF_DQ2", "B70_L5_N": "CF_DQ3", "B70_L1_P": "CF_CS1", "B70_L1_N": "CF_CS2",
-               "B70_L2_P": "CF_CS3"}
+# Coefficient flash bus on J2 bank 65 (bom 18b; conn pins via the XDC port map, s11b).  9 carrier IOs:
+# SCK, DQ0..3, CS#0..3.  RESET# (internal pull-up) strapped to v18; DQ3 = HOLD# is the pulled-up data line.
 CFLASH_POPULATED = 4   # 4 x 2 Gb; per-chip 64-KiB record boundaries limit 10M-tap images to 88 records
 
 def _find_sym(tree, name):
@@ -1534,11 +1530,11 @@ CORE_PARTS = {  # CORE sheet pass 2026-09-28 (bom 3)
     "cq4":  ("220u", FP["CP8"], "UKL1C221MPD", "q4_base bypass, Nichicon UKL low-leakage 16 V 8x11.5 (bom 2 C_q4)"),
 }
 FPGA_PARTS = {  # FPGA interface + clock tree sheet, 2026-09-28 (bom 1.1 / 1.3)
-    "j":     ("ADM6-60", "bfdac:Samtec_ADM6-60-01.5-L-4-2-A", "ADM6-60-01.5-L-4-2-A-TR", "Samtec AcceleRate HD 4x60 0.635 mm terminal for the Alinx ACVU13P module; footprint from the Samtec print Rev A (datasheets/samtec_adm6_footprint.pdf)"),
+    "j":     ("ADM6-60", "bfdac:Samtec_ADM6-60-01.5-L-4-2-A", "ADM6-60-01.5-L-4-2-A-TR", "Samtec AcceleRate HD 4x60 0.635 mm terminal for the Alinx ACKU15S module; footprint from the Samtec print Rev A (datasheets/samtec_adm6_footprint.pdf)"),
     "xo":    ("49.152 MHz", FP["CCHD957"], "CCHD-957-25-49.152", "Crystek CCHD-957 XO, 48k family (2nd source NDK NZ2520SDA 49.152); pinout + footprint verified Rev N 2026-10-08  ** was: REVIEW pinout **"),
     "xo2":   ("45.1584 MHz", FP["CCHD957"], "CCHD-957-25-45.1584", "Crystek CCHD-957 XO, 44.1k family; pinout + footprint verified Rev N 2026-10-08"),
     "inv":   ("SN74LVC1G04", FP["SOT23_5"], "SN74LVC1G04DBVR", "clk_sel inverter: Y301 E/D = !clk_sel, Y302 E/D = clk_sel (mux at the XO enables, bom item 15 option 2)"),
-    "buf":   ("SN74LVC1G125", FP["SOT23_5"], "SN74LVC1G125DBVR", "FPGA mclk copy off the XO net (jitter irrelevant: FF retimes); 3.3 -> 1.8 V divider into B65_L12_P (J6-C30 / AW28, GC) as LVCMOS18"),
+    "buf":   ("SN74LVC1G125", FP["SOT23_5"], "SN74LVC1G125DBVR", "FPGA mclk copy off the XO net (jitter irrelevant: FF retimes); 3.3 -> 1.8 V divider into B94_L6_P (J4-B4 / F11, mclk_p) as LVCMOS18"),
     "fan":   ("LMK1C1108", FP["TSSOP16"], "LMK1C1108PWR", "1:8 LVCMOS fanout; U302 root -> U304..U311 leaves -> 64 FF clocks (bom 1.1)"),
     "rser":  ("33", FP["R0603"], "CRCW060333R0FKEA", "series termination at every clock driver pin (bom 1.1 R3xx)"),
     "rdivs": ("100", FP["R0603"], "CRCW0603100RFKEA", "mclk divider series (3.3 V x 120/220 = 1.8 V, ~55 R source)"),
@@ -1554,13 +1550,13 @@ FPGA_PARTS = {  # FPGA interface + clock tree sheet, 2026-09-28 (bom 1.1 / 1.3)
     "cxb":    ("100n", FP["C0603"], "GRM188R71C104KA01D", "AXC8T245 VCCB decoupling, one per device (island side of the bead)"),
     "fbx":    ("120R@100MHz", FP["L0603"], "BLM18PG121SN1D", "per-octal V33FF island bead (bom 1.2 U440-U455 rule; value from the item-11 SSN deck, same part as the per-FF bead until then)"),
 }
-SOM_PARTS = {  # SoM carrier sheet 2026-10-07: remaining ACVU13P connectors, 12 V feed, JTAG, boot straps
+SOM_PARTS = {  # SoM carrier sheet: J3 power/config connector, 12 V feed, JTAG, boot straps
     "j":      ("ADM6-60", "bfdac:Samtec_ADM6-60-01.5-L-4-2-A", "ADM6-60-01.5-L-4-2-A-TR", "Samtec AcceleRate HD 4x60 0.635 mm terminal, 1.5 mm lead style, alignment pins; mates ADF6-60-03.5 on the SoM (5 mm stack); footprint from the Samtec print Rev A (datasheets/samtec_adm6_footprint.pdf)"),
     "jpwr":   ("12V IN", FP["MINIFIT6"], "39-28-1063", "Molex Mini-Fit Jr 6-way vertical header: SoM +12 V feed from the 12 V switcher (3 x 12 V + 3 x GND, 9 A/contact class; SoM planning figure 15 A at 12 V, user 2026-10-10 - 2x2 was at its limit). V12SOM is SoM-only: nothing else on this board uses 12 V  ** VERIFY MPN / mating housing 39-01-2060 **"),
     "cpoly":  ("220u", FP["CPOLY8"], "25SVPF220M", "Panasonic OS-CON 220 uF 25 V polymer, SoM 12 V bulk at the connectors"),
     "c10u25": ("10u", FP["C1206"], "GRM31CR71E106KA12L", "SoM 12 V ceramic, X7R 25 V"),
     "jtag":   ("JTAG", FP["HDR2x7_2MM"], "87832-1420", "Molex Milli-Grid 2x7 2.00 mm shrouded header, Xilinx 14-pin JTAG cable pinout (1/3/5/7/9/11/13 GND, 2 VREF, 4 TMS, 6 TCK, 8 TDO, 10 TDI)  ** VERIFY MPN **"),
-    "rstrap": ("4.7k", FP["R0603"], "CRCW06034K70FKEA", "BOOT_M[2:0] mode strap, DNP by default - the SoM straps its own boot mode; populate only if the ACVU13P manual says the carrier must  ** VERIFY **"),
+    "rstrap": ("4.7k", FP["R0603"], "CRCW06034K70FKEA", "BOOT_M[2:0] mode strap, DNP by default - the SoM straps its own boot mode; populate only if the ACKU15S manual says the carrier must  ** VERIFY **"),
 }
 CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation barrier, temp sensors, LEDs
     "isoC":   ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U501 XMOS SPI (SCLK/CS_N/MOSI XMOS->FPGA, MISO back) - CS_N reads deselected while the AP side is unpowered. Side A = AP (VAP_IO), side B = FPGA (V18, 1.71 V capable) (bom 21, ruled 2026-10-09)"),
@@ -1676,7 +1672,7 @@ OUT_PARTS = {  # output-routing sheet 2026-10-07 (bom 7): K4 mute only - level i
     "uln":   ("ULN2003V12", FP["SOIC16"], "ULN2003V12DR", "7-ch low-side relay driver, 1.8 V-compatible inputs, integrated flyback to COM = V33RLY; ch 1/2 = K601/K602, unused inputs to GND; SOIC-16 D (ULN2003A pinout)"),
     "ldorly": ("TPS7A2033", FP["SOT23_5"], "TPS7A2033PDBVR", "dedicated relay-coil LDO: 3.3 V fixed, 300 mA, SOT-23-5, from the 4.3 V pre-reg V4P3 (1.0 V headroom; V_DO 140 mV max at 300 mA), load 2 x 33 mA coils + flyback. EN = UNMUTE_EN (V_EN(HI) 0.9 V max vs 1.65 V min from U602; 500k internal pull-down = rail absent until DONE AND PG_ALL AND GPIO - second hardware mute path independent of U601; t_start 0.75-1.15 ms). Keeps coil steps / flyback off V33D (TMP117, ISO1640). TI SBVS338H, datasheets/TI_TPS7A20.pdf, 2026-10-10"),
     "c1u":   ("1u", FP["C0603"], "GRM188R61E105KA12D", "U603 IN / OUT capacitors (TPS7A20 min 1 uF ceramic), X5R 25 V 0603"),
-    "and3":  ("SN74LVC1G11", FP["SOT23_6"], "SN74LVC1G11DBVR", "unmute gate at V18: RLY_LINE_MUTE (FPGA GPIO) AND FPGA_DONE (J2 A1, config complete) AND PG_ALL (wired-AND rail power-good, POWER sheet) -> UNMUTE_EN (bom 7, 17(m))"),
+    "and3":  ("SN74LVC1G11", FP["SOT23_6"], "SN74LVC1G11DBVR", "unmute gate at V18: RLY_LINE_MUTE (FPGA GPIO) AND FPGA_DONE (J3 C52, config complete) AND PG_ALL (wired-AND rail power-good, POWER sheet) -> UNMUTE_EN (bom 7, 17(m))"),
     "rbo":   ("10", FP["R0603"], "TNPW060310R0BEEA", "output build-out outside the TIA loop (cable C / short isolation), Vishay TNPW0603 0.1 % 25 ppm (Susumu 0.1 % below 47 R is 50 ppm only); -0.14 dB into 600 R, matched per leg (bom 7)"),
     "rpu":   ("10k", FP["R0603"], "CRCW060310K0FKEA", "spare 10k pull-up (was the PG_A15 placeholder; the real PG_ALL pull-up R1701 lives on the POWER sheet)"),
     "c100n": ("100n", FP["C0603"], "GRM188R71C104KA01D", "gate decoupling"),
@@ -2341,7 +2337,7 @@ def main():
         chan[ch] = dict(cell=cell, core=core, iv=iv, refs=refs, cell_uuids=cell_uuids)
     fpga = Sheet("fpga.kicad_sch", "FPGA interface and clock tree", "A1")
     clkr = Sheet("clkr.kicad_sch", "R-channel clock tree: U303 root + 8 leaves -> MCLKR01..64", "A1")
-    som = Sheet("som.kicad_sch", "SoM carrier: J2-J5 / J7 / J8, 12 V feed, JTAG, boot straps", "A1")
+    som = Sheet("som.kicad_sch", "SoM carrier: J3 power/config, 12 V feed, JTAG, boot straps", "A1")
     ctrl = Sheet("ctrl.kicad_sch", "Control plane: AP isolation barrier, temperature sensors, LEDs, rail telemetry", "A1")
     out = Sheet("out.kicad_sch", "Output routing: K4 mute relays, unmute gate, XLR (both channels)", "A3")
     xlat = Sheet("xlat.kicad_sch", "Level translators: 16 x SN74AXC8T245, DATnn_1V8 / DATRnn_1V8 -> DATnn / DATRnn (3.3 V)", "A2")
@@ -2404,22 +2400,25 @@ def main():
             dx = (row_x_offsets or {}).get(unit, 0)
             sheet.place(LIB("Samtec_SEAF40"), ref, value, x + dx, y + row_pitch * (unit - 1),
                         nets, unit=unit, allow_unmapped=True, **kwargs)
-    fpga.text("FPGA interface (bom 1.3): Alinx ACVU13P module, carrier connector J6 (cascode_l[63:0] -> DAT01..64, banks 64/65, LVCMOS18;"
-              " mclk B65_L12_P GC LVCMOS18 single-ended + clk_sel B65_L16_P - moved off J1 2026-10-08 so the clock block lives on the analog edge). Pin map = Alinx/ACVU13P-Pin-Assignment-20260703.csv + cascode_pins_gen.txt."
-              " Unused connector pins are no-connect type; all GND pins tied. V18 (translator A-side reference) is SUPPLIED BY THE SoM via VCCIO_65_EX / VCCIO_69/70/71 - no carrier 1.8 V regulator.", 20, 17)
+    fpga.text("FPGA interface (bom 1.3): Alinx ACKU15S module (XCKU15P), carrier connectors J1/J2/J4 here + J3 on the SOM sheet (4x Samtec ADM6-60)."
+              " J4 = both cascode buses (col-mirrored L/R halves) -> DAT01..64/DATR01..64 + mclk_p/n diff pair (B94_L6) + PMBus (NC). J1 = control plane (banks 90/91)."
+              " J2 = coefficient flash + JTAG + SYSMON + bank 65. Pin map = datasheets/acku15s_pins.csv + acku15s_dac_top.xdc ';#' comments (authoritative)."
+              " Unused connector pins are no-connect type; all GND pins tied. ACKU15S feeds the SoM bank VCCOs FROM THE CARRIER: v18 drives VCCO_90_91_93_94 (J4),"
+              " VCCIO_64/65 (J2), VCCIO_69/70/71 (J3) plus the translator/isolator A-sides -> a carrier 1.8 V rail is REQUIRED (source LDO/part TBD - was SoM-fed on the ACVU13P).", 20, 17)
     fpga.text("Clock tree (bom 1.1, item 15 option 2): no mux chip. Y301 (49.152) / Y302 (45.1584) CCHD-957 enabled one at a time via E/D (clk_sel -> Y302, !clk_sel -> Y301 through U301 LVC1G04;"
               " clk_sel pulled low = 48k family default), outputs joined through 33 R each on the XOCLK net -> root U302 (this channel; R channel root U303 on the R sheet, same net) -> 8 leaves"
-              " U304..U311 -> 64 FF clocks MCLK01..64, 33 R at every driver pin. FPGA mclk = U312 LVC1G125 copy of XOCLK -> 100/120 divider -> J6 C30 (B65_L12_P / AW28, GC) as LVCMOS18 single-ended"
+              " U304..U311 -> 64 FF clocks MCLK01..64, 33 R at every driver pin. FPGA mclk = U312 LVC1G125 copy of XOCLK -> 100/120 divider -> J4-B4 (B94_L6_P / F11, mclk_p) as LVCMOS18 single-ended"
               " (FPGA XDC: IBUF, not IBUFDS - TODO). CCHD-957 verified (Rev N, 2026-10-08): E/D <= 0.3 Vcc -> output High Z (tri-state/standby, 200 ns disable, 1.5 mA), open/>= 0.7 Vcc -> active; pinout 1 E/D 2 GND 3 OUT 4 Vcc; footprint bfdac:Crystek_CCHD-957.", 20, 22)
-    # --- connectors (J6 = cascode_l data + cascode_r[48..63] + mclk/clk_sel + JTAG; J1 = flash + control plane only)
+    # --- connectors (J4 = cascode_l/r + mclk diff pair; J1 = control plane; J2 = cf flash + JTAG + SYSMON)
     k, v = fp_("j")
-    J, used = alinx_used()
+    J, used = som_used()
     for u in range(4):
-        fpga.place(LIB("ACVU13P_J6"), "J6", v, 60 + 90 * u, 100, conn_nets(J, used, "J6", G, GND), unit=u + 1, **k)
-        fpga.place(LIB("ACVU13P_J1"), "J1", v, 440 + 90 * u, 100, conn_nets(J, used, "J1", G, GND), unit=u + 1, **k)
-    fpga.text("J1 control-plane pins (bank 71, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N (R27, new 2026-10-07), I2S_BCLK/LRCLK/DATA (XMOS is the sole I2S source - I2S_DATA2/H28 freed 2026-11-15, no-connect),"
-              " RLY_LINE_MUTE (-> OUT sheet unmute gate), LED_DBG0..3. relay_hp_mute (T28) / relay_hp_rails (N26) REMOVED from RTL 2026-11-14 (no headphone stage - no-connect), relay_level[1:0] struck 2026-10-07"
-              " (level is digital, bom 7) - pins reused: P26->SPI_AP_IRQ_N, N29->PG_ALL. DATR01..64 = cascode_r (bank 67 on J5 + bank 66 on J6; moved off J1 bank 69 2026-10-08 so both channels' drive leaves the SoM on the analog edge) -> the 64 R-channel CELL sheets (root). JTAG_* and SOM_PG from J6 -> SOM sheet.", 20, 27)
+        fpga.place(LIB("ACKU15S_J4"), "J4", v, 60 + 90 * u, 100, conn_nets(J, used, "J4", G, GND), unit=u + 1, **k)
+        fpga.place(LIB("ACKU15S_J1"), "J1", v, 440 + 90 * u, 100, conn_nets(J, used, "J1", G, GND), unit=u + 1, **k)
+        fpga.place(LIB("ACKU15S_J2"), "J2", v, 820 + 90 * u, 100, conn_nets(J, used, "J2", G, GND), unit=u + 1, **k)
+    fpga.text("J1 control-plane pins (banks 90/91, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N, I2S_BCLK/LRCLK/DATA (XMOS is the sole I2S source),"
+              " RLY_LINE_MUTE (-> OUT sheet unmute gate), PG_ALL, LED_DBG0..3, TEST_SELECT_N/STEP_N/LED, CLK_SEL (J1-A1).  No-connect by ruling: mclk_n (J4 pair reserved), relay_level[0:1] (driven 0 - struck bom-7 level relays), led_status (on-module LED1)."
+              " DAT01..64/DATR01..64 = both cascode buses on J4 banks 69/70/71/93/94 (col-mirrored so each channel's drive leaves the SoM on its own half of the analog-edge connector) -> the 64 L/R CELL sheets (root). MCLK_FPGA on J4-B4/B94_L6_P. JTAG_* from J2 -> SOM sheet header.", 20, 27)
     # --- oscillators, enable mux, FPGA copy
     kr_, vr_ = fp_("rser")
     kc_, vc_ = fp_("cdec")
@@ -2504,13 +2503,13 @@ def main():
     tp(clkr, "TP345", 280, 575, GND)
     tp(clkr, "TP346", 310, 575, GND)
 
-    # --- coefficient flash: four Macronix 2-Gb sites on one x1-SPI bus, bank 70
+    # --- coefficient flash: four Macronix 2-Gb sites on one x1-SPI bus, J2 bank 65
     fpga.text("Coefficient flash (bom 18b): %d x MX66UM2G45GXRI00 2 Gb 1.8 V x1 SPI NOR populated (U320-U323 = 8 Gb; 1-Gb same-land-pattern alternative is four chips / reduced library), "
               "x1 FAST READ4B 0Ch at 100 MHz with 8 dummy clocks; 2-Gb mode = 88 filters at 10M taps, 18-bit mirrored; "
               "1-Gb mode = 44 complete filters under 128-MiB per-device sector boundaries. One bus: CF_CLK, CF_DQ0..3 shared, four chip selects CF_CS0..3. "
-              "J1 bank 70 (V18): CLK J35, CS0 J36, DQ0 H36, DQ1 G36, DQ2 H34, DQ3 G34, CS1 H37, CS2 H38, CS3 G37 - matches acku15s_dac_top.xdc s11b. "
+              "J2 bank 65 (V18): SCK A13, CS0 A14, CS1 A16, CS2 A17, CS3 A19, DQ0 A20, DQ1 A22, DQ2 A23, DQ3 A25 - matches acku15s_dac_top.xdc s11b. "
               "x1 at 100 MHz target, forwarded SCK on user IO (not STARTUPE3). 10k pull-ups on each CS# and on unused x8 SIO2/SIO3; RESET# strapped to V18. "
-              "Layout: place next to J1 A19-A26/B19-B29 on the carrier top side (NOT under the SoM); all CF_* <= 75 mm pad-to-ball, "
+              "Layout: place next to J2 A13-A25 on the carrier top side (NOT under the SoM); all CF_* <= 75 mm pad-to-ball, "
               "CLK/DQ daisy-chained U320->U323 with <= 10 mm stubs, 33R series on CF_CLK at the connector. Macronix 24-ball 5x5 ball map + land pattern verified against the 1-Gb/2-Gb datasheets." % CFLASH_POPULATED, 20, 470)
     kq, vq = fp_("flash")
     kp18, vp18 = fp_("rpu18")
@@ -2532,33 +2531,32 @@ def main():
     # Shared-bus pull-ups (unused x8 SIO2/SIO3 in the selected x1 mode) and CLK series resistor.
     fpga.place("Device:R", "R324", vp18, 50, 530, {"1": G("v18"), "2": ("L", "CF_DQ2")}, **kp18)
     fpga.place("Device:R", "R325", vp18, 50, 545, {"1": G("v18"), "2": ("L", "CF_DQ3")}, **kp18)
-    fpga.place("Device:R", "R326", vr33, 50, 560, {"1": ("L", "CF_CLK_J1"), "2": ("L", "CF_CLK")}, **kr33)
+    fpga.place("Device:R", "R326", vr33, 50, 560, {"1": ("L", "CF_CLK_J2"), "2": ("L", "CF_CLK")}, **kr33)
 
     # --- FPGA test points: MCLK_FPGA + representative L-tree MCLK leaves through 1k stubs (rule b);
     # CLK_SEL + GND on hook pads.  Column sits in the free x>795 strip at the right edge.
     fpga.text("TEST POINTS (rule b): MCLK_FPGA / MCLK leaves through 1k -> 1.0 mm pad; CLK_SEL + GND on hook pads.", 620, 580)
-    tp_stub(fpga, "TP300", "R327", 790, 60, G("mclk_fpga"), "TP_MCLK_FPGA", pw_)
-    tp_stub(fpga, "TP301", "R328", 790, 90, G("mclk01"), "TP_MCLK01", pw_)
-    tp_stub(fpga, "TP302", "R329", 790, 120, G("mclk64"), "TP_MCLK64", pw_)
-    tp(fpga, "TP303", 812, 150, G("clk_sel"))
-    tp(fpga, "TP304", 812, 180, GND)
+    tp_stub(fpga, "TP300", "R327", 1200, 60, G("mclk_fpga"), "TP_MCLK_FPGA", pw_)
+    tp_stub(fpga, "TP301", "R328", 1200, 90, G("mclk01"), "TP_MCLK01", pw_)
+    tp_stub(fpga, "TP302", "R329", 1200, 120, G("mclk64"), "TP_MCLK64", pw_)
+    tp(fpga, "TP303", 1230, 150, G("clk_sel"))
+    tp(fpga, "TP304", 1230, 180, GND)
 
     # ---------------- SoM carrier sheet: remaining connectors, 12 V feed, JTAG, boot straps
     def sp_(key):
         v, fp, mpn, ds = SOM_PARTS[key]
         return dict(footprint=fp, mpn=mpn, descr=ds), v
-    som.text("Alinx ACVU13P SoM carrier (bom item 16): eight Samtec ADM6-60-01.5-L-4-2-A-TR (240-pin, 4 x 60, 0.635 mm) - J1/J6 on the FPGA sheet, the other six here."
-             " J3/J4/J7/J8 carry only MGT quads (unused - every signal pin no-connect, all GND pins tied). J2 = +12 V module feed (52 pins) + SelectMAP (unused) + BOOT_M straps."
-             " J5 = bank 67 (cascode_r[0..31] -> DATRnn), VCCIO_66/67/68 (tied to V18 like every VCCIO: an unpowered bank is not allowed), SYSMON VP/VN to GND."
-             " Connector X/Y positions and the Samtec footprint are the layout blocker (Alinx drawing requested).", 20, 17)
+    som.text("Alinx ACKU15S SoM carrier (bom item 16): four Samtec ADM6-60-01.5-L-4-2-A-TR (240-pin, 4 x 60, 0.635 mm) - J1/J2/J4 on the FPGA sheet, J3 (power + config) here."
+             " J3 = +12 V feed (8 pins) + SelectMAP (unused; DONE -> FPGA_DONE) + BOOT_M0..2 straps + VCCAUX_PG -> SOM_PG + VCCIO_69/70/71 <- carrier v18. All MGT quads no-connect; GND tied."
+             " SoM is 80 x 80 mm; connector X/Y datum is the layout blocker (Alinx ACKU15S DXF/STEP needed - placeholder square in som_seed.kicad_pcb).", 20, 17)
     k, v = sp_("j")
-    for n, (c, x0, y0) in enumerate((("J2", 60, 110), ("J5", 440, 110), ("J3", 60, 230), ("J4", 440, 230), ("J7", 60, 350), ("J8", 440, 350))):
-        for u in range(4):
-            som.place(LIB("ACVU13P_%s" % c), c, v, x0 + 90 * u, y0, conn_nets(J, used, c, G, GND), unit=u + 1, **k)
+    for u in range(4):
+        som.place(LIB("ACKU15S_J3"), "J3", v, 60 + 90 * u, 110, conn_nets(J, used, "J3", G, GND), unit=u + 1, **k)
     # +12 V feed: planned on Conn1/J506 SEAF contacts; bulk + ceramic at J2.
     som.text("+12 V SoM feed (bom 17(d): 12 V switcher + heavy filter -> SoM only; planning figure 15 A / 180 W, user 2026-10-10)."
              " Board-to-board entry is Conn1/J506 SEAF: 30 V12SOM contacts (C2:C11, D2:D11, E2:E11) with a GND perimeter; separate J507/J508 terminals are removed."
-             " 2 x 220 uF polymer + 4 x 10 uF X7R kept here at J2"
+             " SoM takeoff = J3 x8 contacts (A1/A2/B1/B2/C1/C2/D1/D2): ~20 A at the ADM6 rating vs ~5-8 A for a KU15P-class load - 8 pins suffice."
+             " 2 x 220 uF polymer + 4 x 10 uF X7R kept here at J3"
              " (the SoM connector end of the feed).", 20, 455)
     k, v = sp_("cpoly")
     for i in range(2):
@@ -2567,20 +2565,20 @@ def main():
     for i in range(4):
         som.place("Device:C", "C80%d" % (3 + i), v, 120 + 12 * i, 480, {"1": G("v12som"), "2": GND}, **k)
     # JTAG header (Xilinx 14-pin 2 mm): odd pins GND, 2 VREF (bank-0 VCCO = 1.8 V on the SoM), 4 TMS 6 TCK 8 TDO 10 TDI, 12/14 NC
-    som.text("JTAG: FPGA_TCK/TMS/TDI/TDO from J6 D17-D20 to a Xilinx 14-pin 2 mm header. VREF = V18 (UltraScale+ bank 0 is 1.8 V)."
-             " VERIFY: the SoM may already carry its own JTAG header (Alinx JTAG.csv) - keep both, cable goes to one.", 200, 455)
+    som.text("JTAG: FPGA_TCK/TMS/TDI/TDO from J2 C2/C1/B1/B2 to a Xilinx 14-pin 2 mm header. VREF = V18 (carrier-fed 1.8 V)."
+             " VERIFY: the SoM may already carry its own JTAG header - keep both, cable goes to one.", 200, 455)
     k, v = sp_("jtag")
     som.place("Connector_Generic:Conn_02x07_Odd_Even", "J802", v, 230, 485,
               {"Pin_1": GND, "Pin_3": GND, "Pin_5": GND, "Pin_7": GND, "Pin_9": GND, "Pin_11": GND, "Pin_13": GND,
                "Pin_2": G("v18"), "Pin_4": G("JTAG_TMS"), "Pin_6": G("JTAG_TCK"), "Pin_8": G("JTAG_TDO"), "Pin_10": G("JTAG_TDI"),
                "Pin_12": ("NC", ""), "Pin_14": ("NC", "")}, **k)
     # BOOT_M[2:0] straps, DNP: master SPI = 001 (M0 high, M1/M2 low)
-    som.text("BOOT_M[2:0] (J2 B1/B2/B4): DNP 4.7k straps for master-SPI 001 (M0 -> V18, M1/M2 -> GND). The SoM boots its own QSPI; populate only if the manual requires carrier straps  ** VERIFY **", 330, 455)
+    som.text("BOOT_M[2:0] (J3 D52/D53/D55): DNP 4.7k straps for master-SPI 001 (M0 -> V18, M1/M2 -> GND). The SoM boots its own QSPI; populate only if the manual requires carrier straps  ** VERIFY **", 330, 455)
     k, v = sp_("rstrap")
     som.place("Device:R", "R801", v, 350, 480, {"1": G("BOOT_M0"), "2": G("v18")}, dnp=True, **k)
     som.place("Device:R", "R802", v, 365, 480, {"1": G("BOOT_M1"), "2": GND}, dnp=True, **k)
     som.place("Device:R", "R803", v, 380, 480, {"1": G("BOOT_M2"), "2": GND}, dnp=True, **k)
-    som.text("SOM_PG (J6 D34, VCCAUX_PG): module power-good -> CTRL sheet LED / AP status. All PWR_FLAGs live in the rails table on the REFS sheet (V18, V12SOM, V33D, ...).", 330, 500)
+    som.text("SOM_PG (J3 A5, VCCAUX_PG): module power-good -> CTRL sheet LED / AP status. All PWR_FLAGs live in the rails table on the REFS sheet (V18, V12SOM, V33D, ...).", 330, 500)
 
     # --- SoM test points (rule c): rails / DONE / JTAG / boot straps on hook pads, GND beside.  JTAG also has
     # J802, but pads let a scope hit the lines without a cable.
@@ -2683,7 +2681,7 @@ def main():
         ctrl.place("Transistor_BJT:MMBT3904", "Q50%d" % (1 + i), vq, x0, 95, {"B": ("L", "QB%d" % i), "E": GND, "C": ("L", "LK%d" % i)}, **kq)
         ctrl.place("Device:LED", "D50%d" % (1 + i), vd, x0, 80, {"K": ("L", "LK%d" % i), "A": ("L", "LA%d" % i)}, **kd)
         ctrl.place("Device:R", "R52%d" % i, vr, x0, 68, {"1": G("V33D"), "2": ("L", "LA%d" % i)}, **kr)
-    ctrl.text("RLY_LINE_MUTE (J1 R28) terminates on the OUT sheet (bom 7): U602 AND gate with FPGA_DONE and PG_ALL -> UNMUTE_EN -> U601 ULN2003V12 inputs AND U603 TPS7A2033 EN (V33RLY coil rail). relay_level[1:0] struck (digital level); pins reused for SPI_AP_IRQ_N/PG_ALL. relay_hp_mute/hp_rails removed 2026-11-14 (no headphone stage).", 230, 130)
+    ctrl.text("RLY_LINE_MUTE (J1-A13 / E4) terminates on the OUT sheet (bom 7): U602 AND gate with FPGA_DONE and PG_ALL -> UNMUTE_EN -> U601 ULN2003V12 inputs AND U603 TPS7A2033 EN (V33RLY coil rail). relay_level[1:0] struck (digital level); pins reused for SPI_AP_IRQ_N/PG_ALL. relay_hp_mute/hp_rails removed 2026-11-14 (no headphone stage).", 230, 130)
 
     # ---------------- V33D board rail + dual UCD90120A rail telemetry (bom 17(m2)/(m3); two devices with
     # distinct resistor-strapped PMBus addresses, user ruling 2026-10-12).  TELEMETRY ONLY: the UCDs are not
@@ -3142,7 +3140,7 @@ def main():
              " Level select 2/4/6 Vrms is DIGITAL (LEVEL register caps VOLUME; SNR 132.8 / 129.3 / 123.3 dB0 sim) - K1/K2 and the R0 tap string are struck: with the V-stage gone (ruling 2) an analog"
              " tap would be a load-dependent divider (-1.7 dB at 600 R) or a switched R_f that moves the 0 V output DC and adds up to +3.1 W held. Build-out 10 R per leg outside the loop (default, revisit).", 20, 17)
     out.text("K4 = Omron G6K-2F-Y DC3 (2 Form C, single-side stable, 3 V / 33 mA / 100 mW held per channel; DC12 -> DC3 2026-10-10, 12 V is SoM-only): COM = XLR pin, NO = I/V output via 10 R, NC = GND. Coil OFF = XLR grounded and amp disconnected -"
-             " muted with no power, no FPGA, no pulse; the I/V output sits at 0 V DC (R_off null) so unmute is thump-free. Unmute requires RLY_LINE_MUTE (GPIO) AND FPGA_DONE (J2 A1 VUP_SELECTMAP_DONE,"
+             " muted with no power, no FPGA, no pulse; the I/V output sits at 0 V DC (R_off null) so unmute is thump-free. Unmute requires RLY_LINE_MUTE (GPIO) AND FPGA_DONE (J3 C52 SELECTMAP_DONE,"
              " 1.8 V bank 0) AND PG_ALL (wired-AND power-good: every LDO PG + TPS3890, pull-up to V18 on the POWER sheet - bom 17(m)). U602 SN74LVC1G11 at V18 (1.65-5.5 V part)"
              " -> U601 ULN2003V12 (1.8 V inputs, flyback COM = V33RLY; one package serves both channels, inputs 3-7 grounded). Coils on V33RLY = U603 TPS7A2033 from the 4.3 V pre-reg, EN = UNMUTE_EN:"
              " the coil rail does not exist until DONE AND PG_ALL AND GPIO (second mute path, survives a shorted U601 output) and its 33 mA steps / flyback never touch V33D (bom 7, 17(e)).", 20, 24)
@@ -3193,7 +3191,7 @@ def main():
     tp(out, "TP611", 315, 40 + 24 * 10, GND)
 
     # ---------------- level-translator sheet (bom 1.2 U440-U455): 8 octal AXC8T245 per channel, cells 8g+1..8g+8 on device g
-    xlat.text("SN74AXC8T245 x16 (bom 1.2, VQFN RHL ruled 2026-10-10): FPGA LVCMOS18 data from J6 (DATnn_1V8 = cascode_l) and J5/J6 (DATRnn_1V8 = cascode_r) -> 3.3 V DATnn / DATRnn"
+    xlat.text("SN74AXC8T245 x16 (bom 1.2, VQFN RHL ruled 2026-10-10): FPGA LVCMOS18 data from J4 (DATnn_1V8 = cascode_l, DATRnn_1V8 = cascode_r) -> 3.3 V DATnn / DATRnn"
               " -> the 128 CELL sheets (LVC1G74 D). DIR1/DIR2 tied to VCCA (A->B), /OE to GND, PAD to GND. A side on V18 (SoM VCCIO, not generated here), B side on V33FF_L / V33FF_R (per-channel ADP7158, this sheet)."
               " Layout (bom 1.2): place at the SoM connectors on the FPGA side; FPGA pin -> A input +-2.5 mm within a group and across all 16; B output -> LVC1G74 D per the cell-array rule.", 20, 17)
     kx, vx = fp_("axc8")
@@ -3971,7 +3969,7 @@ def main():
 
     # ---------------- root
     root.text("BFDAC analog board, locked plant (bfdac_cosim112.cir, 2026-09-24). Two identical channels: 64 current cells each (LVC1G74 + "
-              "DMMT5551 steering) + CORE + P5 TIA + REFS. L: DATnn (J6 -> XLAT sheet AXC8T245) / MCLKnn (FPGA sheet, U302 tree). R: DATRnn (J5/J6 -> XLAT) / MCLKRnn (CLKR sheet, U303 tree)."
+              "DMMT5551 steering) + CORE + P5 TIA + REFS. L: DATnn (J4 -> XLAT sheet AXC8T245) / MCLKnn (FPGA sheet, U302 tree). R: DATRnn (J4 -> XLAT) / MCLKRnn (CLKR sheet, U303 tree)."
               " Channel-local nets carry _L/_R; rails, REF5/REF5F and GND are shared. R designators = L + offset (cells 2xxx, refs 7xx, tails Q4xx, core/IV +60).", 20, 20)
     page = 2
     for ch, xoff, dat, mclk in (("L", 20, "DAT", "MCLK"), ("R", 440, "DATR", "MCLKR")):

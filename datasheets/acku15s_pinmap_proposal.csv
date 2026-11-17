@@ -135,7 +135,6 @@ ext_rst_n,F2,J1,B11,B90_L3_N
 fpga_irq_n,D6,J1,A12,B90_L5_P
 i2s_bclk,B5,J1,A2,B90_L10_P
 i2s_data,C5,J1,A4,B90_L8_P
-i2s_data2,B2,J1,A6,B90_L9_N
 i2s_lrclk,C4,J1,A3,B90_L8_N
 led_debug[0],C3,J1,B6,B90_L7_N
 led_status,A4,J1,B4,B90_L11_P
