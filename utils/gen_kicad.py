@@ -108,22 +108,6 @@ def _box_unit(name, unit, left, right, width=None):
         body += _pin(kind, w / 2 + 2.54, h / 2 - 2.54 * (i + 1), 180, nm, num)
     return '\n\t(symbol "%s_%d_1"%s\n\t)' % (name, unit, body)
 
-def _seaf40_symbol_units():
-    """Six 40-contact schematic units, one per physical SEAF row A-F."""
-    base, pins = get_symbol("Connector_Generic:Conn_02x20_Odd_Even")
-    graphics = next(c for c in base if isinstance(c, list) and c[0] == "symbol"
-                    and c[1].strip('"') == "Conn_02x20_Odd_Even_1_1")
-    graphics_only = [c for c in graphics[2:] if not (isinstance(c, list) and c and c[0] == "pin")]
-    units = []
-    for row_idx, row_name in enumerate("ABCDEF"):
-        body = "".join("\n\t\t" + dump(c, 2) for c in graphics_only)
-        for pin in pins:
-            col = int(pin["num"])
-            body += _pin("passive", pin["x"], pin["y"], int(pin["ang"]),
-                         "%s%d" % (row_name, col), str(row_idx * 40 + col))
-        units.append('\n\t(symbol "%s_%d_1"%s\n\t)' % ("Samtec_SEAF40", row_idx + 1, body))
-    return "".join(units)
-
 # --- Alinx ACKU15S SoM carrier side: 4x Samtec ADM6-60-01.5-L-4-2-A-TR (240 pins each, 4 rows x 60)
 # 2026-11-15: migrated from the 8-connector ACVU13P.  Pin tables come from the ACKU15S V1.0 manual;
 # the port->connector map comes from acku15s_dac_top.xdc ';# <sig> <Jx>-<pin>' comments (authoritative).
@@ -279,10 +263,22 @@ def _sym(name, units_body, footprint, datasheet, descr, ref="Q"):
             + prop("Footprint", footprint, True) + prop("Datasheet", datasheet, True)
             + prop("Description", descr, True) + units_body + "\n\t(embedded_fonts no)\n)")
 
-def _seaf40_symbol():
-    return _sym("Samtec_SEAF40", _seaf40_symbol_units(), FP["SEAF40"],
-                "datasheets/seaf-xx-xx.x-xx-xx-x-a-xx-footprint.pdf",
-                "Samtec SEAF-40, 40 contacts per row x 6 rows; 240 passive pins, A1..F40; schematic pin IDs 1..240 correspond row-major to the local footprint pads",
+def _pcie_symbol(size):
+    """PCIe card-edge socket symbol; units = each side split into <=42-pin two-column boxes
+    (x16: A1-42, A43-82, B1-42, B43-82; x4: A1-32, B1-32).  Each unit halves its pins
+    left/right so a 42-pin unit stays ~56 mm tall (fits the 60 mm unit pitch)."""
+    n = PCIE_PINS[size]
+    name = "PCIe_%s" % size
+    units, unum = [], 0
+    for side in "AB":
+        for lo in range(1, n + 1, 42):
+            hi = min(lo + 42, n + 1)
+            col = [("%s%d" % (side, k), "%s%d" % (side, k), "passive") for k in range(lo, hi)]
+            half = (len(col) + 1) // 2
+            unum += 1
+            units.append(_box_unit(name, unum, col[:half], col[half:], width=45.72))
+    return _sym(name, "".join(units), FP["PCIE" + size.upper()], "https://www.pcisig.com",
+                "PCIe %s card-edge socket, %d positions x 2 sides (pins A1..A%d / B1..B%d); pre-reg<->carrier board link, riser = user PCB (replaces SEAF-40/SEAR-40, 2026-11-16)" % (size, n, n, n),
                 ref="J")
 
 def _sodimm200_symbol_units():
@@ -570,7 +566,8 @@ def write_local_lib():
     ucd = _box_unit("UCD90120A", 1, ucd_l, ucd_r, width=25.4) + _box_unit("UCD90120A", 2, ucd2, ucd2r, width=25.4)
     out = ('(kicad_symbol_lib (version %s) (generator "gen_kicad") (generator_version "9.0")' % VERSION
            + jsyms
-           + _seaf40_symbol()
+           + _pcie_symbol("x16")
+           + _pcie_symbol("x4")
            + _sodimm200_symbol()
            + _sym("MAX22445", max22445, FP["ADI_WSOIC16"], "https://www.analog.com/media/en/technical-documentation/data-sheets/max22444-max22446.pdf",
                   "ADI MAX22445 quad digital isolator 3/1, 200 Mbps (50 Mbps characterised at VDD 1.8 V), 1.71-5.5 V per side, W SOIC-16 (bom 21, ruled 2026-10-09); pin map verified 2026-10-10", ref="U")
@@ -671,12 +668,13 @@ def _sexpr_end(text, start):
                 return i + 1
     raise ValueError("unterminated KiCad S-expression")
 
-def write_seaf40_symbol_only():
-    """Insert/update only the SEAF symbol, preserving other local library edits."""
+def write_pcie_symbol_only():
+    """Insert/update only the PCIe connector symbols, preserving other local library edits."""
     path = os.path.join(OUT, LOCALLIB + ".kicad_sym")
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    for name, symbol in (("Samtec_SEAF40", _seaf40_symbol()),
+    for name, symbol in (("PCIe_x16", _pcie_symbol("x16")),
+                         ("PCIe_x4", _pcie_symbol("x4")),
                          ("VARSOM_SODIMM200", _sodimm200_symbol())):
         marker = '(symbol "%s"' % name
         start = text.find(marker)
@@ -1101,113 +1099,122 @@ def get_symbol(libid):
 def U():
     return str(uuid.uuid4())
 
-SEAF40_NAME = "Samtec_SEAF-40-05.0-L-06-2-A_40x6_P1.27mm"
+# --- Pre-reg <-> carrier board-to-board links: PCIe card-edge sockets + user riser PCBs.
+# 2026-11-16 (user ruling): the Samtec SEAR-40 riser/interposer is not purchasable, so the
+# three SEAF-40 sites become standard PCIe edge sockets; the riser is a user-made PCB with
+# card-edge gold fingers at both ends plugging vertically into sockets on the two boards.
+#   Conn1/J506 <-> J7705 = PCIe x16 (164 contacts: sides A1-A82 / B1-B82)
+#   Conn2/J603 <-> J7703 = PCIe x4  (64 contacts:  sides A1-A32 / B1-B32)
+#   Conn3/J604 <-> J7704 = PCIe x4  (same)
+PCIE_PINS = {"x4": 32, "x16": 82}          # contact positions per side
+PCIE_UNITS = {"x4": 2, "x16": 4}           # schematic units (each side split at 42 pins)
+PCIE_FP = {"x4": "PCIe_x4_CardEdge_TBD", "x16": "PCIe_x16_CardEdge_TBD"}
 
-def seaf_pad_number(row, col):
-    if row not in "ABCDEF" or not 1 <= col <= 40:
-        raise ValueError("invalid SEAF row/column: %r/%r" % (row, col))
-    return (ord(row) - ord("A")) * 40 + col
-
-def seaf_conn1_map():
-    """Conn1 pad number -> net name; one source for the generated schematic and checks."""
+def pcie_conn1_map():
+    """Conn1/J506 (+ pre-reg mate J7705) PCIe x16 pin -> net name.
+    Side A (A1..A82) = carrier power: V12SOM bank, GND returns, V33_IF_IN + guard.
+    Side B (B1..B82) = AP domain: the signal row (odd = signal, even = GND_AP, same order
+    as the old SEAF row-A map), VAP_IO, and the GND_AP return field."""
     nets = {}
-    row_a = [
+    row_b = [
         "XMOS_SPI_SCLK", "GND_AP", "XMOS_SPI_CS_N", "GND_AP",
         "XMOS_SPI_MOSI", "GND_AP", "XMOS_SPI_MISO", "GND_AP",
         "AP_I2S_BCLK", "GND_AP", "AP_I2S_LRCLK", "GND_AP",
         "AP_I2S_DATA", "GND_AP", "AP_IRQ_N", "GND_AP",
         "AP_RST_N", "GND_AP", "AP_SDA", "GND_AP",
         "AP_SCL", "GND_AP", "SOM_PG", "GND_AP",
-        "VAP_IO", "GND_AP", "GND_AP", "GND_AP",  # pad 27 was AP_I2S_DATA2 (second host source; removed 2026-11-15)
+        "VAP_IO", "GND_AP", "GND_AP", "GND_AP",   # B27 spare (was AP_I2S_DATA2, removed 2026-11-15)
         "AP_SPI_SCLK", "GND_AP", "AP_SPI_CS_N", "GND_AP",
         "AP_SPI_MOSI", "GND_AP", "AP_SPI_MISO", "GND_AP",
         "AP_SPI_IRQ_N", "GND_AP", "GND_AP", "GND_AP",
     ]
-    for col, net in enumerate(row_a, start=1):
-        nets[seaf_pad_number("A", col)] = net
-
-    for col in range(1, 13):
-        nets[seaf_pad_number("B", col)] = "GND"
-        nets[seaf_pad_number("F", col)] = "GND"
-    for row in "CDE":
-        nets[seaf_pad_number(row, 1)] = "GND"
-        nets[seaf_pad_number(row, 12)] = "GND"
-        for col in range(2, 12):
-            nets[seaf_pad_number(row, col)] = "V12SOM"
-    for col in range(13, 29):
-        nets[seaf_pad_number("B", col)] = "GND_AP"
-    for col in range(33, 41):
-        nets[seaf_pad_number("B", col)] = "GND_AP"
-    for col in (34, 36, 38, 40):
-        nets[seaf_pad_number("B", col)] = "VAP_IO"
-
-    for row in "CDE":
-        for col in list(range(13, 29)) + list(range(33, 41)):
-            nets[seaf_pad_number(row, col)] = "GND_AP"
-    for col in range(13, 41):
-        nets[seaf_pad_number("F", col)] = "GND_AP"
-
-    # Carrier-side LDO input and its separate GND guard; this is not the AP rail.
-    for row in ("C", "D"):
-        nets[seaf_pad_number(row, 29)] = "GND"
-        nets[seaf_pad_number(row, 30)] = "V33_IF_IN"
-        nets[seaf_pad_number(row, 31)] = "V33_IF_IN"
-        nets[seaf_pad_number(row, 32)] = "GND"
-    for row in ("B", "E"):
-        for col in range(29, 33):
-            nets[seaf_pad_number(row, col)] = "GND"
-    for col in range(29, 33):
-        nets[seaf_pad_number("F", col)] = "GND_AP"
-
-    if set(nets) != set(range(1, 241)):
-        raise AssertionError("Conn1 SEAF map must assign all 240 contacts")
+    for col, net in enumerate(row_b, start=1):
+        nets["B%d" % col] = net
+    for col in range(41, 45):
+        nets["B%d" % col] = "GND_AP"
+    for col in range(45, 49):
+        nets["B%d" % col] = "VAP_IO"          # 4 contacts, AP-side supply (was 5 on SEAF)
+    for col in range(49, 83):
+        nets["B%d" % col] = "GND_AP"
+    for col in range(1, 21):
+        nets["A%d" % col] = "V12SOM"          # 20 contacts ~22 A at 1.1 A/finger vs ~15 A plan
+    for col in range(21, 57):
+        nets["A%d" % col] = "GND"             # V12SOM return + shield beside every pin
+    for col in range(57, 61):
+        nets["A%d" % col] = "V33_IF_IN"       # carrier-side LDO input - NOT the AP rail
+    for col in range(61, 83):
+        nets["A%d" % col] = "GND"
+    assert len(nets) == 2 * PCIE_PINS["x16"]
     return nets
 
-def write_seaf40_footprint():
-    """Write the SEAF-40 6-row SMT land pattern from the supplied Samtec PDF.
+def pcie_conn23(*branches):
+    """Conn2/J603 + Conn3/J604 PCIe x4 pin -> net name.
+    Side B = shared rails P16A/N16A/V8P3 (6 pins each) + GND returns.
+    Side A = the V4P3 branch rails (6 pins each, independent TPS7A4501 outputs - never tied)
+    + GND; unused branch slots fill with GND."""
+    nets = {}
+    col = 1
+    for rail in ("P16A", "N16A", "V8P3"):
+        for _ in range(6):
+            nets["B%d" % col] = rail
+            col += 1
+        for _ in range(4):
+            nets["B%d" % col] = "GND"
+            col += 1
+    while col <= 32:
+        nets["B%d" % col] = "GND"
+        col += 1
+    col = 1
+    for rail in branches:
+        for _ in range(6):
+            nets["A%d" % col] = rail
+            col += 1
+        for _ in range(4):
+            nets["A%d" % col] = "GND"
+            col += 1
+    while col <= 32:
+        nets["A%d" % col] = "GND"
+        col += 1
+    return nets
 
-    KiCad pad numbers are row-major: 1..40=A1..A40, 41..80=B1..B40, etc.
-    """
-    pitch = 1.27
-    pad_dia = 0.64
-    x_span = 49.53          # Table 1, 40 positions
-    hole_span = 54.3814     # Table 1, dimension B
-    row_span = 6.35         # Table 2, six-row option, dimension D
-    body_height = 8.2042    # Table 2, six-row option, dimension C
-    hole_y_offset = 3.048   # Table 2, dimension E
-    body_x = x_span / 2 + 3.9624  # Figure 1, .156 in reference extension
-    body_y = body_height / 2
-    name = SEAF40_NAME
-    L = [
-        '(footprint "%s" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")' % name,
-        '  (descr "Samtec SEAF-40 6-row SMT array, 1.27 mm pitch; 40 x 6 pads; land pattern per supplied SEAF footprint PDF, Fig. 1/Table 1/Table 2")',
-        '  (tags "Samtec SEAF SEARAY 40x6 1.27mm 240-contact")',
-        '  (attr smd)',
-        '  (property "Reference" "REF**" (at 0 -6.0 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-        '  (property "Value" "SEAF-40-05.0-L-06-2-A-K-TR" (at 0 6.0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-        '  (property "Datasheet" "datasheets/seaf-xx-xx.x-xx-xx-x-a-xx-footprint.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-        '  (property "Description" "Recommended SEAF-40 6-row land pattern; pad 1 is A1 at the right end of row A; pad numbering proceeds left along each row, then upward through rows B-F" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
-        '  (fp_rect (start %.4f %.4f) (end %.4f %.4f) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % (-body_x, -body_y, body_x, body_y, U()),
-        '  (fp_rect (start %.4f %.4f) (end %.4f %.4f) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % (-body_x - 0.25, -body_y - 0.25, body_x + 0.25, body_y + 0.25, U()),
-        '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U(),
-    ]
-    # A1 is the lower-right contact in the datasheet's component-side view.
-    for row in range(6):
-        y = row_span / 2 - row * pitch
-        for col in range(40):
-            x = x_span / 2 - col * pitch
-            number = row * 40 + col + 1
-            L.append('  (pad "%d" smd circle (at %.4f %.4f) (size %.3f %.3f) (layers "F.Cu" "F.Paste" "F.Mask") (solder_mask_margin 0.05) (uuid "%s"))'
-                     % (number, x, y, pad_dia, pad_dia, U()))
-    # Samtec Table 1 B hole spacing; the second alignment hole is offset by E.
-    for x, y in ((-hole_span / 2, 0), (hole_span / 2, hole_y_offset)):
-        L.append('  (pad "" np_thru_hole circle (at %.4f %.4f) (size 1.27 1.27) (drill 1.27) (layers "*.Cu" "*.Mask") (uuid "%s"))'
-                 % (x, y, U()))
-    L.append(')')
-    out_dir = os.path.join(OUT, LOCALLIB + ".pretty")
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, name + ".kicad_mod"), "w", encoding="utf-8") as f:
-        f.write("\n".join(L) + "\n")
+def write_pcie_footprints():
+    """Provisional PCIe card-edge socket land patterns (PROVISIONAL - verify against the
+    chosen vendor drawing before layout; part selection is open).  Per side, tails stagger
+    into two rows at 2.0 mm effective pitch (odd positions inner row, even outer) - the
+    usual staggered-tail arrangement on vertical PCIe slots."""
+    for size in ("x4", "x16"):
+        n = PCIE_PINS[size]
+        name = PCIE_FP[size]
+        span = (n - 1) * 1.0
+        body_x = span / 2 + 4.5      # slot overhang + latch end (TBD vs vendor)
+        body_y = 4.6
+        L = [
+            '(footprint "%s" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")' % name,
+            '  (descr "PCIe %s card-edge socket, %d x 2 contacts - PROVISIONAL parametric THT land (2 staggered rows per side, 2.0 mm effective pitch); VERIFY against the chosen vendor part")' % (size, n),
+            '  (tags "PCIe card edge socket %s TBD")' % size,
+            '  (attr through_hole)',
+            '  (property "Reference" "REF**" (at 0 -8.0 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
+            '  (property "Value" "%s" (at 0 8.0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % (name, U()),
+            '  (property "Datasheet" "" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
+            '  (property "Description" "PCIe %s edge socket; pads A1..A%d / B1..B%d; PROVISIONAL land pattern pending vendor MPN" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % (size, n, n, U()),
+            '  (fp_rect (start %.3f %.3f) (end %.3f %.3f) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % (-body_x, -body_y, body_x, body_y, U()),
+            '  (fp_rect (start %.3f %.3f) (end %.3f %.3f) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % (-body_x - 0.5, -body_y - 0.5, body_x + 0.5, body_y + 0.5, U()),
+            '  (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U(),
+        ]
+        for side, sgn in (("A", -1), ("B", 1)):
+            for i in range(1, n + 1):
+                row = 0 if i % 2 else 1
+                x = -span / 2 + (i - 1) * 1.0
+                y = sgn * (1.0 + row * 2.0)
+                L.append('  (pad "%s%d" thru_hole rect (at %.3f %.3f) (size 0.9 1.9) (drill 0.55) (layers "*.Cu" "*.Mask") (uuid "%s"))'
+                         % (side, i, x, y, U()))
+        for x in (-body_x - 2.0, body_x + 2.0):
+            L.append('  (pad "" np_thru_hole circle (at %.3f 0) (size 2.5 2.5) (drill 2.5) (layers "*.Cu" "*.Mask") (uuid "%s"))' % (x, U()))
+        L.append(')')
+        out_dir = os.path.join(OUT, LOCALLIB + ".pretty")
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, name + ".kicad_mod"), "w", encoding="utf-8") as f:
+            f.write("\n".join(L) + "\n")
 
 FONT = "(effects (font (size 1.27 1.27)))"
 STUB = 2.54
@@ -1309,8 +1316,8 @@ class Sheet:
         unit = units[0]
         inst = " ".join('(path "%s" (reference "%s") (unit %d))' % (p, r, u)
                         for p, r, u in zip(self.inst_paths, refs, units))
-        if libid == "bfdac:Samtec_SEAF40":
-            pin_instances = [p for p in pins if p["unit"] == unit]
+        if libid.startswith("bfdac:"):
+            pin_instances = [p for p in pins if p["unit"] in (0, unit)]
         else:
             pin_instances = pins
         pinuu = " ".join('(pin "%s" (uuid "%s"))' % (p["num"], U()) for p in pin_instances)
@@ -1457,7 +1464,8 @@ FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_160
           MINIFIT6="Connector_Molex:Molex_Mini-Fit_Jr_5566-06A2_2x03_P4.20mm_Vertical",
           MINIFIT8="Connector_Molex:Molex_Mini-Fit_Jr_5566-08A2_2x04_P4.20mm_Vertical",
           MINIFIT24="Connector_Molex:Molex_Mini-Fit_Jr_5566-24A2_2x12_P4.20mm_Vertical",
-          SEAF40="bfdac:" + SEAF40_NAME,
+          PCIEX16="bfdac:" + PCIE_FP["x16"],
+          PCIEX4="bfdac:" + PCIE_FP["x4"],
           TO263_5="Package_TO_SOT_SMD:TO-263-5_TabPin3",
           TO220AC="Package_TO_SOT_THT:TO-220-2_Vertical",
           TO220_3="Package_TO_SOT_THT:TO-220-3_Vertical",
@@ -1566,7 +1574,7 @@ CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation bar
     "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), IN2/IN3/IN4 spare (tied to GNDA; ch2 was AP_I2S_DATA2 -> I2S_DATA2, removed 2026-11-15 - XMOS is the sole I2S source), OUT2/OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
     "isoi2c": ("ISO1640", FP["SOIC8"], "ISO1640BDR", "bidirectional I2C isolator: TMP117 sensor bus (side 1, V33D, 3.0-5.5 V) <-> AP (side 2, VAP_IO, 2.25-5.5 V) (bom 20, ruled 2026-10-05; ISO1610 was a non-existent MPN, corrected 2026-10-08). VAP_IO MUST be >= 2.25 V - a 1.8 V AP needs a different isolator or a level shifter"),
     "tmp":    ("TMP117", FP["WSON6"], "TMP117AIDRVR", "+-0.1 C sensor; 4 on one bus via ADD0 (GND 0x48, V+ 0x49, SDA 0x4A, SCL 0x4B); placement per bom 20"),
-    "jap":    ("AP DIG + PWR", FP["SEAF40"], "SEAF-40-05.0-L-06-2-A-K-TR", "Samtec SEAF-40 40x6, 240 passive contacts. Conn1/J506 row A preserves AP nets 1-40; rows B-F carry V12SOM/GND surround, V33_IF_IN/GND guard and AP-ground return field per docs/SEAF_PIN_ASSIGNMENTS.md. West edge closest to FPGA, B.Cu."),
+    "jap":    ("AP DIG + PWR", FP["PCIEX16"], "PCIE-X16-EDGE-TBD", "PCIe x16 card-edge socket, 2x82 contacts @1.0mm. Conn1/J506<->J7705 AP digital + power link; riser = user PCB with card-edge fingers (SEAF-40/SEAR-40 struck 2026-11-16 - SEAR not purchasable). Side A = carrier power (V12SOM x20, GND, V33_IF_IN), side B = AP domain (signals, VAP_IO, GND_AP) per docs/PCIE_PIN_ASSIGNMENTS.md. MPN + land TBD. West edge closest to FPGA, B.Cu."),
     "npn":    ("MMBT3904", FP["SOT23"], "MMBT3904LT1G", "LED sink driver from a 1.8 V FPGA IO (LVCMOS18 cannot drive a 2 V LED directly)"),
     "led":    ("GREEN", FP["LED0603"], "APT1608SGC", "Kingbright 0603 green LED, ~2 mA"),
     "rled":   ("470", FP["R0603"], "CRCW0603470RFKEA", "LED current set from V33D (~2 mA)"),
@@ -1738,7 +1746,7 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     "tps3890": ("TPS389001", FP["TI_DSE6"], "TPS389001DSET", "V33FF supervisor, adjustable VITN = 1.15 V: 162k/100k divider = ~3.01 V trip; VDD = V4P3 (stays alive when V33FF collapses), MR->VDD, CT open (assert immediate, deassert ~25 us), RESET open-drain -> PG_ALL. Pin map verified SBVS227 2026-10-12"),
     "ldo33d":  ("TPS7A2033", FP["SOT23_5"], "TPS7A2033PDBVR", "board digital 3.3 V rail V33D from V4P3 (~120 mA: 4x TMP117 + ISO1640 side 1 + 2x UCD90120A @ 50 mA + LEDs); EN->IN always-on"),
     "ucd":     ("UCD90120A", FP["TI_RGC64"], "UCD90120ARGCR", "13-input PMBus rail monitor, VQFN-64 RGC; TELEMETRY ONLY - not in the mute path (17(m2)/(m3)); AP pushes config over the sensor I2C bus at boot; 2 on the board (UCD_L / UCD_R). Pin map verified SLVSAN9C 2026-10-12 ** VERIFY: footprint EP, BPCAP value, V33FB/CNTRL/TRCK strapping **"),
-    "pwrc":    ("PRE-REG", FP["SEAF40"], "SEAF-40-05.0-L-06-2-A-K-TR", "Samtec SEAF-40 40x6, 240 passive contacts; J603/J604 use row-A pads 1-8 for the existing four pre-reg rails and returns; other contacts presently unassigned. Conn2 north-center / Conn3 south-center, B.Cu."),
+    "pwrc":    ("PRE-REG", FP["PCIEX4"], "PCIE-X4-EDGE-TBD", "PCIe x4 card-edge socket, 2x32 contacts @1.0mm. Conn2/J603<->J7703 (north) + Conn3/J604<->J7704 (south) pre-reg rail links; riser = user PCB. Side B = P16A/N16A/V8P3 + GND, side A = V4P3 branch rails + GND per docs/PCIE_PIN_ASSIGNMENTS.md. MPN + land TBD, B.Cu."),
     "hdr4":    ("PMBUS", FP["HDR1x4"], "TSW-104-07-G-S", "UCD PMBus service header (USB-TO-GPIO2 4-wire subset: SDA/SCL/GND/3V3), on the SENS bus - DNP, bring-up/debug only"),
     "rcset":   ("4.7u", FP["C0805"], "GRM21BR71E475KA73L", "LT3045/LT3094 C_SET, X7R 25 V 0805"),
     "cldo10":  ("10u", FP["C1206"], "GRM31CR71E106KA12L", "LDO IN/OUT ceramic, X7R 25 V 1206"),
@@ -2080,8 +2088,8 @@ def build_channel(ch, cell, core, iv, refs, d):
              ("V18", "1.8 V translator A-side + PG_ALL pull-up, supplied by the SoM (VCCIO_65_EX) - not generated on this board", False),
              # V33D/V33CLK/V33FF/V33RLY have on-board LDO drivers now (U512/U340/U460/U603): a PWR_FLAG on
              # those nets is an ERC pin_to_pin error (power_out vs power_out) - they must NOT be flagged.
-             ("V12SOM", "+12 V SoM feed, SoM-only (switcher, 15 A planning figure) - Conn1/J506 SEAF 30-contact bank with GND perimeter; see docs/SEAF_PIN_ASSIGNMENTS.md", False),
-             ("VAP_IO", "AP-side isolator supply, in at J506 SEAF-40 row-A pad 25 (AP domain)", False),
+             ("V12SOM", "+12 V SoM feed, SoM-only (switcher, 15 A planning figure) - Conn1/J506 PCIe x16 20-contact bank on side A with GND returns; see docs/PCIE_PIN_ASSIGNMENTS.md", False),
+             ("VAP_IO", "AP-side isolator supply, in at J506 PCIe x16 side-B pad B25 (AP domain)", False),
              ("GND_AP", "AP-side ground (isolated domain)", False)]
     for i, (nm_, desc, driven) in enumerate(rails):
         x, y = (snap(30), snap(45 + 10 * i)) if i < 7 else (snap(330), snap(45 + 10 * (i - 7)))
@@ -2308,13 +2316,13 @@ def main():
     d = json.load(open(REF))
     P = d["params"]
     os.makedirs(OUT, exist_ok=True)
-    pinout_only = "--seaf-pinout-only" in sys.argv
+    pinout_only = "--pcie-pinout-only" in sys.argv
     if pinout_only:
-        write_seaf40_symbol_only()
+        write_pcie_symbol_only()
     else:
         write_local_lib()
         write_local_footprints()
-        write_seaf40_footprint()
+        write_pcie_footprints()
         write_som_seed_board()
     root = Sheet("%s.kicad_sch" % PROJECT, "BFDAC analog board - root (L + R channels)", "A1")
     root.inst_path = "/" + root.uuid
@@ -2394,12 +2402,12 @@ def main():
             v = value
         return dict(footprint=fp, mpn=mpn, descr=ds), v
     LIB = lambda n: "%s:%s" % (LOCALLIB, n)
-    def place_seaf_rows(sheet, ref, value, nets, x, y, row_pitch, units=6,
-                        row_x_offsets=None, **kwargs):
-        for unit in range(1, units + 1):
-            dx = (row_x_offsets or {}).get(unit, 0)
-            sheet.place(LIB("Samtec_SEAF40"), ref, value, x + dx, y + row_pitch * (unit - 1),
-                        nets, unit=unit, allow_unmapped=True, **kwargs)
+    def place_pcie(sheet, ref, value, nets, size, x, y, row_pitch, **kwargs):
+        for u in range(1, PCIE_UNITS[size] + 1):
+            sheet.place(LIB("PCIe_" + size), ref, value, x, y + row_pitch * (u - 1),
+                        nets, unit=u, allow_unmapped=True, **kwargs)
+    def gconn(m):
+        return {p: (GND if n == "GND" else G(n)) for p, n in m.items()}
     fpga.text("FPGA interface (bom 1.3): Alinx ACKU15S module (XCKU15P), carrier connectors J1/J2/J4 here + J3 on the SOM sheet (4x Samtec ADM6-60)."
               " J4 = both cascode buses (col-mirrored L/R halves) -> DAT01..64/DATR01..64 + mclk_p/n diff pair (B94_L6) + PMBus (NC). J1 = control plane (banks 90/91)."
               " J2 = coefficient flash + JTAG + SYSMON + bank 65. Pin map = datasheets/acku15s_pins.csv + acku15s_dac_top.xdc ';#' comments (authoritative)."
@@ -2552,9 +2560,9 @@ def main():
     k, v = sp_("j")
     for u in range(4):
         som.place(LIB("ACKU15S_J3"), "J3", v, 60 + 90 * u, 110, conn_nets(J, used, "J3", G, GND), unit=u + 1, **k)
-    # +12 V feed: planned on Conn1/J506 SEAF contacts; bulk + ceramic at J2.
+    # +12 V feed: planned on Conn1/J506 PCIe x16 side-A contacts; bulk + ceramic at J3.
     som.text("+12 V SoM feed (bom 17(d): 12 V switcher + heavy filter -> SoM only; planning figure 15 A / 180 W, user 2026-10-10)."
-             " Board-to-board entry is Conn1/J506 SEAF: 30 V12SOM contacts (C2:C11, D2:D11, E2:E11) with a GND perimeter; separate J507/J508 terminals are removed."
+             " Board-to-board entry is Conn1/J506 PCIe x16 side A: 20 V12SOM contacts (A1-A20) with GND returns (A21-A56, A61-A82); separate J507/J508 terminals are removed."
              " SoM takeoff = J3 x8 contacts (A1/A2/B1/B2/C1/C2/D1/D2): ~20 A at the ADM6 rating vs ~5-8 A for a KU15P-class load - 8 pins suffice."
              " 2 x 220 uF polymer + 4 x 10 uF X7R kept here at J3"
              " (the SoM connector end of the feed).", 20, 455)
@@ -2598,18 +2606,14 @@ def main():
               " U503 MAX22444C = AP reset -> EXT_RST_N (+3 spare fwd), U504 ISO1640 = I2C to the four TMP117 (sensor bus on the FPGA/analog side, V33D = ISO1640 side 1; AP = side 2, VAP_IO >= 2.25 V)."
               " U509 MAX22445C = host-AP SPI (AP_SPI_* -> SPI_AP_*): second independent SPI slave port - the AP SoM has direct FPGA register access alongside the XMOS (per-port write ACL in RTL; XMOS = audio-path subset). U513 MAX22445F = SPI_AP_IRQ_N FPGA->AP (sides swapped like U502)."
               " FPGA side of the MAX2244x = V18 (1.71 V capable; ISO77xx were not - 2026-10-09)."
-              " Conn1/J506 is the 240-contact SEAF-40 site: west edge, closest to FPGA, main-board bottom. VAP_IO/GND_AP serve the AP and AP-side isolator supplies; V33_IF_IN/GND feed the separate carrier-side 1.8 V LDO. Conn1 carries 30 V12SOM contacts with a GND surround; J507/J508 are removed. SOM_PG is included but still needs an isolation-path review. SPI: 10 MHz standard-timed guaranteed, 50 MHz with AP RX sample delay (bom 21).", 20, 17)
-    ctrl.text("Conn1 power allocation: 30 x V12SOM plus 30 GND perimeter contacts; 4 x V33_IF_IN plus 12 carrier-GND guard contacts. V33_IF_IN is distinct from VAP_IO/GND_AP. Local 1.8 V LDO MPN/output wiring remains to be added.", 20, 31)
+              " Conn1/J506 is the PCIe x16 card-edge site (user riser PCB, 2026-11-16): west edge, closest to FPGA, main-board bottom. VAP_IO/GND_AP serve the AP and AP-side isolator supplies; V33_IF_IN/GND feed the separate carrier-side 1.8 V LDO. Conn1 side A carries 20 V12SOM contacts + GND returns; side B is the AP domain. J507/J508 are removed. SOM_PG is included but still needs an isolation-path review. SPI: 10 MHz standard-timed guaranteed, 50 MHz with AP RX sample delay (bom 21).", 20, 17)
+    ctrl.text("Conn1 power allocation (PCIe x16 side A): 20 x V12SOM (A1-A20) plus GND returns A21-A56/A61-A82; 4 x V33_IF_IN (A57-A60) inside the GND return field. V33_IF_IN is distinct from VAP_IO/GND_AP. Local 1.8 V LDO MPN/output wiring remains to be added.", 20, 31)
     ctrl.text("TMP117 placement (bom 20, 4 so far): U505 L cascode/replica array, U506 R cascode/replica array, U507 R_off/Rpad heat zone, U508 clock XO area. V33D = digital 3.3 V (power sheet, PWR_FLAG here)."
               " ALERT pins unused. Pull-ups 2.2k each side of the ISO1640.", 20, 24)
-    # Conn1/J506: six SEAF symbol units, one per physical row A-F. The 30-pin
-    # V12SOM bank is a 3x10 interior block on one array end, fully ringed by GND.
-    conn1 = {str(pin): (GND if net == "GND" else G(net))
-             for pin, net in seaf_conn1_map().items()}
-    # Remaining row-F edge contacts complete the carrier GND guard; row-F
-    # signal-side contacts are AP-domain returns. The pin map is pad-ID based.
+    # Conn1/J506: PCIe x16, four symbol units (A1-42, A43-82, B1-42, B43-82).
+    # Side A = carrier power (V12SOM A1-A20 + GND + V33_IF_IN A57-A60); side B = AP domain.
     k, v = cp_("jap")
-    place_seaf_rows(ctrl, "J506", v, conn1, 40, 60, 60, row_x_offsets={4: -8.25}, **k)
+    place_pcie(ctrl, "J506", v, gconn(pcie_conn1_map()), "x16", 40, 60, 60, **k)
     k, v = cp_("rpu10k"); ctrl.place("Device:R", "R501", v, 75, 130, {"1": G("VAP_IO"), "2": G("AP_RST_N")}, **k)
     # isolators: side 1 (AP) on the left, side 2 (FPGA) on the right
     k, v = cp_("isoC")
@@ -3127,7 +3131,7 @@ def main():
     tp(ap, "TP858", 170, 290, G("GND_AP"))
     tp(ap, "TP859", 170, 310, G("USB_GND"))
     tp(ap, "TP860", 170, 330, G("GND_AP"))
-    ap.text("DEFERRED: host SoM + radios, AP-board interconnect toward the pre-reg board (J506's SEAF mate is J7705"
+    ap.text("DEFERRED: host SoM + radios, AP-board interconnect toward the pre-reg board (J506's PCIe x16 mate is J7705"
             " on PREREG - row-A nets above already match its pad names; physical path TBD pending the AP processor"
             " pick), S/PDIF front end (isolation transformer or TOSLINK -> X1D22, pin currently NC'd),"
             " XMOS I2C GPIO expander if pin budget grows.", 20, 320)
@@ -3260,31 +3264,18 @@ def main():
 
     # ---------------- POWER sheet (2026-10-12): pre-reg harness entry + rail supervisors + PG_ALL only.
     # User ruling: POL LDOs live on the sheets they feed - nothing here consumes a POL rail.
-    power.text("PRE-REG ENTRY (bom 17(d)/(l)/(n), option B + per-branch V4P3 2026-10-xx): pre-reg rails enter on two SEAF-40"
+    power.text("PRE-REG ENTRY (bom 17(d)/(l)/(n), option B + per-branch V4P3 2026-10-xx): pre-reg rails enter on two PCIe x4 card-edge"
                " sites - J603 north-center carries the L-branches, J604 south-center the R-branches. Shared rails (one source, two"
                " destinations): P16A (+16.2 V -> +15 V-class POLs), N16A (-16.2 V -> N15A/VEE15), V8P3 (+8.3 V -> VE1). V4P3 is FIVE"
                " INDEPENDENT TPS7A4501 outputs on the PREREG sheet, never tied together: V4P3_LA -> V33CLK + P5A_L, V4P3_LB -> V33D + P5A_R,"
                " V4P3_LC -> V33FF_L (FF bank split per channel 2026-10-12), V4P3_RA -> V33FF_R, V4P3_RB -> V33RLY (bom 17o).", 20, 17)
     k, v = pw_("pwrc")
-    def conn23(a, b, c=None):
-        d = {"1": G("p16a"), "2": GND, "3": G("n16a"), "4": GND,
-             "5": G("v8p3"), "6": GND, "7": G(a), "8": GND,
-             "9": G(a), "10": G(a), "11": G(a),
-             "12": GND, "13": GND, "14": GND,
-             "15": G(b), "16": G(b), "17": G(b), "18": G(b),
-             "19": GND, "20": GND, "21": GND, "22": GND,
-             "41": G("p16a"), "42": GND, "43": G("n16a"), "44": GND,
-             "45": G("v8p3"), "46": GND}
-        if c:   # third independent branch bank (V4P3_LC on Conn2 - the V33FF_L feed)
-            d.update({"23": G(c), "24": G(c), "25": G(c), "26": G(c),
-                      "27": GND, "28": GND, "29": GND, "30": GND})
-        return d
-    place_seaf_rows(power, "J603", v, conn23("v4p3_la", "v4p3_lb", "v4p3_lc"), 450, 300, 53, **k)
-    place_seaf_rows(power, "J604", v, conn23("v4p3_ra", "v4p3_rb"), 650, 300, 53, **k)
-    power.text("Conn1/J506 = west, closest to FPGA; Conn2/J603 = north-center; Conn3/J604 = south-center. All three SEAF-40 sites are on the main-board bottom."
-               " Three SEAR interposers are BOM-only. Board separation target is 40 mm. Each pre-reg rail sits beside its own GND return; 10 uF"
+    place_pcie(power, "J603", v, gconn(pcie_conn23("v4p3_la", "v4p3_lb", "v4p3_lc")), "x4", 450, 300, 53, **k)
+    place_pcie(power, "J604", v, gconn(pcie_conn23("v4p3_ra", "v4p3_rb")), "x4", 650, 300, 53, **k)
+    power.text("Conn1/J506 = west, closest to FPGA (PCIe x16); Conn2/J603 = north-center (PCIe x4); Conn3/J604 = south-center (PCIe x4). All three card-edge sites are on the main-board bottom."
+               " The risers are user-made PCBs with card-edge fingers at both ends (SEAR interposers struck 2026-11-16 - not purchasable). Each pre-reg rail sits beside its own GND return; 10 uF"
                " local bulk per rail per connector - the heavy bulk/filtering lives on the pre-reg board. PWR_FLAGs are in the rails table on REFS_L.", 20, 118)
-    power.text("Conn1 only: V12SOM uses 30 contacts with a separate GND surround. V33_IF_IN uses four contacts with a carrier-GND guard and feeds the local 1.8 V LDO; it is not VAP_IO/GND_AP.", 20, 136)
+    power.text("Conn1 only (PCIe x16): V12SOM uses 20 side-A contacts with GND returns; V33_IF_IN uses four (A57-A60) inside the return field and feeds the local 1.8 V LDO; it is not VAP_IO/GND_AP.", 20, 136)
     k, v = pw_("cldo10")
     for i, rail in enumerate(("p16a", "n16a", "v8p3", "v4p3_la", "v4p3_lb", "v4p3_lc", "v4p3_ra", "v4p3_rb")):
         power.place("Device:C", "C17%d" % (0 + i), v, 100 + 12 * i, 95, {"1": G(rail), "2": GND}, **k)
@@ -3386,13 +3377,13 @@ def main():
     # power tub - every symbol on this sheet is emitted with on_board=no so it documents the build but never
     # enters the main-board netlist/PCB.  Per channel: 6 VAC / 20 VA chassis transformer (off-board, terminal
     # block J70x) -> 4 x STPS10L60D Schottky bridge -> 3 x 10,000 uF/16 V reservoir + film + bleeder -> two
-    # independent TPS7A4501 branches @ 4.3 V (<=1 A each derated) -> SEAF mate to J603/J604.
+    # independent TPS7A4501 branches @ 4.3 V (<=1 A each derated) -> PCIe x4 mate to J603/J604.
     prereg.text("TUB 1 PRE-REGULATOR BOARD (bom 17o) - SEPARATE PCB: all symbols here are on_board=no. One 6 VAC / 20 VA"
                 " R-core transformer per channel - THT, SOLDERED ON THIS BOARD (ACENTRY sheet); secondaries land directly on"
                 " the bridge diodes (AC6_x1/AC6_x2 globals). Branches are"
                 " NEVER paralleled: each TPS7A4501 output is an independent rail. V4P3_LA->V33CLK+P5A_L, V4P3_LB->V33D+P5A_R,"
                 " V4P3_LC->V33FF_L (U705, FF dual-mono split), V4P3_RA->V33FF_R, V4P3_RB->V33RLY. J703 mates main-board J603"
-                " (Conn2 north), J704 mates J604 (Conn3 south) through the SEAR-40 interposers.", 20, 17)
+                " (Conn2 north), J704 mates J604 (Conn3 south) through the user-made PCIe riser PCBs.", 20, 17)
     prereg.text("Reservoir sizing (per transformer, 2 A DC worst): 3 x 10,000 uF/16 V high-ripple 105 C = 30 mF; ~1 V pp ripple at"
                 " 50 Hz/-10% line -> trough ~5.8 V vs the 4.8 V floor (4.3 V out + 0.5 V TPS7A4501 dropout budget). P16A/N16A/V8P3"
                 " stages are DRAWN below (bottom strip, 2026-10-28 - 115 V mains ruling). Mains fuse/switch/inlet"
@@ -3470,7 +3461,7 @@ def main():
             k, v = preg_("c10n")
             prereg.place("Device:C", "C%d" % (cb + 6), v, bx + 75, uy + 15, {"1": ("L", adj), "2": GND}, **k)
     # --- shared rails (bom 17o; 115 V mains only, user ruling 2026-10-28): T902 dual-18 VAC -> +-16.2 V;
-    #     T903 9 VAC -> +8.3 V.  These stages feed BOTH SEAF mates (shared nets, not per-channel).
+    #     T903 9 VAC -> +8.3 V.  These stages feed BOTH PCIe mates (shared nets, not per-channel).
     #     AC18 topology: two independent 18 VAC windings series-aided -> 18-0-18 CT = GND -> 4 x STPS10L60D
     #     bridge legs + RC snubbers -> +-24 V raw -> LM317/LM337 -> P16A/N16A.  Assumes S2/S3 are the
     #     same-polarity winding ends - VERIFY dots at part receipt (bom 17p open item a).
@@ -3480,7 +3471,7 @@ def main():
                 " class-A continuous ~0.5 A -> ~3.9 W spread 6 ways = ~0.65 W/die, ~39 C junction margin;"
                 " shared SET node 600 uA x 27.0k, ~20 mR ballast per OUT, OUTS->common node,"
                 " PGFB 475k/10k -> PG_ALL). T903 9 VAC -> bridge -> ~12 V raw -> U7901 TPS7A4501 = V8P3"
-                " 8.35 V (59k/10k on 1.21 V). Shared rails feed BOTH SEAF mates.", 20, 300)
+                " 8.35 V (59k/10k on 1.21 V). Shared rails feed BOTH PCIe mates.", 20, 300)
     ax, ay = 40, 340
     # AC18 centre tap (S2+S3) is tied to GND at T902 on ACENTRY; only the outer ends arrive here.
     # bridge legs: two diodes per rail on the outer ends (AC18_1 / AC18_4)
@@ -3629,22 +3620,18 @@ def main():
                      {"1": p1, "2": p2}, **k)
 
     k, v = pw_("pwrc")
-    place_seaf_rows(prereg, "J7703", v, conn23("v4p3_la", "v4p3_lb", "v4p3_lc"), 560, 60, 53, **k)
-    place_seaf_rows(prereg, "J7704", v, conn23("v4p3_ra", "v4p3_rb"), 760, 60, 53, **k)
+    place_pcie(prereg, "J7703", v, gconn(pcie_conn23("v4p3_la", "v4p3_lb", "v4p3_lc")), "x4", 560, 60, 53, **k)
+    place_pcie(prereg, "J7704", v, gconn(pcie_conn23("v4p3_ra", "v4p3_rb")), "x4", 760, 60, 53, **k)
     k, v = cp_("jap")
-    conn1_mate = {str(pin): (GND if net == "GND" else G(net))
-                  for pin, net in seaf_conn1_map().items()}
-    place_seaf_rows(prereg, "J7705", v, conn1_mate, 960, 60, 53, **k)
-    prereg.text("J7703/J7704 = pre-reg-board SEAF-40 mates (the SEAR-40-30.0-06-85 interposers plug these to main-board J603/J604)."
-                " Pad map mirrors the main board: A branches on pads 7/9-11, B branches on pads 15-18, LC branch on pads 23-26"
-                " (J703 only), shared rails on 1/3/5 (+41/43/45).", 560, 40)
-    prereg.text("J7705 = pre-reg-board SEAF-40 mate to Conn1/J506 (user ruling 2026-11-03: the pre-reg board mates ALL"
-                " THREE main-board SEAFs through SEAR-40 interposers; SEAF sockets on both boards, male pins live on the"
-                " riser/interposer card).  Full 240-pad mirror of docs/SEAF_PIN_ASSIGNMENTS.md: V12SOM bank (30 pads)"
-                " is SOURCED on this assembly (LRS-200-12 -> J931/J932 harness on the acentry section); V33_IF_IN"
-                " source is TBD on this board; row-A AP_* signals, SOM_PG, and VAP_IO/GND_AP continue to the"
-                " application-processor section - its physical interconnect is undecided (AP processor path not yet"
-                " picked), so the row-A nets land here as pass-through for now.", 960, 40)
+    place_pcie(prereg, "J7705", v, gconn(pcie_conn1_map()), "x16", 960, 60, 53, **k)
+    prereg.text("J7703/J7704 = pre-reg-board PCIe x4 mates (user-made riser PCBs plug these to main-board J603/J604)."
+                " Pin map mirrors the main board: side B = shared rails P16A B1-B6, N16A B11-B16, V8P3 B21-B26 + GND;"
+                " side A = branch rails 6 pins each + GND returns (LA/LB/LC on A1-A6/A11-A16/A21-A26, LC slot GND on J7704).", 560, 40)
+    prereg.text("J7705 = pre-reg-board PCIe x16 mate to Conn1/J506 (2026-11-16 ruling: all three links run through"
+                " user-made riser PCBs with card-edge fingers - the Samtec SEAR interposers were not purchasable)."
+                " Pin mirror of docs/PCIE_PIN_ASSIGNMENTS.md: side A = carrier power (V12SOM x20 SOURCED on this assembly"
+                " - LRS-200-12 -> J931/J932 harness on the acentry section; V33_IF_IN source TBD here); side B = AP"
+                " domain signals, SOM_PG, VAP_IO/GND_AP - pass-through for now (AP processor interconnect undecided).", 960, 40)
 
     # --- prereg test points (TP rules c/d): every rail on this board gets a hook pad - all five
     #     reservoir raw nodes, all eight regulator outputs, and the transformer secondaries (AC pads
@@ -3848,11 +3835,11 @@ def main():
             " AC_L_IN/AC_N_IN/AC_PE UPSTREAM of L900/CX901, so the CM choke + X2 sit BETWEEN the"
             " SMPS and the transformer feed (EMI isolation, still MOV-protected; own inrush"
             " limiting, works on either line, no tap-select).  DC: J931 '+12V' = 3 x V12SOM -> J506"
-            " V12SOM bank (C2-C11/D2-D11/E2-E11); J932 '12V-' = 3 x GND -> J506 GND perimeter"
+            " V12SOM bank (A1-A20); J932 '12V-' = 3 x GND -> J506 side-A GND returns"
             " (36 A/pole header capacity vs ~15 A planning figure).  The mezzanine target is"
-            " Conn1/J506 (west edge, closest to the SoM) - its 30-contact V12SOM bank + GND"
-            " perimeter is already allocated; the tub-side mate is still to be drawn"
-            " (docs/SEAF_PIN_ASSIGNMENTS.md).", 270, 248, size=1.2)
+            " Conn1/J506 (west edge, closest to the SoM) - its 20-contact V12SOM bank + GND"
+            " returns are already allocated; the tub-side mate is still to be drawn"
+            " (docs/PCIE_PIN_ASSIGNMENTS.md).", 270, 248, size=1.2)
     ac.text("LAYOUT: the L900+X2 barrier only blocks the COPPER path - the J930 L/N harness"
             " carries SMPS conducted HF and must not run parallel to the J92x secondary"
             " bundles (capacitive/inductive pick-up would bypass the barrier onto SELV leads)."
@@ -3990,7 +3977,7 @@ def main():
     for s in sheets:
         s.write(root=(s is root))
     if pinout_only:
-        print("wrote SEAF pin-map and affected rail-note sheets only; preserved other generated project files")
+        print("wrote PCIe pin-map and affected rail-note sheets only; preserved other generated project files")
         return
     with open(os.path.join(OUT, "%s.kicad_pro" % PROJECT), "w") as f:
         json.dump({"meta": {"filename": "%s.kicad_pro" % PROJECT, "version": 1},

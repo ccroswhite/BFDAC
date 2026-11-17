@@ -5757,3 +5757,33 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   updated; stale i2s_data2 row removed from acku15s_pinmap_proposal.csv.
 - Regenerated + verified: SEAF PASS x3, xcheck FAIL(1) pre-existing only,
   no ACVU13P/J5-J8/I2S_DATA2 net labels in any generated sheet.
+
+2026-11-16: SEAF-40/SEAR-40 board-to-board links -> PCIe card-edge sockets
+- User ruling: SEAR-40 riser not purchasable -> all three links become PCIe
+  edge sockets + user-made riser PCBs with card-edge fingers at both ends.
+  Sizing by signal + contact current (user ruling): Conn1/J506 = PCIe x16
+  (164 contacts), Conn2/J603 + Conn3/J604 = PCIe x4 (64 each) - sizes differ
+  to prevent mis-mating.
+- Conn1 map: side A = carrier power (V12SOM A1-A20 = 20 contacts ~22 A at
+  ~1.1 A/finger vs ~15 A plan, GND returns A21-A56/A61-A82, V33_IF_IN
+  A57-A60 inside the return field); side B = AP domain (signal row keeps
+  old SEAF row-A order with odd-signal/even-GND_AP interleave, VAP_IO x5
+  B25+B45-B48, GND_AP field). No GND_AP on side A, no carrier GND on side B.
+- Conn2/3: side B = shared rails P16A/N16A/V8P3 (6 pins each + GND returns),
+  side A = independent V4P3 branch rails (6 pins each + returns; LC slot is
+  GND on J604 which has only two branches).
+- gen_kicad.py: PCIE_PINS/PCIE_UNITS/PCIE_FP tables, pcie_conn1_map(),
+  pcie_conn23(), gconn(), _pcie_symbol() (two-column units so 42-pin units
+  fit the 60 mm pitch), write_pcie_footprints() (PROVISIONAL parametric THT
+  staggered-tail land, VERIFY vs vendor drawing - socket MPN TBD),
+  place_pcie(), --pcie-pinout-only flag. place() multi-unit pin-instance
+  filter generalized to all bfdac: symbols.
+- utils/check_seaf_pinmap.py -> utils/check_pcie_pinmap.py (symbol/fp pad
+  counts, per-unit pin->label match on all six connector instances,
+  AP/carrier ground separation, J507/J508 absent).
+- docs/SEAF_PIN_ASSIGNMENTS.md -> docs/PCIE_PIN_ASSIGNMENTS.md; bom.md
+  connector section rewritten; SYSTEM_ARCHITECTURE/IMPLEMENTATION_REVIEW/
+  layout-notes updated.
+- Verify: regen clean; check_pcie_pinmap PASS x3; kicad_xcheck FAIL(1) =
+  pre-existing VAP_IO/GND_AP merge (unchanged); zero live SEAF/SEAR refs in
+  generated sheets (struck-history annotations only).

@@ -674,20 +674,24 @@ The three main-board mezzanine sites are:
 - Conn2/J603: pre-regulator rail entry, north-center, B.Cu.
 - Conn3/J604: pre-regulator rail entry, south-center, B.Cu.
 
-The board-side MPN is Samtec `SEAF-40-05.0-L-06-2-A-K-TR`; use three
-`SEAR-40-30.0-06-85` interposers, one per site. They are BOM-only and are not
-represented by PCB footprints or in the chassis 3MF. The target board
-separation is 40 mm. The supplied drawing drives a 40-column x 6-row,
-1.27-mm-pitch footprint with 240 SMT pads, and the local schematic symbol has
-six 40-pin row units with matching row-major pad numbers.
+2026-11-16 (user ruling): SEAF-40/SEAR-40 struck — the Samtec SEAR riser is
+not purchasable. The three sites become standard PCIe card-edge sockets;
+the riser is a user-made PCB with card-edge gold fingers at both ends.
+Conn1/J506 = PCIe x16 (2x82), Conn2/J603 + Conn3/J604 = PCIe x4 (2x32); the
+different sizes prevent mis-mating. Socket MPN + land pattern are TBD; the
+generated `PCIe_x16_CardEdge_TBD`/`PCIe_x4_CardEdge_TBD` footprints are
+provisional parametric THT patterns pending a vendor drawing.
 
-Conn1/J506 carries the AP row-A interface, 30 `V12SOM` contacts with a
-`GND` perimeter, and a separate `V33_IF_IN` group with carrier-`GND` guard.
-`VAP_IO/GND_AP` remain the isolated AP-side power domain. The separate
-J507/J508 terminals are removed from the active design. Conn2/J603 and
-Conn3/J604 use row-A pads 1-8 for the existing pre-regulator rail/return map;
-their other contacts are not assigned yet. The pin table is in
-`docs/SEAF_PIN_ASSIGNMENTS.md`.
+Conn1/J506 side A carries the carrier power — 20 `V12SOM` contacts (A1-A20,
+~22 A at ~1.1 A/finger vs the ~15 A plan) with `GND` returns, and the
+four-contact `V33_IF_IN` group (A57-A60); side B carries the AP domain —
+the signal row with the `GND_AP` interleave plus `VAP_IO` and the `GND_AP`
+field. `VAP_IO/GND_AP` remain the isolated AP-side power domain; no `GND_AP`
+on side A, no carrier ground on side B. The separate J507/J508 terminals are
+removed from the active design. Conn2/J603 and Conn3/J604 put the shared
+rails `P16A`/`N16A`/`V8P3` on side B and the independent `V4P3` branch rails
+on side A. The pin table is in
+`docs/PCIE_PIN_ASSIGNMENTS.md`.
 
 The carrier PCB has not been placed or routed, and the pre-regulator board is
 not represented by a separate KiCad PCB. Contact-current/return derating,
@@ -931,9 +935,9 @@ using the smaller dither range are not evidence for the current implementation.
 
 ### R14 - P0: Connector mechanical integration and remaining connector selections
 
-**Evidence:** J506/J603/J604 use the user-selected SEAF-40-05.0-L-06-2-A-K-TR footprint and the project-local 240-contact symbol. Conn1/J506 has the AP row-A map, a 30-contact `V12SOM` bank with `GND` perimeter, and a separate `V33_IF_IN` group with carrier-ground guard. J507/J508 are removed from the active design. The SEAR-40-30.0-06-85 interposers remain BOM-only. There is no routed carrier or pre-regulator PCB in this project. Contact-current/return derating, the unassigned spare contacts on J603/J604, the local 1.8-V LDO implementation and the `SOM_PG` isolation path remain open. The SN74AXC8T245 RHLR-to-RGY land-pattern equivalence remains a separate review item.
+**Evidence:** J506 (PCIe x16) and J603/J604 (PCIe x4) use the generated `PCIe_x16`/`PCIe_x4` symbols and provisional card-edge footprints (2026-11-16 ruling: SEAF/SEAR struck — riser not purchasable; risers are user-made PCBs). Conn1/J506 side A carries a 20-contact `V12SOM` bank with `GND` returns and the `V33_IF_IN` group; side B carries the AP domain with `GND_AP` interleave. J507/J508 are removed from the active design. There is no routed carrier or pre-regulator PCB in this project. Socket MPN + land-pattern selection, contact-current/return derating, the local 1.8-V LDO implementation and the `SOM_PG` isolation path remain open. The SN74AXC8T245 RHLR-to-RGY land-pattern equivalence remains a separate review item.
 
-**Action/closure:** verify the Conn1 map against the mating pre-regulator/AP assemblies, qualify contact current/return sharing, confirm 40-mm stack tolerances, edge clearances, underside keepouts and mechanical standoffs. Assign the spare Conn2/Conn3 contacts and close the LDO and `SOM_PG` isolation details before routing or release.
+**Action/closure:** verify the Conn1 map against the mating pre-regulator/AP assemblies, pick the PCIe socket MPN and verify the provisional land pattern, qualify contact current/return sharing, confirm riser-height stack tolerances, edge clearances, underside keepouts and mechanical standoffs. Close the LDO and `SOM_PG` isolation details before routing or release.
 
 ### R15 — P1: Single-channel population and shared dependencies
 
@@ -1081,7 +1085,7 @@ There is no ARM host-driver implementation in this repository.
   by package name or library alias.
 
 **KiCad assignment audit (2026-10-18):** the counts and unresolved connector
-list below predate the SEAF symbol/footprint work and are superseded. Re-run
+list below predate the connector symbol/footprint work and are superseded. Re-run
 the full footprint-library and MPN audit after the connector pin map is
 validated. J802 still has a generic 2x7, 2.00 mm header footprint and MPN
 `87832-1420`; its MPN/mating-part check remains open in the BOM.

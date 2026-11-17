@@ -872,29 +872,33 @@ after board placement and routing.
 
 ### 8.3 Board-to-board interfaces
 
-The user selected Samtec `SEAF-40-05.0-L-06-2-A-K-TR` for the three main-board
-mezzanine sites and three `SEAR-40-30.0-06-85` interposers (one per site) for
-the 40-mm board separation. The SEAR is BOM/mechanical content only; it does not
-receive a PCB footprint or participate in the chassis 3MF. The supplied SEAF
-land-pattern drawing is used for the board-side footprint.
+2026-11-16 (user ruling): the Samtec SEAF-40/SEAR-40 mezzanine plan was struck
+because the SEAR riser is not purchasable. The three sites are standard PCIe
+card-edge sockets — Conn1/J506 = x16 (2x82), Conn2/J603 and Conn3/J604 = x4
+(2x32) — and each riser is a user-made PCB with card-edge fingers at both ends.
+The risers are mechanical/BOM-adjacent only; they do not receive a PCB
+footprint or participate in the chassis 3MF. Socket MPN + land pattern are TBD;
+the generated footprints are provisional.
 
-On the main circuit board, all three SEAF sites are bottom-side: Conn1/J506
+On the main circuit board, all three card-edge sites are bottom-side: Conn1/J506
 on the west edge closest to the FPGA; Conn2/J603 north-center; and Conn3/J604
 south-center.
-The corresponding pre-regulator-board connectors use the same SEAF land
-pattern. North/east/south are defined in the board's top-view compass frame;
+The corresponding pre-regulator-board connectors use the same PCIe sockets. North/east/south are defined in the board's top-view compass frame;
 "bottom" means the B.Cu side. Mounting hardware must carry mechanical loads
 rather than relying on connector contacts. The footprint and schematic define
 the part and contact mapping, but a carrier PCB layout and routed keepouts are
 not yet present.
 
-Each site uses a project-local 240-pin symbol (40 contacts per row x six rows)
-and a 240-pad footprint, numbered A1-F40 in row-major order. Conn1/J506 keeps
-the AP signal map on row A, carries 30 `V12SOM` contacts with a `GND` perimeter,
-and has a separate four-contact `V33_IF_IN` supply with a carrier-`GND` guard
-for the local 1.8 V interface LDO. `VAP_IO/GND_AP` power the AP and AP-side
-isolator supplies and remain separate from carrier-side power. The Conn1 map is recorded in
-`docs/SEAF_PIN_ASSIGNMENTS.md`; J507/J508 are removed as separate 12-V
+Conn1 uses the `PCIe_x16` symbol (4 units) and Conn2/Conn3 the `PCIe_x4`
+symbol (2 units); pins are named A1..An (component side) / B1..Bn (solder
+side). Conn1/J506 side A is carrier power — a 20-contact `V12SOM` bank
+(A1-A20) with `GND` returns, and the four-contact `V33_IF_IN` supply
+(A57-A60) for the local 1.8 V interface LDO inside the return field; side B
+is the AP domain — the signal row with `GND_AP` interleave, `VAP_IO`, and
+the `GND_AP` field. `VAP_IO/GND_AP` power the AP and AP-side isolator
+supplies and remain separate from carrier-side power — no `GND_AP` on side A,
+no carrier `GND` on side B. The Conn1 map is recorded in
+`docs/PCIE_PIN_ASSIGNMENTS.md`; J507/J508 are removed as separate 12-V
 terminals. The local LDO part/output circuit, `SOM_PG` isolation path and
 connector-current derating remain open; no carrier or pre-regulator PCB layout
 is represented here.
@@ -928,9 +932,9 @@ the local electrical/routing requirements justify them.
 
 ### 8.5 Mechanical and assembly deliverables
 
-The hardware handoff must include an approved floorplan, verified SEAF/SEAR
-mating drawings, thermal mounting details, stackup, electrical constraints and
-assembly variants. The SEAF MPN is selected and its land pattern is captured;
+The hardware handoff must include an approved floorplan, verified PCIe
+socket/riser mating drawings, thermal mounting details, stackup, electrical
+constraints and assembly variants. The PCIe socket MPN + land pattern are TBD;
 contact-map review, tolerance/alignment analysis, board keepouts and routed
 clearance remain manufacturing gates.
 
