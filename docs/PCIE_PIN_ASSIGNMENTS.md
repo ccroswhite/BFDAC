@@ -114,3 +114,17 @@ never tied together — each branch carries its own 6 contacts + 4-pin GND retur
 - V12SOM copper on the x16 riser should pour across all 20 fingers + returns; keep the
   side-A/side-B pour separation so the AP domain stays isolated.
 - Board separation is set by the riser card height (was 40 mm target with the SEAR).
+
+## OPEN: connector XY datum (blocking for layout)
+
+Identical sockets on both boards means the only thing left to get right is placement.
+Before the boards route we need, per pair (J506<->J7705, J603<->J7703, J604<->J7704):
+
+- X/Y origin of each socket footprint on its own board, taken from a common
+  mechanical datum (board outline corner or tooling hole),
+- rotation / key-notch direction (the x16 and the two x4s must key the same way),
+- board-to-board separation + riser standoff so all three risers engage equally,
+- riser finger-area width/key position matching the socket span at each site.
+
+Land-pattern origin reference: pin A1 pad center (row +3.60, B1 at -3.60); key gap
+sits between positions 11 and 12; SH1/SH2 pads mark the two ends.
