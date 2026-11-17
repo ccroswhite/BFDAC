@@ -3395,7 +3395,7 @@ def main():
             adj = "ADJ_U%d" % uref
             shdn = "SHDN_U%d" % uref
             cb = 7720 + 10 * (uref - 7701)   # U7701->C7721.., U7702->C7731.., U7703->C7741.., U7704->C7751..
-            rb = 7720 + 10 * li + bi * 2
+            rb = 7720 + 10 * li + 5 * bi
             k, v = preg_("tps4501")
             prereg.place(LIB("TPS7A4501"), "U%d" % uref, v, bx + 45, uy,
                          {"IN": ("L", raw + "_F"), "SHDN": ("L", shdn), "GND": GND,
@@ -3443,12 +3443,12 @@ def main():
         prereg.place("Device:D_Schottky", "D%d" % (7801 + di), v, ax + 35 + 15 * di, ay + 30,
                      {"A": G(an) if an.startswith("AC") else ("L", an),
                       "K": G(kn) if kn.startswith("AC") else ("L", kn)}, **k)
-        sn = "SN%d" % (7841 + di)
+        sn = "SN%d" % (7891 + di)
         k, v = preg_("csnub")
-        prereg.place("Device:C", "C%d" % (7841 + di), v, ax + 35 + 15 * di, ay + 45,
+        prereg.place("Device:C", "C%d" % (7891 + di), v, ax + 35 + 15 * di, ay + 45,
                      {"1": G(an) if an.startswith("AC") else ("L", an), "2": ("L", sn)}, **k)
         k, v = preg_("rsnub")
-        prereg.place("Device:R", "R%d" % (7841 + di), v, ax + 35 + 15 * di, ay + 57,
+        prereg.place("Device:R", "R%d" % (7891 + di), v, ax + 35 + 15 * di, ay + 57,
                      {"1": ("L", sn), "2": G(kn) if kn.startswith("AC") else ("L", kn)}, **k)
     for i, raw in enumerate(("VRAW16P", "VRAW16N")):
         fx, fy = snap(ax + 15), snap(ay + 36 + 10 * i)
@@ -3480,9 +3480,9 @@ def main():
     # Parallel topology per ADI datasheet: all SET pins share ONE SET node; the single R_SET scales by
     # N (Vout = N*100uA x R_SET -> 16.2 V / 600 uA = 27.0k), ~20 mR ballast on each OUT for sharing,
     # all OUTS sense the common output node, one shared PGFB divider, all PGs wire-AND -> PG_ALL.
-    for ni, (rbase, sym, pk, inn, outn, neg, ypos, setnet) in enumerate((
-            (7801, "Regulator_Linear:LT3045xMSE", "lt3045", "VRAW16P_F", "P16A", False, 105, "SET_P16A"),
-            (7807, "Regulator_Linear:LT3094xMSE", "lt3094", "VRAW16N_F", "N16A", True,  175, "SET_N16A"))):
+    for ni, (rbase, ob, sym, pk, inn, outn, neg, ypos, setnet) in enumerate((
+            (7801, 7801, "Regulator_Linear:LT3045xMSE", "lt3045", "VRAW16P_F", "P16A", False, 105, "SET_P16A"),
+            (7807, 7831, "Regulator_Linear:LT3094xMSE", "lt3094", "VRAW16N_F", "N16A", True,  175, "SET_N16A"))):
         for i in range(6):
             ux = ax + 30 + 25 * i
             k, v = preg_(pk)
@@ -3494,35 +3494,35 @@ def main():
                 nets["VIOC"] = GND
             prereg.place(sym, "U%d" % (rbase + i), v, ux, ay + ypos, nets, **k)
             k, v = preg_("rbal")
-            prereg.place("Device:R", "R%d" % (rbase + 20 + i), v, ux + 15, ay + ypos,
+            prereg.place("Device:R", "R%d" % (ob + 20 + i), v, ux + 15, ay + ypos,
                          {"1": ("L", "BAL_%s%d" % (outn, i)), "2": G(outn.lower())}, **k)
             k, v = preg_("cldo10")
-            prereg.place("Device:C", "C%d" % (rbase + 40 + i), v, ux, ay + ypos - 12,
+            prereg.place("Device:C", "C%d" % (ob + 40 + i), v, ux, ay + ypos - 12,
                          {"1": G(outn.lower()), "2": GND}, **k)
         # input-UVLO via EN/UV (threshold ~1.23 V): shared divider 130k/10k trips at ~17.2 V
         # on the ~24 V VRAW16 feed - kills the rail before it sags into dropout.
         k, v = preg_("rp01", "130k", "1303")
-        prereg.place("Device:R", "R%d" % (rbase + 33), v, ax + 240, ay + ypos,
+        prereg.place("Device:R", "R%d" % (ob + 33), v, ax + 240, ay + ypos,
                      {"1": ("L", inn), "2": ("L", "ENUV_%s" % outn)}, **k)
         k, v = preg_("rp01", "10k", "1002")
-        prereg.place("Device:R", "R%d" % (rbase + 34), v, ax + 240, ay + ypos + 12,
+        prereg.place("Device:R", "R%d" % (ob + 34), v, ax + 240, ay + ypos + 12,
                      {"1": ("L", "ENUV_%s" % outn), "2": GND}, **k)
         # shared SET node: one R_SET + 4.7uF (N x 100 uA flows through it)
         k, v = preg_("rp01", "27.0k", "2702")
-        prereg.place("Device:R", "R%d" % (rbase + 30), v, ax + 195, ay + ypos,
+        prereg.place("Device:R", "R%d" % (ob + 30), v, ax + 195, ay + ypos,
                      {"1": ("L", setnet), "2": GND}, **k)
         k, v = preg_("rcset")
-        prereg.place("Device:C", "C%d" % (rbase + 50), v, ax + 195, ay + ypos + 15,
+        prereg.place("Device:C", "C%d" % (ob + 50), v, ax + 195, ay + ypos + 15,
                      {"1": ("L", setnet), "2": GND}, **k)
         # shared PGFB divider: OUT->475k->PGF->10k->GND + 1 nF (+-0.30 V trip ~ 90% of 16.2 V)
         k, v = preg_("rp01", "475k", "4753")
-        prereg.place("Device:R", "R%d" % (rbase + 31), v, ax + 210, ay + ypos,
+        prereg.place("Device:R", "R%d" % (ob + 31), v, ax + 210, ay + ypos,
                      {"1": G(outn.lower()), "2": ("L", "PGF_%s" % outn)}, **k)
         k, v = preg_("rp01", "10k", "1002")
-        prereg.place("Device:R", "R%d" % (rbase + 32), v, ax + 210, ay + ypos + 12,
+        prereg.place("Device:R", "R%d" % (ob + 32), v, ax + 210, ay + ypos + 12,
                      {"1": ("L", "PGF_%s" % outn), "2": GND}, **k)
         k, v = preg_("cpgfb")
-        prereg.place("Device:C", "C%d" % (rbase + 51), v, ax + 225, ay + ypos + 12,
+        prereg.place("Device:C", "C%d" % (ob + 51), v, ax + 225, ay + ypos + 12,
                      {"1": ("L", "PGF_%s" % outn), "2": GND}, **k)
     # --- T903 9 VAC -> V8P3 +8.35 V (single rail feeding both channels' VE1 LDOs)
     bx9 = 320
@@ -3568,7 +3568,7 @@ def main():
             ("C7906", "cbpcap", None, None, "VRAW9", None, 20, 113),
             ("C7907", "cldo10", None, None, "V8P3", None, 75, 97),
             ("C7908", "cbpcap", None, None, "V8P3", None, 90, 120),
-            ("R7902", "rp01", "59k", "5902", "V8P3", "ADJ_U7901", 60, 90),
+            ("R7907", "rp01", "59k", "5902", "V8P3", "ADJ_U7901", 60, 90),
             ("R7903", "rp01", "10k", "1002", "ADJ_U7901", "GND", 60, 120),
             ("C7909", "c10n", None, None, "ADJ_U7901", None, 75, 120),
             # input-UVLO via SHDN (~1.3 V threshold): 68k/10k = ~10.1 V trip on ~12 V VRAW9

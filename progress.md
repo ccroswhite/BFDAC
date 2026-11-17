@@ -5828,3 +5828,10 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   @1.00, 1.90 notch, 12.15 edge->B1, 20deg bevel, no tie bar at A1/last).
 - Verify: regen clean; check_pcie_pinmap PASS x3 (incl. hole asserts);
   xcheck FAIL(1) = pre-existing VAP_IO/GND_AP only.
+
+## 2026-11-16 - schematic audit + PREREG refdes collision fix
+- Audit sweep of all 21 generated sheets: zero dangling labels project-wide (the 64 cell sheets' D/CLK hierarchical pins do land - root sheet carries all 256 DATnn/MCLKnn/DATRnn/MCLKRnn globals to the xlat/fpga/clkr sheets; earlier "single-use" reading was a scan artifact of excluding the root sheet).
+- Footprints: all referenced bfdac: lands exist except SODIMM-200_TBD + RJ45_GBE_MAG_TBD (both known-TBD items: J855 host SoM, J856 RJ45); PCIe x16/x4 lands verified present. TBD-named placeholders exist for XFMR_Rcore_TP4S/TP8S.
+- MPN/property classification: zero IC/connector/xfmr refs missing MPN; zero unannotated refs.
+- FOUND+FIXED: 14 duplicate reference designators on prereg.kicad_sch (xcheck "annotation errors" warning). Three generator bugs: (a) branch-LDO rb spacing bi*2 overlapped +1..+4 spread (R7723/24, R7733/34); (b) shared-rail banks derived R/C refs from U-base rbase - N16A (7807+off) overlapped P16A (7801+off) and the AC18 snubbers at 7841 (C7841-44, C7851/52, R7831/32, R7841); (c) R7902 emitted twice in the V8P3 section (pi R + ADJ 59k). Fix: bi*2->bi*5, bank R/C refs split off rbase into per-bank ob (P16A ob=7801 unchanged, N16A ob=7831 -> R7851-65/C7871-82), AC18 snubbers -> 7891-94, V8P3 ADJ top -> R7907. Regen: 0 duplicate refs; bom.md ref callouts updated.
+- Verify: check_pcie_pinmap PASS x3; kicad_xcheck back to pre-existing FAIL(1) only (VAP_IO/GND_AP merge); annotation warning cleared.
