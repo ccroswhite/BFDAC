@@ -5855,3 +5855,12 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   out_valid strobe count.
 - Elab check: vivado -mode batch scripts/elab_top.tcl, detached,
   log Xilinx/elab_voicing.log.
+- TB found+fixed real bugs: (a) dc tracker >>>16 dead zone at 18-bit Q3.15
+  precision -> replaced with DC_SHIFT sub-LSB accumulator (param, HW=16,
+  TB uses 8 for ~256-sample tau); (b) unsigned part-select in error path
+  -> $signed casts; (c) TB sine48 $rtoi 32-bit saturation -> longint cast;
+  (d) TB phase-2 missing x_hist updates.
+- tb_dac_voicing_shaper PASS: errors=0 bypass vs real sine (5-sample
+  latency), 7984/8000 voiced, post-convergence DC inject -73.5k LSBs.
+- Committed 53ee7a3. Elab re-check vs parameterized module running
+  detached: Xilinx/elab_voicing2.log.
