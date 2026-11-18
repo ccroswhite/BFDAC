@@ -107,7 +107,7 @@ module dpd_engine #(
     logic signed [ACCW-1:0] accA, accB;
 
     // finish sequence
-    logic signed [ACCW-1:0] sum_r, sumh_r, act_r;
+    logic signed [ACCW-1:0] sum_r, sumh_r;
     logic [2:0]  fin;           // one-hot-ish finish pipeline
     assign busy = running || (|fin);
 
@@ -183,7 +183,7 @@ module dpd_engine #(
             a_mul <= '0; b_mul <= '0; a_mulr <= '0; b_mulr <= '0;
             a_shift <= '0; b_shift <= '0;
             accA <= '0; accB <= '0;
-            sum_r <= '0; sumh_r <= '0; act_r <= '0;
+            sum_r <= '0; sumh_r <= '0;
             fin  <= '0;
             corr <= '0;
             corr_valid <= 1'b0;
@@ -330,7 +330,6 @@ module dpd_engine #(
                 sumh_r <= sum_r + (ACCW'(1) <<< (gf - 6'd1));
                 fin    <= 3'b100;
             end else if (fin[2]) begin
-                act_r      <= sumh_r >>> gf;
                 corr       <= (ACCW'(lut_r) + (sumh_r >>> gf)) <<< (FRAC - F);
                 corr_valid <= 1'b1;
                 fin        <= '0;

@@ -251,7 +251,7 @@ module coef_bank_loader #(
     localparam int DIDX_W          = $clog2(DIR_MAX_ENTRIES);
 
     state_t                      state;
-    logic [BANK_BITS-1:0]        bank_id;
+
     logic [AXI_ADDR_WIDTH-1:0]   bank_base;     // resolved start of the bank image in DDR4
     logic [15:0]                 filter_id_r;
     logic [DIDX_W-1:0]           dir_idx;
@@ -332,7 +332,6 @@ module coef_bank_loader #(
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             state          <= ST_IDLE;
-            bank_id        <= '0;
             bank_base      <= '0;
             filter_id_r    <= '0;
             dir_idx        <= '0;
@@ -380,7 +379,6 @@ module coef_bank_loader #(
                 // ----- IDLE -----
                 ST_IDLE: begin
                     if (load_start) begin
-                        bank_id       <= load_bank_id;
                         filter_id_r   <= load_filter_id;
                         mac_idx       <= '0;
                         burst_idx     <= '0;

@@ -288,7 +288,7 @@ module acku15s_dac_top #(
     logic        ddr4_init_calib_complete;
 
     // AXI4 Read (coef_bank_loader <-> ddr4_if)
-    logic [29:0] axi_araddr;
+    logic [31:0] axi_araddr;
     logic [7:0]  axi_arlen;
     logic [2:0]  axi_arsize;
     logic [1:0]  axi_arburst;
@@ -896,7 +896,8 @@ module acku15s_dac_top #(
         .audio_r                (audio_r),
         .new_sample             (new_sample),
         .i2s_err                (i2s_err),
-        .transport_fault        (serial_fault)
+        .transport_fault        (serial_fault),
+        .audio_frame_ready      ()
     );
 
     // ==============================================================
@@ -945,6 +946,7 @@ module acku15s_dac_top #(
     assign relay_level     = 2'b00;   // no level relays on the board (bom 7, 2026-10-07)
 
     assign led_debug = {clk_locked, ddr4_init_calib_complete, (i2s_err || core_stream_fault), force_zero};
+    assign led_status = boot_ok;
 
     // Debug ILA (control-plane clock, captures SPI/automute status)
     // Enable with +define+ILA_EN during synthesis

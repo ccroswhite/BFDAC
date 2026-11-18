@@ -41,7 +41,7 @@ module dac_ddr4_if (
     output logic        init_calib_complete,
 
     // AXI4 Read Address Channel (driven by coef_bank_loader)
-    input  logic [29:0] m_axi_araddr,
+    input  logic [31:0] m_axi_araddr,
     input  logic [7:0]  m_axi_arlen,
     input  logic [2:0]  m_axi_arsize,
     input  logic [1:0]  m_axi_arburst,

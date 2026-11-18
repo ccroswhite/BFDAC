@@ -53,7 +53,7 @@ module dac_coef_subsys #(
     input  logic        boot_ok,
 
     // AXI4 Read Master (to dac_ddr4_if, ui_clk domain)
-    output logic [29:0] m_axi_araddr,
+    output logic [31:0] m_axi_araddr,
     output logic [7:0]  m_axi_arlen,
     output logic [2:0]  m_axi_arsize,
     output logic [1:0]  m_axi_arburst,
