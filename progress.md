@@ -5899,7 +5899,9 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   H1/H2/H3 cycles -> boxcar mean on spectral nulls).
 - FINAL: [tb_voicing] PASS — errors=0, voiced=8196, od_err=0,
   dc_avg=+3294 (~2*k3*-0.5LSB ucu_w floor = -158 dBFS), E[usq_ac]=0.0,
-  E[ucu_q]=-0.6. dc_est=15726 (u*u_hi truncation deficit on the square
-  MEAN ~4% is real math; tracker absorbs it — AC content unaffected,
-  H2 exact at -60.0).
+  E[ucu_q]=-0.6. dc_est=15726 snapshot is instantaneous 2w ripple on
+  dc_acc at DC_SHIFT=8 (pk ~+-400-640 LSBs; 16384-15726=658 matches
+  trough) — NOT a mean bias: u*u_hi floor truncation cancels over a
+  symmetric cycle (<0.5 LSB), and HW DC_SHIFT=16 drops the ripple
+  256x to ~2 LSBs.
 - Elab re-check detached: Xilinx/elab_voicing3.log (pending ELAB_OK).
