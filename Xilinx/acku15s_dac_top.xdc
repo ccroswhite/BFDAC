@@ -158,7 +158,7 @@ set_false_path \
     -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
 
 # -----------------------------------------------------------------------------
-# 4. SPI Control Bus — XMOS port (XMOS SPI master -> FPGA slave, clk_200m domain)
+# 4. SPI Control Bus â€” XMOS port (XMOS SPI master -> FPGA slave, clk_200m domain)
 # -----------------------------------------------------------------------------
 set_property IOSTANDARD LVCMOS18 [get_ports {spi_xmos_sclk spi_xmos_cs_n spi_xmos_mosi spi_xmos_miso}]
 set_property SLEW       SLOW     [get_ports spi_xmos_miso]
@@ -173,7 +173,7 @@ set_property PACKAGE_PIN D5    [get_ports spi_xmos_miso];# B90_L5_N J1-A11
 set_false_path -from [get_ports {spi_xmos_sclk spi_xmos_cs_n spi_xmos_mosi}]
 set_false_path -to   [get_ports spi_xmos_miso]
 
-# 4b. SPI Control Bus — AP port (host AP SPI master, J1 rows A17-A22 bank 91).
+# 4b. SPI Control Bus â€” AP port (host AP SPI master, J1 rows A17-A22 bank 91).
 #     Isolated via U509 MAX22445C + U513 MAX22445F on the carrier ctrl sheet.
 set_property IOSTANDARD LVCMOS18 [get_ports {spi_ap_sclk spi_ap_cs_n spi_ap_mosi spi_ap_miso spi_ap_irq_n}]
 set_property SLEW       SLOW     [get_ports {spi_ap_miso spi_ap_irq_n}]
@@ -204,7 +204,7 @@ set_property PACKAGE_PIN F2    [get_ports ext_rst_n];# B90_L3_N J1-B11
 # -----------------------------------------------------------------------------
 set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data}]
 # J1 rows A2-A4, bank 90. BCLK/LRCLK are outputs; DATA is sampled with a
-# qualified delay. (i2s_data2/src_sel removed 2026-11-15 — XMOS is the sole
+# qualified delay. (i2s_data2/src_sel removed 2026-11-15 â€” XMOS is the sole
 # audio source; B2/J1-A6 freed.)
 set_property PACKAGE_PIN B5    [get_ports i2s_bclk];# B90_L10_P J1-A2
 set_property PACKAGE_PIN C4    [get_ports i2s_lrclk];# B90_L8_N J1-A3
@@ -230,7 +230,7 @@ set_property DRIVE       12      [get_ports {relay_line_mute relay_level[*]}]
 set_property SLEW        SLOW    [get_ports {relay_line_mute relay_level[*]}]
 set_property PACKAGE_PIN E4    [get_ports relay_line_mute];# B90_L1_N J1-A13
 # relay_hp_mute (E5/J1-A14) + relay_hp_rails (A6/J1-B1) removed 2026-11-14:
-# no headphone output stage — pins freed for future use.
+# no headphone output stage â€” pins freed for future use.
 set_property PACKAGE_PIN B6    [get_ports {relay_level[0]}];# B90_L12_P J1-B2
 set_property PACKAGE_PIN A3    [get_ports {relay_level[1]}];# B90_L11_N J1-B3
 set_property PACKAGE_PIN F3    [get_ports pg_all];# B90_L3_P J1-B12
@@ -618,6 +618,55 @@ set_max_delay -datapath_only 5.0 \
 
 # 6) MIG calibration-complete ui_clk -> clk_200m: monotonic level into 2-FF sync.
 set_false_path -to [get_pins {u_ctrl_plane/ddr4_calib_sync_reg[0]/D}]
+
+# --- clk_200m <-> dsp_clk CDC (voicing commit/shadow set) ---------------------
+# dac_ctrl_plane owns the quasi-static shadow set {voicing_sh_en, k2, k3,
+# preset} + voicing_commit_toggle. u_coef_subsys/u_voicing_commit captures the
+# shadow set into pend_* on the SYNCED commit edge, applies at fir_frame_done,
+# and returns ack_toggle / swap_busy / vo_err_toggle. SPI writes are rejected
+# while voicing_commit_pending, so the bus is settled before the edge that
+# latches pend_* (stable >= full sync latency both directions).
+
+# 7) commit toggle clk_200m -> dsp_clk (toggle handshake, commit_sync free-runs
+#    through dsp_clk reset so commit_d can never see a phantom edge)
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/voicing_commit_toggle_reg}] \
+    -to   [get_cells {u_coef_subsys/u_voicing_commit/commit_sync_reg[0]}]
+
+# 8) shadow set clk_200m -> dsp_clk: quasi-static bus -> pend_* capture regs
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_ctrl_plane/voicing_sh_en_reg \
+                      u_ctrl_plane/voicing_sh_k2_reg[*] \
+                      u_ctrl_plane/voicing_sh_k3_reg[*] \
+                      u_ctrl_plane/voicing_sh_preset_reg[*]}] \
+    -to   [get_cells {u_coef_subsys/u_voicing_commit/pend_en_reg \
+                      u_coef_subsys/u_voicing_commit/pend_k2_reg[*] \
+                      u_coef_subsys/u_voicing_commit/pend_k3_reg[*] \
+                      u_coef_subsys/u_voicing_commit/pend_preset_reg[*]}]
+
+# 9) status returns dsp_clk -> clk_200m: ack/err toggles get max_delay (toggle
+#    handshake style); swap_busy is a plain level into a 2-FF sync.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_coef_subsys/u_voicing_commit/ack_toggle_reg}] \
+    -to   [get_cells {u_ctrl_plane/vo_ack_sync_reg[0]}]
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_coef_subsys/u_voicing_commit/vo_err_toggle_reg}] \
+    -to   [get_cells {u_ctrl_plane/vo_err_sync_reg[0]}]
+set_false_path -to [get_pins {u_ctrl_plane/vo_busy_sync_reg[0]/D}]
+
+# 10) err-seen parity back-channel clk_200m -> dsp_clk: level into 2-FF sync
+#     (parks vo_err_toggle during dsp_clk reset so parity can't desync).
+set_false_path -to [get_pins {u_coef_subsys/u_voicing_commit/err_seen_sync_reg[0]/D}]
+
+# 11) applied {preset,en} dsp_clk -> clk_200m: quasi-static bus. The FSM writes
+#     applied_preset/voicing_en BEFORE flipping ack_toggle, so by the time
+#     vo_ack_sync[2] edges in clk_200m the bus has been static for the whole
+#     sync latency; vo_apreset_r/vo_aen_r only latch on that edge.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_coef_subsys/u_voicing_commit/applied_preset_reg[*] \
+                      u_coef_subsys/u_voicing_commit/voicing_en_reg}] \
+    -to   [get_cells {u_ctrl_plane/vo_apreset_r_reg[*] \
+                      u_ctrl_plane/vo_aen_r_reg}]
 
 # Cell test & bench stimulus crossings (clk_200m <-> dsp_clk)
 set_max_delay -datapath_only 5.0 \
