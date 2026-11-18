@@ -14,6 +14,9 @@ read_verilog -sv $srcs
 # Elaborate (RTL analysis) - validates top-level wiring, port widths,
 # parameter propagation. XDC is NOT applied in -rtl mode; full XDC object
 # validation happens at Phase 5.1 first synthesis.
+# Scoped suppressions for verified-benign warnings (same set as 5m synth flow)
+source [file join [file dirname [info script]] suppress_warnings.tcl]
+
 synth_design -rtl -top acku15s_dac_top -part xcku15p-ffve1517-2-i
 
 puts "ELAB_OK: acku15s_dac_top elaborated (rtl mode - no utilization report)"

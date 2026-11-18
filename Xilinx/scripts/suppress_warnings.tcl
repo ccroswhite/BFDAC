@@ -20,24 +20,23 @@ set_msg_config -id {Synth 8-3917} -suppress
 # cal_data_a[23:18]: shared 24-bit cal word, a_coef explicitly truncates to 18.
 # led_status/mclk_n: board-level spares with no internal load.
 set_msg_config -id {Synth 8-7129} -string {cal_data_a} -suppress
-set_msg_config -id {Synth 8-7129} -string {led_status} -suppress
 set_msg_config -id {Synth 8-7129} -string {mclk_n}     -suppress
 
 # --- Verified dead registers (reviewed 2026-11-12) ---------------------------
-# act_r: written but never read in dpd_engine (latched activation, debug-only).
 # boundary_rev_reg_reg[0]: tail of reverse systolic chain, no consumer.
-# cf_div_reg/hdr_cnt_reg/rec_dest_reg/fifo_count_reg/bank_id_reg/new_index_reg:
+# cf_div_reg/hdr_cnt_reg/rec_dest_reg/fifo_count_reg/new_index_reg:
 #   residue from earlier control-plane iterations, verified unreferenced.
 # tag_pipe_reg[78:95]: dead MSBs of the I2S tag pipeline.
-set_msg_config -id {Synth 8-6014} -string {act_r_reg}            -suppress
+# audio_frame_ready_reg: driven inside i2s_master_ingress, port explicitly
+#   left unconnected at top (.audio_frame_ready()).
 set_msg_config -id {Synth 8-6014} -string {boundary_rev_reg}     -suppress
 set_msg_config -id {Synth 8-6014} -string {cf_div_reg}           -suppress
 set_msg_config -id {Synth 8-6014} -string {hdr_cnt_reg}          -suppress
 set_msg_config -id {Synth 8-6014} -string {rec_dest_reg}         -suppress
 set_msg_config -id {Synth 8-6014} -string {fifo_count_reg}       -suppress
-set_msg_config -id {Synth 8-6014} -string {bank_id_reg}          -suppress
 set_msg_config -id {Synth 8-6014} -string {new_index_reg}        -suppress
 set_msg_config -id {Synth 8-6014} -string {tag_pipe_reg}         -suppress
+set_msg_config -id {Synth 8-6014} -string {audio_frame_ready}    -suppress
 
 # --- Parameterization trimming -----------------------------------------------
 # products_reg/shreg/pre_add dead MSBs in halfband_x2: datapath is narrower
@@ -45,6 +44,10 @@ set_msg_config -id {Synth 8-6014} -string {tag_pipe_reg}         -suppress
 set_msg_config -id {Synth 8-3332} -string {products_reg} -suppress
 set_msg_config -id {Synth 8-3332} -string {shreg_reg}    -suppress
 set_msg_config -id {Synth 8-3332} -string {pre_add_reg}  -suppress
+
+# --- Vivado netlist artifact --------------------------------------------------
+# <const1> multi-term driver: internal tool net, no real netlist conflict.
+set_msg_config -id {Netlist 29-1115} -string {const1} -suppress
 
 # --- Broad classes: demote, don't hide ----------------------------------------
 # Remaining pruning/dead-element reports stay in the log at INFO severity so

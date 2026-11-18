@@ -37,7 +37,7 @@ module tb_cell_measurement;
         .clk(dsp_clk), .rst_n(rst_n),
         .sys_ready(1'b1), .test_active(1'b0),
         .unmute_req(unmute && !manual_busy), .base_rate_sel(1'b0),
-        .i2s_err(1'b0), .level_switch_req(1'b0), .level_target(3'b000),
+        .i2s_err(1'b0), .level_target(3'b000),
         .line_mute_drive(),
         .level_relay_drive(), .force_zero(), .switch_busy(relay_switch_busy)
     );

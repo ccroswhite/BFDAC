@@ -46,7 +46,6 @@ module automute_controller #(
     input  logic unmute_req,    // digital unmute request (stream-gated in top)
     input  logic base_rate_sel,
     input  logic i2s_err,
-    input  logic level_switch_req,   // legacy pulse, unused (pending = target != applied)
     input  logic [2:0] level_target, // level code, see header (quasi-static, 2-FF synced)
 
     // Hardware Plane

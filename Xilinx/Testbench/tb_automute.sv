@@ -27,7 +27,6 @@ module tb_automute;
     logic unmute_req;
     logic base_rate_sel;
     logic i2s_err;
-    logic level_switch_req;
     logic [2:0] level_target;
     logic line_mute_drive;
     logic [2:0] level_relay_drive;
@@ -48,7 +47,6 @@ module tb_automute;
         .unmute_req       (unmute_req),
         .base_rate_sel    (base_rate_sel),
         .i2s_err          (i2s_err),
-        .level_switch_req (level_switch_req),
         .level_target     (level_target),
         .line_mute_drive  (line_mute_drive),
         .level_relay_drive(level_relay_drive),
@@ -98,7 +96,6 @@ module tb_automute;
         unmute_req       = 0;
         base_rate_sel    = 0;
         i2s_err          = 0;
-        level_switch_req = 0;
         level_target     = 3'b000;
 
         repeat(5) @(posedge clk);
@@ -146,9 +143,7 @@ module tb_automute;
         // 6. Level cap 2V -> 6V while playing (digital gain cap, bom 7)
         repeat(5) @(posedge clk);
         level_target     = 3'b010;
-        level_switch_req = 1;
         @(posedge clk);
-        level_switch_req = 0;
         wait (force_zero === 1);
         check(line_mute_drive === 1,
               "level switch clamps digitally, relay stays closed");

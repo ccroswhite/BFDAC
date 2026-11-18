@@ -213,7 +213,6 @@ module acku15s_dac_top #(
     (* MARK_DEBUG = "TRUE" *) logic level_switch_req;
     logic stream_valid_dsp;
     logic base_rate_sel_sync;
-    logic level_switch_req_sync;
     logic [2:0] level_target;
     logic [2:0] level_target_sync;
 
@@ -247,24 +246,20 @@ module acku15s_dac_top #(
     // muted), so a 2-FF chain per bit is sufficient.
     (* ASYNC_REG = "TRUE" *) logic [1:0] svalid_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] rate_sel_sync_chain;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] level_req_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [5:0] level_target_sync_chain;  // 3 bits x 2 stages
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             svalid_sync_chain        <= '0;
             rate_sel_sync_chain      <= '0;
-            level_req_sync_chain     <= '0;
             level_target_sync_chain  <= '0;
         end else begin
             svalid_sync_chain        <= {svalid_sync_chain[0], stream_source_valid};
             rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
-            level_req_sync_chain     <= {level_req_sync_chain[0], level_switch_req};
             level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
         end
     end
     assign stream_valid_dsp       = svalid_sync_chain[1];
     assign base_rate_sel_sync     = rate_sel_sync_chain[1];
-    assign level_switch_req_sync  = level_req_sync_chain[1] && !level_req_sync_chain[0]; // edge pulse
     assign level_target_sync      = level_target_sync_chain[5:3];
 
     logic cell_clk;
@@ -932,7 +927,6 @@ module acku15s_dac_top #(
         .unmute_req       (stream_valid_dsp && stream_automute_sync[1] && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
         .i2s_err          (i2s_err || core_stream_fault),
-        .level_switch_req (level_switch_req_sync),
         .level_target     (level_target_sync),
         .line_mute_drive  (line_mute_drive),
         .level_relay_drive(level_relay_drive),
@@ -950,6 +944,7 @@ module acku15s_dac_top #(
 
     // Debug ILA (control-plane clock, captures SPI/automute status)
     // Enable with +define+ILA_EN during synthesis
+`ifdef ILA_EN
     ila_wrapper #(
         .PROBE_WIDTH (16)
     ) u_ila_ctrl (
@@ -958,6 +953,7 @@ module acku15s_dac_top #(
                  line_mute_drive,
                  force_zero, i2s_err, 10'b0})
     );
+`endif
 
     // ==============================================================
     // 5. DSP Core (FIRx16 + HB1/2/3 + volume + dither + NS + DEM + cascode)
