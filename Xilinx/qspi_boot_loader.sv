@@ -64,7 +64,7 @@ module qspi_boot_loader #(
     input  logic        ui_rst,         // active high (ui_clk_sync_rst)
 
     // AXI4 write master (128-bit, to dac_ddr4_if)
-    output logic [29:0] m_axi_awaddr,
+    output logic [31:0] m_axi_awaddr,
     output logic [7:0]  m_axi_awlen,
     output logic [2:0]  m_axi_awsize,
     output logic [1:0]  m_axi_awburst,
@@ -416,7 +416,7 @@ module qspi_boot_loader #(
                     end else begin
                         w_burst_beats <= (w_words_left >= BURST_BEATS[23:0])
                                          ? 5'(BURST_BEATS) : w_words_left[4:0];
-                        m_axi_awaddr  <= w_addr;
+                        m_axi_awaddr  <= 32'(w_addr);
                         m_axi_awlen   <= (w_words_left >= BURST_BEATS[23:0])
                                          ? 8'(BURST_BEATS - 1)
                                          : 8'(w_words_left[4:0] - 5'd1);

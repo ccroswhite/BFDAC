@@ -99,7 +99,6 @@ module tb_vu13p_mig;
     defparam u_dut.u_automute.FLUSH_CYCLES       = 26'd400;
     defparam u_dut.u_automute.SETTLE_CYCLES      = 26'd200;
     defparam u_dut.u_automute.SWITCH_CYCLES      = 26'd200;
-    defparam u_dut.u_automute.RAIL_SETTLE_CYCLES = 26'd600;
 
     acku15s_dac_top #(
         .NUM_MACS          (NUM_MACS),

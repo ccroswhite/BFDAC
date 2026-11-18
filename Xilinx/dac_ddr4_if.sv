@@ -4,7 +4,7 @@
 // Wraps the MIG-generated ddr4_0 IP core.
 // Platform: Alinx ACKU15S SOM — banks 66/67/68.
 //   TOPOLOGY (2026-11-14): 4× Nanya NT5AD512M16C4-HR x16 = 64-bit non-ECC (5th chip NC — MIG caps at 72),
-//   10 GB, 2666 Mbps. DDR4 reference clock: on-module 200 MHz (AR32/AT32).
+//   4 GB, 2666 Mbps. DDR4 reference clock: on-module 200 MHz (AR32/AT32).
 // Exposes AXI4 slave ports: read side for coef_bank_loader, write side for
 // qspi_boot_loader (added 2026-08-22); ui_clk for the coefficient subsystem.
 // NOTE: this is the SIMULATION STUB. The real MIG wrapper is
@@ -56,7 +56,7 @@ module dac_ddr4_if (
     input  logic         m_axi_rready,
 
     // AXI4 Write Channels (driven by qspi_boot_loader)
-    input  logic [29:0]  s_axi_awaddr,
+    input  logic [31:0]  s_axi_awaddr,
     input  logic [7:0]   s_axi_awlen,
     input  logic [2:0]   s_axi_awsize,
     input  logic [1:0]   s_axi_awburst,

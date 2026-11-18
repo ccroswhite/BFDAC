@@ -430,7 +430,7 @@ module acku15s_dac_top #(
     logic        boot_start;
     logic        boot_done, boot_ok, boot_crc_fail, boot_axi_fail, boot_format_fail;
     logic [7:0]  boot_record_count;
-    logic [29:0] axi_awaddr;
+    logic [31:0] axi_awaddr;
     logic [7:0]  axi_awlen;
     logic [2:0]  axi_awsize;
     logic [1:0]  axi_awburst;
