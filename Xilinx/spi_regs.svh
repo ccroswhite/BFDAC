@@ -81,8 +81,10 @@
 // the generator/firmware packing contract). 16'hFFFF = don't-touch sentinel.
 // K2/K3 carry the signed Q2.25 coefficient directly (sign-extended to the
 // shaper's 27-bit port): usable range (-0.25,+0.25), resolution 2^-25.
-`define SPI_W_VOICING_K2       7'h1D  // [23:0] = k2 Q2.25 (e.g. +2.0e-3 = 67109)
-`define SPI_W_VOICING_K3       7'h1E  // [23:0] = k3 Q2.25 (e.g. -8.0e-5 = -2684)
+`define SPI_W_VOICING_K2       7'h1D  // [23:0] = k2 raw Q2.25 LSBs, sign-extended
+                                      //   to 27b (LSB = 2^-25; +2.0e-3 = 67109)
+`define SPI_W_VOICING_K3       7'h1E  // [23:0] = k3 raw Q2.25 LSBs, sign-extended
+                                      //   to 27b (LSB = 2^-25; -8.0e-5 = -2684)
 `define SPI_W_VOICING_CTRL     7'h1F  // [0]=voicing_en shadow,
                                       //     [8]=commit (1 = apply at fir_frame_done)
 `define SPI_W_VOICING_FILTER_ID 7'h20  // [15:0] raw directory ID; 16'hFFFF =
