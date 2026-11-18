@@ -109,7 +109,26 @@ module dac_ctrl_plane (
     input  tri1           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
     input  tri0           stream_fault,
-    input  tri1           stream_audio_ready
+    input  tri1           stream_audio_ready,
+
+    // Voicing shaper shadow set (regs 0x1D-0x1F; Step 2 2026-11-17).
+    // Shadow fields are written individually, then VOICING_CTRL[8]=1 flips
+    // voicing_commit_toggle — the dsp_clk commit FSM latches the whole set
+    // atomically and applies at fir_frame_done. Writes are rejected while
+    // commit_pending (ack_toggle hasn't caught up) so the shadow set can
+    // never tear mid-commit.
+    output logic              voicing_sh_en,
+    output logic signed [26:0] voicing_sh_k2,   // Q2.25 (SPI writes [26:3])
+    output logic signed [26:0] voicing_sh_k3,
+    output logic [3:0]        voicing_sh_preset,
+    output logic              voicing_commit_toggle,
+    input  logic              voicing_ack_toggle,     // dsp_clk domain
+    input  logic              voicing_swap_busy,      // dsp_clk domain
+    input  logic              voicing_err_toggle,     // dsp_clk, flips on failed preset load
+    input  logic [3:0]        voicing_applied_preset, // dsp_clk domain
+    input  logic              voicing_applied_en,     // dsp_clk domain
+    output logic              voicing_err_seen        // err parity -> dsp_clk
+                                                      // reset parking
 );
 
     // Cal shadow-bank write pointer. cal_wr_addr (the exported CDC bus) holds
@@ -256,7 +275,9 @@ module dac_ctrl_plane (
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
             `SPI_W_FILTER_SELECT_ID,
             `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R,
-            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID: wr_addr_invalid = 1'b0;
+            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID,
+            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_CTRL:
+                                                            wr_addr_invalid = 1'b0;
             default:                                    wr_addr_invalid = 1'b1;
         endcase
     end
@@ -316,6 +337,62 @@ module dac_ctrl_plane (
 
     (* ASYNC_REG = "TRUE" *) logic [1:0] cell_test_ack_meta, cell_test_ack_sync;
     wire [1:0] cell_test_busy = cell_test_req ^ cell_test_ack_sync;
+
+    // ---- Voicing commit handshake + applied-side readback (dsp_clk -> clk) --
+    // commit_pending spans the whole apply: field-only commits release after
+    // one fir_frame_done; preset swaps release after fade-out -> DDR4 load ->
+    // apply -> fade-in (~50 ms). Shadow writes are rejected while pending so
+    // the quasi-static bus can never tear mid-commit.
+    (* ASYNC_REG = "TRUE" *) logic [2:0] vo_ack_sync;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] vo_err_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] vo_busy_sync;
+    // The applied preset/en are a multi-bit dsp_clk bus — a 2-FF sync could
+    // tear mid-transition (e.g. preset 3->4 reads 0 or 7). They only change
+    // inside the commit FSM and are stable BEFORE ack_toggle flips, so
+    // capturing them here on the synced ack edge is a tear-free quasi-static
+    // sample (stable for the full sync latency).
+    (* ASYNC_REG = "TRUE" *) logic [3:0] vo_apreset_r;
+    (* ASYNC_REG = "TRUE" *) logic       vo_aen_r;
+    logic        vo_ack_d;
+    logic        vo_err_flag;   // sticky "last preset load failed" — clears
+                                // on the next executed commit (toggle edge)
+    logic        vo_commit_d;
+    wire         voicing_commit_pending = (voicing_commit_toggle != vo_ack_sync[2]);
+    wire         vo_load_err_evt        = (vo_err_sync[2] != voicing_err_seen);
+    wire         vo_commit_evt          = (voicing_commit_toggle != vo_commit_d);
+    wire         vo_ack_evt             = (vo_ack_sync[2] != vo_ack_d);
+
+    always_ff @(posedge clk) begin
+        if (!ext_rst_n) begin
+            vo_ack_sync     <= '0;
+            vo_err_sync     <= '0;
+            vo_busy_sync    <= '0;
+            vo_apreset_r    <= '0;
+            vo_aen_r        <= 1'b0;
+            vo_ack_d        <= 1'b0;
+            voicing_err_seen <= 1'b0;
+            vo_err_flag     <= 1'b0;
+            vo_commit_d     <= 1'b0;
+        end else begin
+            vo_ack_sync     <= {vo_ack_sync[1:0], voicing_ack_toggle};
+            vo_err_sync     <= {vo_err_sync[1:0], voicing_err_toggle};
+            vo_busy_sync    <= {vo_busy_sync[0], voicing_swap_busy};
+            vo_ack_d        <= vo_ack_sync[2];
+            vo_commit_d     <= voicing_commit_toggle;
+            // Ack edge => dsp commit FSM has fully applied; applied_* have
+            // been stable for the entire sync latency — capture them now.
+            if (vo_ack_evt) begin
+                vo_apreset_r <= voicing_applied_preset;
+                vo_aen_r     <= voicing_applied_en;
+            end
+            if (vo_load_err_evt) begin
+                voicing_err_seen <= vo_err_sync[2];
+                vo_err_flag <= 1'b1;
+            end else if (vo_commit_evt) begin
+                vo_err_flag <= 1'b0;
+            end
+        end
+    end
     wire cell_test_enabled = cell_test_cfg[0][7] || cell_test_cfg[1][7];
     wire cell_test_channel = (wr_addr == `SPI_W_CELL_TEST_R);
     assign i2s_rx_trim = 5'd8;   // fixed round-trip trim (0x1C retired 11-15)
@@ -383,6 +460,27 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
             end
+            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3: begin
+                if (voicing_commit_pending) begin
+                    wr_rejected   = 1'b1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
+                end
+            end
+            `SPI_W_VOICING_CTRL: begin
+                if (voicing_commit_pending) begin
+                    wr_rejected   = 1'b1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
+                end else if (ctrl_bus_data[7:4] > `VOICING_PRESET_MAX ||
+                             ctrl_bus_data[23:9] != 0 ||
+                             ctrl_bus_data[3:1] != 0) begin
+                    wr_rejected   = 1'b1;
+                    wr_rej_reason = (ctrl_bus_data[7:4] > `VOICING_PRESET_MAX)
+                                    ? ERR_FILT_RANGE : `SPI_ERR_TEST_FORMAT;
+                end else if (ctrl_bus_data[8] && (stream_busy || mgr_busy_r)) begin
+                    wr_rejected   = 1'b1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
+                end
+            end
             `SPI_W_FILTER_LIST_APP: if (filter_list_len >= FLIST_LW'(FLIST_MAX)) begin
                 wr_rejected   = 1'b1;
                 wr_rej_reason = ERR_FILT_FULL;
@@ -435,6 +533,17 @@ module dac_ctrl_plane (
                             wr_addr == `SPI_W_CAL_DATA || wr_addr == `SPI_W_CAL_COMMIT ||
                             wr_addr == `SPI_W_DPD_EN ||
                             (wr_addr == `SPI_W_FILTER_LIST_CTRL && ctrl_bus_data[1]))) begin
+            wr_rejected = 1;
+            wr_rej_reason = `SPI_ERR_TEST_BUSY;
+        end
+        // Mutual exclusion, reverse direction: while a voicing commit is
+        // pending or the swap FSM is running in dsp_clk, manual bank/filter
+        // writes must not interleave a request into the bank manager.
+        // (Cal/DPD writes stay unblocked — they don't touch the manager.)
+        if ((voicing_commit_pending || vo_busy_sync[1]) &&
+            (wr_addr == `SPI_W_BANK_LOAD ||
+             wr_addr == `SPI_W_FILTER_SELECT || wr_addr == `SPI_W_FILTER_SELECT_ID ||
+             (wr_addr == `SPI_W_FILTER_LIST_CTRL && ctrl_bus_data[1]))) begin
             wr_rejected = 1;
             wr_rej_reason = `SPI_ERR_TEST_BUSY;
         end
@@ -493,7 +602,7 @@ module dac_ctrl_plane (
             if (wr_stb && (wr_addr_invalid || wr_denied)) sticky_err[5] <= 1'b1;
             if ((wr_stb && wr_rejected) || load_err_evt)
                                                  sticky_err[6] <= 1'b1;
-            if (cal_write_reject_evt)
+            if (cal_write_reject_evt || vo_load_err_evt)
                                                  sticky_err[6] <= 1'b1;
             if ((boot_err_lvl && !boot_err_d) || flash_cmd_err)
                                                  sticky_err[7] <= 1'b1;
@@ -512,6 +621,10 @@ module dac_ctrl_plane (
             end else if (cal_write_reject_evt) begin
                 err_info_addr   <= `SPI_W_CAL_DATA;
                 err_info_reason <= `SPI_ERR_TEST_BUSY;
+                err_info_filter_axi <= 1'b0;
+            end else if (vo_load_err_evt) begin
+                err_info_addr   <= `SPI_W_VOICING_CTRL;
+                err_info_reason <= ERR_FILT_NOTFOUND;
                 err_info_filter_axi <= 1'b0;
             end else if (wr_stb && (wr_addr_invalid || wr_denied || wr_rejected)) begin
                 err_info_addr   <= wr_addr;
@@ -631,6 +744,12 @@ module dac_ctrl_plane (
             cell_test_cfg     <= '0;
             cell_test_req     <= '0;
             cal_ptr_wrapped   <= 1'b0;
+            // Voicing: fail-safe = bypass preset 0, no commit pending
+            voicing_sh_en        <= 1'b0;
+            voicing_sh_k2        <= '0;
+            voicing_sh_k3        <= '0;
+            voicing_sh_preset    <= 4'd0;
+            voicing_commit_toggle <= 1'b0;
         end else begin
             coef_load_start <= 1'b0;    // Default: deassert each cycle
             filter_load_req <= 1'b0;
@@ -750,6 +869,26 @@ module dac_ctrl_plane (
                             filter_id       <= ctrl_bus_data[15:0];
                             filter_load_req <= 1'b1;
                         end
+                        // Voicing shadow set: the 24-bit SPI field IS the
+                        // Q2.25 coefficient, sign-extended to 27 bits —
+                        // range (-0.25,+0.25) at full 2^-25 resolution
+                        // (k2=+2.0e-3 -> 24'sd67109, k3=-8.0e-5 -> -24'sd2684
+                        // exactly; |k|>=0.25 would be -18dBc H2 anyway).
+                        // !wr_rejected is mandatory: a commit-pending write
+                        // here would tear the quasi-static CDC bus mid-apply.
+                        `SPI_W_VOICING_K2: if (!wr_rejected)
+                            voicing_sh_k2 <= {{3{ctrl_bus_data[23]}}, ctrl_bus_data[23:0]};
+                        `SPI_W_VOICING_K3: if (!wr_rejected)
+                            voicing_sh_k3 <= {{3{ctrl_bus_data[23]}}, ctrl_bus_data[23:0]};
+                        `SPI_W_VOICING_CTRL: if (!wr_rejected) begin
+                            voicing_sh_en     <= ctrl_bus_data[0];
+                            voicing_sh_preset <= ctrl_bus_data[7:4];
+                            // [8]=1: atomic commit — all fields apply at ONE
+                            // fir_frame_done downstream (or after the bank
+                            // swap for a preset change).
+                            if (ctrl_bus_data[8])
+                                voicing_commit_toggle <= ~voicing_commit_toggle;
+                        end
                         default: ;
                     endcase
                 end else begin
@@ -813,6 +952,12 @@ module dac_ctrl_plane (
             `SPI_R_STREAM_STATUS: reg_read = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
                 stream_clocks_ready, stream_busy};
+            // 0x21: Voicing status — APPLIED set is the dsp_clk truth; the
+            // requested/shadow set diverges while commit_pending is high.
+            `SPI_R_VOICING_STATUS: reg_read = {19'd0,
+                vo_apreset_r, voicing_commit_pending,
+                vo_busy_sync[1], vo_err_flag, vo_aen_r,
+                voicing_sh_preset, voicing_sh_en};
             `SPI_R_CELL_TEST_L: reg_read = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
             `SPI_R_CELL_TEST_R: reg_read = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
             default: reg_read = `SPI_READ_UNMAPPED;

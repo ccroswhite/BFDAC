@@ -313,6 +313,19 @@ module acku15s_dac_top #(
     // Boot envelope (dsp_clk domain)
     logic [15:0] boot_envelope_gain;
 
+    // Voicing shaper control (Step 2): shadow set clk_200m -> applied set
+    // dsp_clk via voicing_commit_ctrl inside dac_coef_subsys
+    logic              voicing_sh_en;
+    logic signed [26:0] voicing_sh_k2, voicing_sh_k3;
+    logic [3:0]        voicing_sh_preset;
+    logic              voicing_commit_toggle, voicing_ack_toggle;
+    logic              voicing_en;
+    logic signed [26:0] voicing_k2, voicing_k3;
+    logic              voicing_swap_busy, voicing_err_toggle;
+    logic [3:0]        voicing_applied_preset;
+    logic              voicing_applied_en;
+    logic              voicing_err_seen;      // clk_200m parity -> dsp reset park
+
     // Coef subsystem status (dsp_clk domain; load_err is a ui_clk level)
     logic [3:0]  current_bank_id;
     logic        mgr_busy;
@@ -662,6 +675,12 @@ module acku15s_dac_top #(
         .coef_load_start        (coef_load_start),
         .filter_id              (filter_id),
         .filter_load_req        (filter_load_req),
+        .voicing_commit_toggle  (voicing_commit_toggle),
+        .voicing_sh_en          (voicing_sh_en),
+        .voicing_sh_k2          (voicing_sh_k2),
+        .voicing_sh_k3          (voicing_sh_k3),
+        .voicing_sh_preset      (voicing_sh_preset),
+        .voicing_err_seen       (voicing_err_seen),
         .boot_ok                (boot_ok),
         .m_axi_araddr           (axi_araddr),
         .m_axi_arlen            (axi_arlen),
@@ -681,6 +700,14 @@ module acku15s_dac_top #(
         .bank_select            (bank_select),
         .bank_load_target       (bank_load_target),
         .boot_envelope_gain     (boot_envelope_gain),
+        .voicing_en             (voicing_en),
+        .voicing_k2             (voicing_k2),
+        .voicing_k3             (voicing_k3),
+        .voicing_ack_toggle     (voicing_ack_toggle),
+        .voicing_swap_busy      (voicing_swap_busy),
+        .voicing_err_toggle     (voicing_err_toggle),
+        .voicing_applied_preset (voicing_applied_preset),
+        .voicing_applied_en     (voicing_applied_en),
         .current_bank_id        (current_bank_id),
         .mgr_busy               (mgr_busy),
         .bank_valid             (bank_valid),
@@ -807,7 +834,18 @@ module acku15s_dac_top #(
         .stream_busy            (stream_busy),
         .stream_clocks_ready    (stream_clock_ready),
         .stream_applied_rate    (applied_stream_rate),
-        .stream_fault           (stream_fault_sync[1])
+        .stream_fault           (stream_fault_sync[1]),
+        .voicing_sh_en          (voicing_sh_en),
+        .voicing_sh_k2          (voicing_sh_k2),
+        .voicing_sh_k3          (voicing_sh_k3),
+        .voicing_sh_preset      (voicing_sh_preset),
+        .voicing_commit_toggle  (voicing_commit_toggle),
+        .voicing_ack_toggle     (voicing_ack_toggle),
+        .voicing_swap_busy      (voicing_swap_busy),
+        .voicing_err_toggle     (voicing_err_toggle),
+        .voicing_applied_preset (voicing_applied_preset),
+        .voicing_applied_en     (voicing_applied_en),
+        .voicing_err_seen       (voicing_err_seen)
     );
 
     // ==============================================================
@@ -938,11 +976,11 @@ module acku15s_dac_top #(
         .coef_wmac              (coef_wmac),
         .bank_select            (bank_select),
         .bank_load_target       (bank_load_target),
-        // Layer-2 voicing shaper — tied off until the VOICING_CTRL/K2/K3
-        // SPI registers land (step 2).  voicing_en=0 -> 0-LSB bypass.
-        .voicing_en             (1'b0),
-        .voicing_k2             (27'sd0),
-        .voicing_k3             (27'sd0),
+        // Layer-2 voicing shaper — applied set from voicing_commit_ctrl in
+        // dac_coef_subsys (SPI regs 0x1D-0x1F; frame-synced atomic apply).
+        .voicing_en             (voicing_en),
+        .voicing_k2             (voicing_k2),
+        .voicing_k3             (voicing_k3),
         .sys_volume             (sys_volume_dsp),
         .boot_envelope_gain     (env_level_gain),   // boot envelope x LEVEL cap (see level_gain above)
         .cell_test_cfg          (cell_test_cfg),

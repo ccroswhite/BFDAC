@@ -71,6 +71,18 @@
 `define SPI_W_STREAM_VALID     7'h1B  // [0]=XMOS stream-live flag; zero on underrun/stop (XMOS-only 11-15)
 // 7'h1C RESERVED (was I2S_RX_TRIM — retired 2026-11-15: trim fixed at 8,
 //          src_sel dead — XMOS is the sole audio source)
+// ---- Voicing shaper (Layer 2, Step-2 commit contract 2026-11-17) -----------
+// Shadow + atomic commit: host writes K2, K3, then VOICING_CTRL with [8]=1.
+// All fields latch in dsp_clk at ONE fir_frame_done — no k2/k3 tearing.
+// commit_pending (VOICING_STATUS[8]) blocks further voicing writes until the
+// applied set acks; preset changes run fade-out -> DDR4 bank load
+// (filter_id = VOICING_ID_BASE + preset, 0xF000..0xF006) -> apply -> fade-in.
+// K2/K3 carry the signed Q2.25 coefficient directly (sign-extended to the
+// shaper's 27-bit port): usable range (-0.25,+0.25), resolution 2^-25.
+`define SPI_W_VOICING_K2       7'h1D  // [23:0] = k2 Q2.25 (e.g. +2.0e-3 = 67109)
+`define SPI_W_VOICING_K3       7'h1E  // [23:0] = k3 Q2.25 (e.g. -8.0e-5 = -2684)
+`define SPI_W_VOICING_CTRL     7'h1F  // [0]=voicing_en shadow, [7:4]=preset,
+                                      //     [8]=commit (1 = apply at fir_frame_done)
 
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026
@@ -94,11 +106,20 @@
 `define SPI_R_CELL_TEST_R      7'h1E
 `define SPI_R_BENCH_STATUS     7'h1F
 `define SPI_R_STREAM_STATUS    7'h20
+// 0x21: Voicing status {rsvd[31:13], applied_preset[12:9], commit_pending[8],
+//        swap_busy[7], load_err_seen[6], applied_en[5], sh_preset[4:1], sh_en[0]}
+`define SPI_R_VOICING_STATUS   7'h21
 
 // ---- Constants ----------------------------------------------------------------
 `define SPI_MAGIC_ID           32'hDAC02026
 `define SPI_READ_UNMAPPED      32'hDEADBEEF
 `define SPI_FLIST_MAX          32     // filter toggle-list capacity
+// Voicing preset -> DDR4 directory filter_id (Step 2; Step 3 generator
+// emits the 7 banks tagged F000..F006 in this order):
+//   0 reference_bench 1 chord_wta_hf 2 dcs_apodizing 3 dcs_berkeley_fast
+//   4 msb_ladder_contour 5 nagra_pure_time 6 nagra_tube_xfmr
+`define VOICING_ID_BASE        16'hF000
+`define VOICING_PRESET_MAX     4'd6
 
 // ---- Sticky error bits (read 0x11, W1C via write 0x16) -----------------------
 `define SPI_STICKY_SPI_CRC     0

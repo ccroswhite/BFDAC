@@ -5905,3 +5905,38 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   symmetric cycle (<0.5 LSB), and HW DC_SHIFT=16 drops the ripple
   256x to ~2 LSBs.
 - Elab re-check detached: Xilinx/elab_voicing3.log (pending ELAB_OK).
+
+## VOICING STEP 2 — SPI-controlled voicing path (audit complete)
+- Register map (AP-only): 0x1D=VOICING_K2, 0x1E=VOICING_K3 (24-bit signed
+  field = raw Q2.25 low bits, sign-extended to 27b — k2=+2.0e-3 -> 67109,
+  k3=-8.0e-5 -> -2684, no <<3 in firmware), 0x1F=VOICING_CTRL
+  [0]=en [7:4]=preset [8]=commit; read 0x21=VOICING_STATUS
+  (busy/commit_pending/applied_preset/applied_en/last_load_failed).
+- voicing_commit_ctrl.sv (dsp_clk): shadow fields cross quasi-statically
+  on a toggle-synced commit -> field-only change applies at next
+  fir_frame_done; preset change = fade-out (coef_mute_envelope ~5.3ms
+  smootherstep) -> bank mgr request filter_id=VOICING_ID_BASE+preset ->
+  swap confirmed via mgr_current_bank -> apply at fir_frame_done ->
+  fade-in -> ack toggle. Failed load: restore audio, err toggle, preset
+  NOT applied.
+- Audit fixes (user):
+  Bug1 K2/K3 write arms missing !wr_rejected -> torn shadow mid-commit; fixed.
+  Bug2 {data,3'b000} quantized k to 8 LSBs -> sign-extend {3{b23},b23:0};
+       covers [-0.25,+0.25) at full 2^-25 LSB.
+  Bug3 4-bit applied_preset free-run thru 2FF sync -> binary skew on
+       status reads; now captured in clk_200m ONLY on synced ack edge
+       (applied_* static >= full sync latency before ack flips).
+  Catch4 manual BANK_LOAD/FILTER_SELECT/_ID/LIST_CTRL[1] now reject
+       TEST_BUSY while voicing_commit_pending||vo_busy (bidirectional).
+  Catch5 dsp_clk reset during oscillator switch desynced BOTH toggle
+       parities: commit_sync/commit_d free-run (never reset -> commit_d
+       tracks -> no phantom edge); FSM reset parks ack_toggle<=
+       commit_sync[2] (kills permanent pending) and vo_err_toggle<=
+       err_seen_sync[1] (kills phantom error). NEW back-channel:
+       dac_ctrl_plane exports voicing_err_seen -> dsp_clk reset park.
+       Trade-off: no auto re-commit after dsp reset — shadow stays
+       dormant in bypass until AP re-commits (avoids F00x bank load
+       racing coef re-staging).
+- Verify: [tb_vcommit] PASS x2 (field-only/preset-swap/failed-load,
+  post-Catch5 re-run); elab_step2.log ELAB_OK — 232 Info/286 W/
+  0 CW/0 E, zero voicing-related warnings, no wr_rejected regression.

@@ -1,5 +1,7 @@
 `timescale 1ns / 1ps
 
+`include "spi_regs.svh"   // VOICING_ID_BASE (voicing preset -> directory ID)
+
 // Coefficient Loading Subsystem
 // Combines:
 //   - coef_bank_loader  (AXI4 read master, runs at ui_clk 300 MHz)
@@ -36,6 +38,16 @@ module dac_coef_subsys #(
     input  logic [15:0] filter_id,          // Directory filter ID (regs 0x08-0x0A, 0x17)
     input  logic        filter_load_req,    // Single-cycle pulse on select/advance
 
+    // Voicing shadow set (clk_200m, regs 0x1D-0x1F) + commit toggle.
+    // Quasi-static while commit pending; applied atomically by
+    // voicing_commit_ctrl at fir_frame_done (see that module).
+    input  logic              voicing_commit_toggle,
+    input  logic              voicing_sh_en,
+    input  logic signed [26:0] voicing_sh_k2,
+    input  logic signed [26:0] voicing_sh_k3,
+    input  logic [3:0]        voicing_sh_preset,
+    input  logic              voicing_err_seen,     // clk_200m err parity back
+
     // Boot loader status (clk_200m domain, quasi-static level: all coefficient
     // records staged into DDR4 and CRC-verified)
     input  logic        boot_ok,
@@ -65,6 +77,16 @@ module dac_coef_subsys #(
 
     // Boot envelope gain (dsp_clk domain, to dac_dsp_core)
     output logic [15:0] boot_envelope_gain,
+
+    // Applied voicing set (dsp_clk domain, to dac_dsp_core) + readback
+    output logic              voicing_en,
+    output logic signed [26:0] voicing_k2,
+    output logic signed [26:0] voicing_k3,
+    output logic              voicing_ack_toggle,    // -> clk_200m commit_pending
+    output logic              voicing_swap_busy,     // dsp_clk level -> status
+    output logic              voicing_err_toggle,    // flips on failed preset load
+    output logic [3:0]        voicing_applied_preset,
+    output logic              voicing_applied_en,
 
     // Status outputs (dsp_clk domain)
     output logic [3:0]  current_bank_id,
@@ -345,14 +367,22 @@ module dac_coef_subsys #(
     // toggle and sampled here only when the synced toggle edge arrives.
     logic [REQ_BITS-1:0] mgr_current_req;
 
+    // Voicing preset swap: voicing_commit_ctrl emits its bank-load request
+    // only while the manager is IDLE and no SPI request is pulsing, so a
+    // simple priority mux cannot lose either request.
+    logic        vo_req_pulse;
+    logic [16:0] vo_req_data;
+    wire [REQ_BITS-1:0] mgr_req_data  = req_pulse_dsp ? req_data_dsp : vo_req_data;
+    wire                mgr_req_pulse = req_pulse_dsp | vo_req_pulse;
+
     coef_bank_manager #(
         .REQ_BITS           (REQ_BITS)
     ) u_coef_mgr (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
         .sample_tick        (fir_frame_done),
-        .bank_select_req    (req_data_dsp),
-        .bank_select_pulse  (req_pulse_dsp),
+        .bank_select_req    (mgr_req_data),
+        .bank_select_pulse  (mgr_req_pulse),
         .ddr4_ready         (boot_ok_sync[1]),
         .bank_select        (bank_select),
         .bank_load_target   (bank_load_target),
@@ -370,16 +400,54 @@ module dac_coef_subsys #(
     assign current_bank_id = mgr_current_req[3:0];
 
     // ----------------------------------------------------------------
-    // 5. Boot-time mute envelope (dsp_clk domain)
+    // 5. Mute envelope + voicing commit FSM (dsp_clk domain)
     // ----------------------------------------------------------------
+    // One envelope serves both boot fade-in and voicing preset swaps:
+    // boot only ever requests fade_in once (before bank_valid), voicing
+    // fades only after bank_valid, so the requests never collide.
+    logic vo_fade_out, vo_fade_in;
+
     coef_mute_envelope u_boot_envelope (
         .clk                (dsp_clk),
         .rst_n              (sys_rst_n),
         .sample_tick        (sample_768k_tick),
-        .fade_out_req       (1'b0),
-        .fade_in_req        (boot_fade_in_req),
+        .fade_out_req       (vo_fade_out),
+        .fade_in_req        (boot_fade_in_req | vo_fade_in),
         .gain               (boot_envelope_gain),
         .fade_done          (boot_fade_done)
     );
+
+    voicing_commit_ctrl #(
+        .VOICING_ID_BASE   (`VOICING_ID_BASE)
+    ) u_voicing_commit (
+        .clk               (dsp_clk),
+        .rst_n             (sys_rst_n),
+        .commit_toggle_in  (voicing_commit_toggle),
+        .sh_en             (voicing_sh_en),
+        .sh_k2             (voicing_sh_k2),
+        .sh_k3             (voicing_sh_k3),
+        .sh_preset         (voicing_sh_preset),
+        .fir_frame_done    (fir_frame_done),
+        .bank_valid        (bank_valid),
+        .mgr_busy          (mgr_busy),
+        .coef_load_done    (coef_load_done),
+        .coef_load_failed  (loader_err_ui),
+        .mgr_current_bank  (mgr_current_req),
+        .spi_req_active    (req_pulse_dsp),
+        .err_seen_in       (voicing_err_seen),
+        .fade_done         (boot_fade_done),
+        .voicing_en        (voicing_en),
+        .voicing_k2        (voicing_k2),
+        .voicing_k3        (voicing_k3),
+        .applied_preset    (voicing_applied_preset),
+        .ack_toggle        (voicing_ack_toggle),
+        .swap_busy         (voicing_swap_busy),
+        .vo_err_toggle     (voicing_err_toggle),
+        .vo_req_pulse      (vo_req_pulse),
+        .vo_req_data       (vo_req_data),
+        .fade_out_req      (vo_fade_out),
+        .fade_in_req       (vo_fade_in)
+    );
+    assign voicing_applied_en = voicing_en;
 
 endmodule
