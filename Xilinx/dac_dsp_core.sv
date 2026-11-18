@@ -45,6 +45,11 @@ module dac_dsp_core #(
     input  logic        bank_select,
     input  logic        bank_load_target,
 
+    // Layer-2 voicing shaper (dsp_clk domain, frame-synced upstream)
+    input  logic              voicing_en,
+    input  logic signed [26:0] voicing_k2,   // Q2.25
+    input  logic signed [26:0] voicing_k3,   // Q2.25
+
     // Volume gain in Q16.16 NS code units (from dac_ctrl_plane)
     input  logic [31:0] sys_volume,
 
@@ -126,6 +131,37 @@ module dac_dsp_core #(
     );
 
     // =========================================================================
+    // 1b. Layer-2 voicing shaper — stereo, bypassable k2/k3 polynomial
+    //     at the 768/705.6 kHz node.  0-LSB pass-through when !voicing_en.
+    // =========================================================================
+    logic signed [47:0] vox_l,       vox_r;
+    logic               vox_l_valid, vox_r_valid;
+
+    dac_voicing_shaper u_voicing_l (
+        .clk        (dsp_clk),
+        .rst_n      (sys_rst_n),
+        .in_valid   (interp_l_valid),
+        .data_in    (interp_l),
+        .voicing_en (voicing_en),
+        .k2         (voicing_k2),
+        .k3         (voicing_k3),
+        .out_valid  (vox_l_valid),
+        .data_out   (vox_l)
+    );
+
+    dac_voicing_shaper u_voicing_r (
+        .clk        (dsp_clk),
+        .rst_n      (sys_rst_n),
+        .in_valid   (interp_r_valid),
+        .data_in    (interp_r),
+        .voicing_en (voicing_en),
+        .k2         (voicing_k2),
+        .k3         (voicing_k3),
+        .out_valid  (vox_r_valid),
+        .data_out   (vox_r)
+    );
+
+    // =========================================================================
     // 2. Half-band x2 stage HB1 — stereo
     //    63 taps, 768k -> 1.536 MHz
     // =========================================================================
@@ -136,8 +172,8 @@ module dac_dsp_core #(
     u_hb1_l (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (interp_l_valid),
-        .data_in  (interp_l),
+        .in_valid (vox_l_valid),
+        .data_in  (vox_l),
         .out_valid(hb1_l_valid),
         .data_out (hb1_l)
     );
@@ -146,8 +182,8 @@ module dac_dsp_core #(
     u_hb1_r (
         .clk      (dsp_clk),
         .rst_n    (sys_rst_n),
-        .in_valid (interp_r_valid),
-        .data_in  (interp_r),
+        .in_valid (vox_r_valid),
+        .data_in  (vox_r),
         .out_valid(hb1_r_valid),
         .data_out (hb1_r)
     );

@@ -938,6 +938,11 @@ module acku15s_dac_top #(
         .coef_wmac              (coef_wmac),
         .bank_select            (bank_select),
         .bank_load_target       (bank_load_target),
+        // Layer-2 voicing shaper — tied off until the VOICING_CTRL/K2/K3
+        // SPI registers land (step 2).  voicing_en=0 -> 0-LSB bypass.
+        .voicing_en             (1'b0),
+        .voicing_k2             (27'sd0),
+        .voicing_k3             (27'sd0),
         .sys_volume             (sys_volume_dsp),
         .boot_envelope_gain     (env_level_gain),   // boot envelope x LEVEL cap (see level_gain above)
         .cell_test_cfg          (cell_test_cfg),

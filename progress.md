@@ -5835,3 +5835,23 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - MPN/property classification: zero IC/connector/xfmr refs missing MPN; zero unannotated refs.
 - FOUND+FIXED: 14 duplicate reference designators on prereg.kicad_sch (xcheck "annotation errors" warning). Three generator bugs: (a) branch-LDO rb spacing bi*2 overlapped +1..+4 spread (R7723/24, R7733/34); (b) shared-rail banks derived R/C refs from U-base rbase - N16A (7807+off) overlapped P16A (7801+off) and the AC18 snubbers at 7841 (C7841-44, C7851/52, R7831/32, R7841); (c) R7902 emitted twice in the V8P3 section (pi R + ADJ 59k). Fix: bi*2->bi*5, bank R/C refs split off rbase into per-bank ob (P16A ob=7801 unchanged, N16A ob=7831 -> R7851-65/C7871-82), AC18 snubbers -> 7891-94, V8P3 ADJ top -> R7907. Regen: 0 duplicate refs; bom.md ref callouts updated.
 - Verify: check_pcie_pinmap PASS x3; kicad_xcheck back to pre-existing FAIL(1) only (VAP_IO/GND_AP merge); annotation warning cleared.
+
+## 2026-11-16 - voicing step 1: dac_voicing_shaper + dsp_core hookup
+- New Xilinx/dac_voicing_shaper.sv: single-channel k2/k3 polynomial shaper
+  instantiated stereo at the interp_l/r -> u_hb1_l/r node (768/705.6 kHz).
+  y = x + k2*(u^2 - dc_est) + k3*u^3; dc_est 1-pole tracker (>>>16/sample,
+  ~1.8-1.9 Hz corner) strips k2 DC shift. Formats: u=Q2.25 (data_in[42:16],
+  FS=2^41, 4x headroom), u_sq/u_cu=Q3.15, k2/k3=Q2.25 on DSP48 A-ports,
+  harm=Q5.40 -> <<1 back to data domain, sat48 at +-2^47 rail.
+- 6-stage in_valid-gated pipeline (~5-sample latency); out_valid strobes
+  once per in_valid, data updates on the strobe edge -> identical sample
+  spacing into HB1. ~5 DSP48E2/channel (10 stereo).
+- voicing_en=0 -> x_d5 straight through, 0-LSB bit-exact bypass.
+- dac_dsp_core: added voicing_en/voicing_k2/voicing_k3 ports; shaper pair
+  inserted between u_stereo_fir and u_hb1_l/r.
+- acku15s_dac_top: voicing ports tied to 0 until SPI registers land (step 2).
+- tb_dac_voicing_shaper.sv smoke TB: bypass bit-exactness + 5-sample latency
+  vs 16-deep history, k2-only voiced deviation + DC-injection mean ~0,
+  out_valid strobe count.
+- Elab check: vivado -mode batch scripts/elab_top.tcl, detached,
+  log Xilinx/elab_voicing.log.
