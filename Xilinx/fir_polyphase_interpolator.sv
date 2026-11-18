@@ -371,11 +371,17 @@ module fir_polyphase_interpolator #(
                         win_rev_q2[w] <= win_rev_q_loc;
                     end
 
-                    always_ff @(posedge clk) begin
-                        if (!rst_n || rate_flush)
-                            boundary_rev_reg[w] <= '0;
-                        else if (cap_s3[GRP])
-                            boundary_rev_reg[w] <= win_rev_q2[w];
+                    // boundary_rev_reg[0] is never read: the win_rev write
+                    // taps boundary_rev_reg[w+1] for w < NUM_MACS-1 only.
+                    if (w == 0) begin : gen_rev_dead0
+                        assign boundary_rev_reg[0] = '0;
+                    end else begin : gen_rev_reg
+                        always_ff @(posedge clk) begin
+                            if (!rst_n || rate_flush)
+                                boundary_rev_reg[w] <= '0;
+                            else if (cap_s3[GRP])
+                                boundary_rev_reg[w] <= win_rev_q2[w];
+                        end
                     end
                 end else begin : gen_rev_lutram
                     (* ram_style = "distributed" *)
@@ -398,10 +404,17 @@ module fir_polyphase_interpolator #(
                         if (!we_s3[GRP])
                             win_rev_q_loc <= win_rev[rd_rev_addr_s3[GRP]];
                         win_rev_q2[w] <= win_rev_q_loc;
-                        if (!rst_n || rate_flush)
-                            boundary_rev_reg[w] <= '0;
-                        else if (cap_s3[GRP])
-                            boundary_rev_reg[w] <= win_rev_q2[w];
+                    end
+
+                    if (w == 0) begin : gen_rev_dead0
+                        assign boundary_rev_reg[0] = '0;
+                    end else begin : gen_rev_reg
+                        always_ff @(posedge clk) begin
+                            if (!rst_n || rate_flush)
+                                boundary_rev_reg[w] <= '0;
+                            else if (cap_s3[GRP])
+                                boundary_rev_reg[w] <= win_rev_q2[w];
+                        end
                     end
                 end
             end else begin : gen_no_win_rev

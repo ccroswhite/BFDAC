@@ -50,8 +50,10 @@ module i2s_master_ingress (
     (* ASYNC_REG = "TRUE" *) logic [1:0] data_sync, enable_sync, valid_sync;
     (* ASYNC_REG = "TRUE" *) logic [4:0] trim_meta, trim_sync;
     logic [4:0] trim_applied;
-    logic [95:0] sample_pipe;
-    logic [5:0] tag_pipe [96];
+    // Max capture delay: rate_shift=0 gives 46 + rx_trim[4:0](max 31) = 77
+    localparam int PIPE_DEPTH = 78;
+    logic [PIPE_DEPTH-1:0] sample_pipe;
+    logic [5:0] tag_pipe [PIPE_DEPTH];
     logic [31:0] serial_word;
     logic [23:0] left_word;
     logic [5:0] expected_bit;
@@ -82,7 +84,7 @@ module i2s_master_ingress (
             expected_bit <= 0; frame_armed <= 0; cadence_fault <= 0;
             watchdog <= 0; audio_l <= 0; audio_r <= 0; new_sample <= 0;
             audio_frame_ready <= 0;
-            for (int i = 0; i < 96; i++) tag_pipe[i] <= 0;
+            for (int i = 0; i < PIPE_DEPTH; i++) tag_pipe[i] <= 0;
         end else begin
             launch_sync <= {launch_sync[1:0], launch_toggle};
             data_sync <= {data_sync[0], i2s_data};
@@ -91,9 +93,9 @@ module i2s_master_ingress (
             trim_meta <= rx_trim;
             trim_sync <= trim_meta;
             new_sample <= 0;
-            sample_pipe <= {sample_pipe[94:0], launch_event};
+            sample_pipe <= {sample_pipe[PIPE_DEPTH-2:0], launch_event};
             if (launch_event) tag_pipe[0] <= launch_bit;
-            for (int i = 1; i < 96; i++) tag_pipe[i] <= tag_pipe[i-1];
+            for (int i = 1; i < PIPE_DEPTH; i++) tag_pipe[i] <= tag_pipe[i-1];
             if (!enable_sync[1]) begin
                 sample_pipe <= 0; frame_armed <= 0; expected_bit <= 0;
                 watchdog <= 0; cadence_fault <= 0;
