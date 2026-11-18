@@ -317,14 +317,15 @@ module acku15s_dac_top #(
     // dsp_clk via voicing_commit_ctrl inside dac_coef_subsys
     logic              voicing_sh_en;
     logic signed [26:0] voicing_sh_k2, voicing_sh_k3;
-    logic [3:0]        voicing_sh_preset;
+    logic [15:0]       voicing_sh_fid;
     logic              voicing_commit_toggle, voicing_ack_toggle;
     logic              voicing_en;
     logic signed [26:0] voicing_k2, voicing_k3;
     logic              voicing_swap_busy, voicing_err_toggle;
-    logic [3:0]        voicing_applied_preset;
+    logic [15:0]       voicing_applied_fid;
     logic              voicing_applied_en;
     logic              voicing_err_seen;      // clk_200m parity -> dsp reset park
+    logic              voicing_bank_chg;      // dsp_clk toggle: any bank swap
 
     // Coef subsystem status (dsp_clk domain; load_err is a ui_clk level)
     logic [3:0]  current_bank_id;
@@ -679,7 +680,7 @@ module acku15s_dac_top #(
         .voicing_sh_en          (voicing_sh_en),
         .voicing_sh_k2          (voicing_sh_k2),
         .voicing_sh_k3          (voicing_sh_k3),
-        .voicing_sh_preset      (voicing_sh_preset),
+        .voicing_sh_fid         (voicing_sh_fid),
         .voicing_err_seen       (voicing_err_seen),
         .boot_ok                (boot_ok),
         .m_axi_araddr           (axi_araddr),
@@ -706,8 +707,9 @@ module acku15s_dac_top #(
         .voicing_ack_toggle     (voicing_ack_toggle),
         .voicing_swap_busy      (voicing_swap_busy),
         .voicing_err_toggle     (voicing_err_toggle),
-        .voicing_applied_preset (voicing_applied_preset),
+        .voicing_applied_fid    (voicing_applied_fid),
         .voicing_applied_en     (voicing_applied_en),
+        .voicing_bank_chg       (voicing_bank_chg),
         .current_bank_id        (current_bank_id),
         .mgr_busy               (mgr_busy),
         .bank_valid             (bank_valid),
@@ -838,13 +840,14 @@ module acku15s_dac_top #(
         .voicing_sh_en          (voicing_sh_en),
         .voicing_sh_k2          (voicing_sh_k2),
         .voicing_sh_k3          (voicing_sh_k3),
-        .voicing_sh_preset      (voicing_sh_preset),
+        .voicing_sh_fid         (voicing_sh_fid),
         .voicing_commit_toggle  (voicing_commit_toggle),
         .voicing_ack_toggle     (voicing_ack_toggle),
         .voicing_swap_busy      (voicing_swap_busy),
         .voicing_err_toggle     (voicing_err_toggle),
-        .voicing_applied_preset (voicing_applied_preset),
+        .voicing_applied_fid    (voicing_applied_fid),
         .voicing_applied_en     (voicing_applied_en),
+        .voicing_bank_chg       (voicing_bank_chg),
         .voicing_err_seen       (voicing_err_seen)
     );
 

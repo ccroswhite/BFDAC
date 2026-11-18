@@ -16,7 +16,7 @@
 //      atomically, at that edge.
 //
 //  Two apply paths:
-//    - Field-only change (preset == applied_preset, or no valid bank yet):
+//    - Field-only change (filter_id == applied, FFFF sentinel, or no valid bank):
 //      applied at the next fir_frame_done. Frame-boundary apply keeps the
 //      shaper consistent with the frame the FIR is working on.
 //    - Preset change (bank_valid): full swap sequence â€”
@@ -39,9 +39,7 @@
 //  applied_* outputs are the DSP-side truth â€” readback shows what is running,
 //  not what was requested (they diverge during the load window).
 // =============================================================================
-module voicing_commit_ctrl #(
-    parameter logic [15:0] VOICING_ID_BASE = 16'hF000  // directory ID of preset 0
-)(
+module voicing_commit_ctrl (
     input  logic              clk,          // dsp_clk
     input  logic              rst_n,
 
@@ -50,7 +48,8 @@ module voicing_commit_ctrl #(
     input  logic              sh_en,
     input  logic signed [26:0] sh_k2,       // Q2.25
     input  logic signed [26:0] sh_k3,       // Q2.25
-    input  logic [3:0]        sh_preset,
+    input  logic [15:0]       sh_filter_id,  // raw directory ID; 16'hFFFF =
+                                             // "don't touch bank" sentinel
 
     // ---- dsp_clk environment ----------------------------------------------
     input  logic              err_seen_in,      // clk_200m error-parity level
@@ -67,7 +66,7 @@ module voicing_commit_ctrl #(
     output logic              voicing_en,       // applied (to dac_dsp_core)
     output logic signed [26:0] voicing_k2,
     output logic signed [26:0] voicing_k3,
-    output logic [3:0]        applied_preset,
+    output logic [15:0]       applied_filter_id,
     output logic              ack_toggle,       // dsp_clk -> clk_200m (pending)
     output logic              swap_busy,        // FSM active (status readback)
     output logic              vo_err_toggle,    // flips on failed preset load
@@ -100,7 +99,7 @@ module voicing_commit_ctrl #(
     // ---- Pending set (latched once, atomically, at the commit edge) --------
     logic              pend_en;
     logic signed [26:0] pend_k2, pend_k3;
-    logic [3:0]        pend_preset;
+    logic [15:0]       pend_filter_id;
 
     // err parity partner: the clk_200m seen-tracker level, synced here so a
     // dsp_clk reset can park vo_err_toggle at it (a plain reset would desync
@@ -123,7 +122,21 @@ module voicing_commit_ctrl #(
     state_t state;
 
     logic did_fade;   // remember to fade back in after a preset swap
-    wire  [16:0] vo_req_id = {1'b1, VOICING_ID_BASE + 16'(pend_preset)};
+    // RTL holds ZERO persona/variant/rate convention: filter_id is an
+    // opaque 16-bit directory ID (packing is a generator/firmware contract).
+    // applied_filter_id is DERIVED from the manager's live current bank —
+    // manual FILTER_SELECT_ID / BANK_LOAD paths self-invalidate it (a
+    // by_id=0 slot load reads back as the FFFF "not a directory filter"
+    // state), so A -> manual B -> voicing A still reloads A correctly.
+    // 16'hFFFF = sentinel: "apply fields only, leave the bank alone".
+    wire  [16:0] vo_req_id = {1'b1, pend_filter_id};
+    assign       applied_filter_id = mgr_current_bank[16]
+                                     ? mgr_current_bank[15:0] : 16'hFFFF;
+    // bank_valid is NOT in the swap test: a post-boot commit with no valid
+    // bank may still load the default persona filter (boot envelope already
+    // mutes audio); did_fade decides whether fade-out is needed.
+    wire         want_swap = (sh_filter_id != 16'hFFFF) &&
+                ({1'b1, sh_filter_id} != mgr_current_bank);
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -131,11 +144,10 @@ module voicing_commit_ctrl #(
             pend_en        <= 1'b0;
             pend_k2        <= '0;
             pend_k3        <= '0;
-            pend_preset    <= '0;
+            pend_filter_id <= 16'hFFFF;
             voicing_en     <= 1'b0;
             voicing_k2     <= '0;
             voicing_k3     <= '0;
-            applied_preset <= '0;
             vo_req_pulse   <= 1'b0;
             vo_req_data    <= '0;
             fade_out_req   <= 1'b0;
@@ -158,13 +170,17 @@ module voicing_commit_ctrl #(
                         pend_en     <= sh_en;
                         pend_k2     <= sh_k2;
                         pend_k3     <= sh_k3;
-                        pend_preset <= sh_preset;
+                        pend_filter_id <= sh_filter_id;
                         // A bank swap only when a valid bank is running and
                         // the preset actually changes; otherwise the shaper
                         // fields alone apply at the next frame boundary.
-                        if (bank_valid && (sh_preset != applied_preset)) begin
-                            did_fade <= 1'b1;
-                            state    <= V_FADE_OUT;
+                        if (want_swap) begin
+                            // Fade out only if a live bank is playing; on a
+                            // post-boot commit (!bank_valid) the boot
+                            // envelope already holds mute — skip straight to
+                            // the request, still run fade-in at the end.
+                            did_fade <= bank_valid;
+                            state    <= bank_valid ? V_FADE_OUT : V_REQ;
                         end else begin
                             did_fade <= 1'b0;
                             state    <= V_APPLY;
@@ -201,7 +217,6 @@ module voicing_commit_ctrl #(
                         voicing_en     <= pend_en;
                         voicing_k2     <= pend_k2;
                         voicing_k3     <= pend_k3;
-                        applied_preset <= pend_preset;
                         state <= did_fade ? V_FADE_IN : V_IDLE;
                         if (!did_fade)
                             ack_toggle <= ~ack_toggle;

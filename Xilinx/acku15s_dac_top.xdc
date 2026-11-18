@@ -638,11 +638,11 @@ set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/voicing_sh_en_reg \
                       u_ctrl_plane/voicing_sh_k2_reg[*] \
                       u_ctrl_plane/voicing_sh_k3_reg[*] \
-                      u_ctrl_plane/voicing_sh_preset_reg[*]}] \
+                      u_ctrl_plane/voicing_sh_fid_reg[*]}] \
     -to   [get_cells {u_coef_subsys/u_voicing_commit/pend_en_reg \
                       u_coef_subsys/u_voicing_commit/pend_k2_reg[*] \
                       u_coef_subsys/u_voicing_commit/pend_k3_reg[*] \
-                      u_coef_subsys/u_voicing_commit/pend_preset_reg[*]}]
+                      u_coef_subsys/u_voicing_commit/pend_filter_id_reg[*]}]
 
 # 9) status returns dsp_clk -> clk_200m: ack/err toggles get max_delay (toggle
 #    handshake style); swap_busy is a plain level into a 2-FF sync.
@@ -658,15 +658,23 @@ set_false_path -to [get_pins {u_ctrl_plane/vo_busy_sync_reg[0]/D}]
 #     (parks vo_err_toggle during dsp_clk reset so parity can't desync).
 set_false_path -to [get_pins {u_coef_subsys/u_voicing_commit/err_seen_sync_reg[0]/D}]
 
-# 11) applied {preset,en} dsp_clk -> clk_200m: quasi-static bus. The FSM writes
-#     applied_preset/voicing_en BEFORE flipping ack_toggle, so by the time
-#     vo_ack_sync[2] edges in clk_200m the bus has been static for the whole
-#     sync latency; vo_apreset_r/vo_aen_r only latch on that edge.
+# 11) applied {filter_id,en} dsp_clk -> clk_200m: quasi-static bus.
+#     applied_filter_id is DERIVED from the bank manager's current_bank_r
+#     (self-invalidates on manual loads); voicing_en is an FSM reg. Both
+#     capture-side regs latch only on synced event edges (vo_bchg for fid,
+#     vo_ack for en), by which time the bus has been static for the full
+#     sync latency.
 set_max_delay -datapath_only 5.0 \
-    -from [get_cells {u_coef_subsys/u_voicing_commit/applied_preset_reg[*] \
+    -from [get_cells {u_coef_subsys/u_coef_mgr/current_bank_r_reg[*] \
                       u_coef_subsys/u_voicing_commit/voicing_en_reg}] \
-    -to   [get_cells {u_ctrl_plane/vo_apreset_r_reg[*] \
+    -to   [get_cells {u_ctrl_plane/vo_afid_r_reg[*] \
                       u_ctrl_plane/vo_aen_r_reg}]
+
+# 12) bank-changed event toggle dsp_clk -> clk_200m: flips on ANY bank swap
+#     (voicing or manual) so the status echo tracks ground truth.
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {u_coef_subsys/voicing_bank_chg_reg}] \
+    -to   [get_cells {u_ctrl_plane/vo_bchg_sync_reg[0]}]
 
 # Cell test & bench stimulus crossings (clk_200m <-> dsp_clk)
 set_max_delay -datapath_only 5.0 \

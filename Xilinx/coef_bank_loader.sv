@@ -113,7 +113,7 @@ module coef_bank_loader #(
     parameter logic [31:0]   DDR4_BASE_ADDR   = 32'h0000_0000,
     parameter logic [31:0]   BANK_SIZE_BYTES  = 32'(NUM_MACS * COEF_DEPTH * 4), // e.g. 4 MB for 1024x1024
     parameter logic [31:0]   DIR_BASE_ADDR    = 32'h3FFF_0000,  // top 64 KB of the 1 GB AXI window
-    parameter int            DIR_MAX_ENTRIES  = 256             // scan cap (32 B each = 8 KB)
+    parameter int            DIR_MAX_ENTRIES  = 1024             // scan cap (32 B each = 8 KB)
 )(
     input  logic                          clk,
     input  logic                          rst_n,

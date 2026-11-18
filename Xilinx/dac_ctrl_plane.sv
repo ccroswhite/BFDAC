@@ -120,12 +120,14 @@ module dac_ctrl_plane (
     output logic              voicing_sh_en,
     output logic signed [26:0] voicing_sh_k2,   // Q2.25 (SPI writes [26:3])
     output logic signed [26:0] voicing_sh_k3,
-    output logic [3:0]        voicing_sh_preset,
+    output logic [15:0]       voicing_sh_fid,     // raw dir ID; 16'hFFFF =
+                                                  // don't-touch-bank sentinel
     output logic              voicing_commit_toggle,
     input  logic              voicing_ack_toggle,     // dsp_clk domain
     input  logic              voicing_swap_busy,      // dsp_clk domain
     input  logic              voicing_err_toggle,     // dsp_clk, flips on failed preset load
-    input  logic [3:0]        voicing_applied_preset, // dsp_clk domain
+    input  logic [15:0]       voicing_applied_fid,    // dsp_clk domain
+    input  logic              voicing_bank_chg,      // dsp_clk toggle: any swap
     input  logic              voicing_applied_en,     // dsp_clk domain
     output logic              voicing_err_seen        // err parity -> dsp_clk
                                                       // reset parking
@@ -351,7 +353,9 @@ module dac_ctrl_plane (
     // inside the commit FSM and are stable BEFORE ack_toggle flips, so
     // capturing them here on the synced ack edge is a tear-free quasi-static
     // sample (stable for the full sync latency).
-    (* ASYNC_REG = "TRUE" *) logic [3:0] vo_apreset_r;
+    (* ASYNC_REG = "TRUE" *) logic [15:0] vo_afid_r;
+    (* ASYNC_REG = "TRUE" *) logic [2:0]  vo_bchg_sync;
+    logic        vo_bchg_d;
     (* ASYNC_REG = "TRUE" *) logic       vo_aen_r;
     logic        vo_ack_d;
     logic        vo_err_flag;   // sticky "last preset load failed" — clears
@@ -367,7 +371,9 @@ module dac_ctrl_plane (
             vo_ack_sync     <= '0;
             vo_err_sync     <= '0;
             vo_busy_sync    <= '0;
-            vo_apreset_r    <= '0;
+            vo_afid_r       <= 16'hFFFF;
+            vo_bchg_sync    <= '0;
+            vo_bchg_d       <= 1'b0;
             vo_aen_r        <= 1'b0;
             vo_ack_d        <= 1'b0;
             voicing_err_seen <= 1'b0;
@@ -378,12 +384,18 @@ module dac_ctrl_plane (
             vo_err_sync     <= {vo_err_sync[1:0], voicing_err_toggle};
             vo_busy_sync    <= {vo_busy_sync[0], voicing_swap_busy};
             vo_ack_d        <= vo_ack_sync[2];
+            vo_bchg_sync    <= {vo_bchg_sync[1:0], voicing_bank_chg};
+            vo_bchg_d       <= vo_bchg_sync[2];
             vo_commit_d     <= voicing_commit_toggle;
             // Ack edge => dsp commit FSM has fully applied; applied_* have
             // been stable for the entire sync latency — capture them now.
             if (vo_ack_evt) begin
-                vo_apreset_r <= voicing_applied_preset;
                 vo_aen_r     <= voicing_applied_en;
+            end
+            // Bank-changed edge (voicing OR manual load): applied_fid has
+            // been stable for the whole sync latency -> tear-free capture.
+            if (vo_bchg_sync[2] != vo_bchg_d) begin
+                vo_afid_r    <= voicing_applied_fid;
             end
             if (vo_load_err_evt) begin
                 voicing_err_seen <= vo_err_sync[2];
@@ -460,7 +472,7 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
             end
-            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3: begin
+            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_FILTER_ID: begin
                 if (voicing_commit_pending) begin
                     wr_rejected   = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_BUSY;
@@ -470,12 +482,10 @@ module dac_ctrl_plane (
                 if (voicing_commit_pending) begin
                     wr_rejected   = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_BUSY;
-                end else if (ctrl_bus_data[7:4] > `VOICING_PRESET_MAX ||
-                             ctrl_bus_data[23:9] != 0 ||
-                             ctrl_bus_data[3:1] != 0) begin
+                end else if (ctrl_bus_data[23:9] != 0 ||
+                             ctrl_bus_data[7:1] != 0) begin
                     wr_rejected   = 1'b1;
-                    wr_rej_reason = (ctrl_bus_data[7:4] > `VOICING_PRESET_MAX)
-                                    ? ERR_FILT_RANGE : `SPI_ERR_TEST_FORMAT;
+                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (ctrl_bus_data[8] && (stream_busy || mgr_busy_r)) begin
                     wr_rejected   = 1'b1;
                     wr_rej_reason = `SPI_ERR_TEST_BUSY;
@@ -748,7 +758,7 @@ module dac_ctrl_plane (
             voicing_sh_en        <= 1'b0;
             voicing_sh_k2        <= '0;
             voicing_sh_k3        <= '0;
-            voicing_sh_preset    <= 4'd0;
+            voicing_sh_fid       <= 16'hFFFF;
             voicing_commit_toggle <= 1'b0;
         end else begin
             coef_load_start <= 1'b0;    // Default: deassert each cycle
@@ -880,9 +890,10 @@ module dac_ctrl_plane (
                             voicing_sh_k2 <= {{3{ctrl_bus_data[23]}}, ctrl_bus_data[23:0]};
                         `SPI_W_VOICING_K3: if (!wr_rejected)
                             voicing_sh_k3 <= {{3{ctrl_bus_data[23]}}, ctrl_bus_data[23:0]};
+                        `SPI_W_VOICING_FILTER_ID: if (!wr_rejected)
+                            voicing_sh_fid <= ctrl_bus_data[15:0];
                         `SPI_W_VOICING_CTRL: if (!wr_rejected) begin
-                            voicing_sh_en     <= ctrl_bus_data[0];
-                            voicing_sh_preset <= ctrl_bus_data[7:4];
+                            voicing_sh_en <= ctrl_bus_data[0];
                             // [8]=1: atomic commit — all fields apply at ONE
                             // fir_frame_done downstream (or after the bank
                             // swap for a preset change).
@@ -954,10 +965,10 @@ module dac_ctrl_plane (
                 stream_clocks_ready, stream_busy};
             // 0x21: Voicing status — APPLIED set is the dsp_clk truth; the
             // requested/shadow set diverges while commit_pending is high.
-            `SPI_R_VOICING_STATUS: reg_read = {19'd0,
-                vo_apreset_r, voicing_commit_pending,
+            `SPI_R_VOICING_STATUS: reg_read = {
+                vo_afid_r, 10'd0, voicing_commit_pending,
                 vo_busy_sync[1], vo_err_flag, vo_aen_r,
-                voicing_sh_preset, voicing_sh_en};
+                (voicing_sh_fid == 16'hFFFF), voicing_sh_en};
             `SPI_R_CELL_TEST_L: reg_read = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
             `SPI_R_CELL_TEST_R: reg_read = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
             default: reg_read = `SPI_READ_UNMAPPED;

@@ -5940,3 +5940,45 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
 - Verify: [tb_vcommit] PASS x2 (field-only/preset-swap/failed-load,
   post-Catch5 re-run); elab_step2.log ELAB_OK — 232 Info/286 W/
   0 CW/0 E, zero voicing-related warnings, no wr_rejected regression.
+
+## VOICING STEP 2b — explicit filter_id commit (uniform voice state)
+- Architecture locked: Voice State = {voicing_en, k2, k3, filter_id[15:0]},
+  one uniform 4-tuple from AP. RTL holds ZERO persona/variant/rate
+  convention — generic shaper + generic 16-bit directory loader only.
+- SPI_W_VOICING_FILTER_ID = 0x20 [15:0] raw directory ID, reset 16'hFFFF;
+  FFFF = "don't touch bank" sentinel -> field-only commits (orthogonal
+  voice+manual-filter composition). VOICING_CTRL back to [0]=en [8]=commit
+  only; VOICING_PRESET_MAX/preset/variant all retired.
+- want_swap = (fid != FFFF) && ({1,fid} != mgr_current_bank) — bank_valid
+  DROPPED so post-boot commit loads default persona+filter with no fades
+  (boot envelope already mutes; did_fade <= bank_valid).
+- applied_filter_id is DERIVED from mgr_current_bank (by_id ? id : FFFF) —
+  manual loads (0x05/0x08/0x0A/0x17) self-invalidate; A->manual B->voicing
+  A reloads correctly. No tracking state to desync.
+- voicing_bank_chg toggle in dac_coef_subsys flips on ANY bank swap ->
+  clk_200m captures vo_afid_r on the synced edge (tear-free; covers manual
+  loads with no ack edge). vo_aen_r stays on ack edge.
+- Status 0x21: {applied_filter_id[31:16], 10'd0, commit_pending[5],
+  swap_busy[4], load_err_seen[3], applied_en[2], fid_is_sentinel[1],
+  sh_en[0]} — locked format.
+- Generator/firmware convention (opaque to RTL): filter_id =
+  {persona[6:0], filter_idx[5:0], rate[2:0]}; persona 127 reserved so
+  FFFF stays out of generated space -> 127x64x8 IDs.
+- DIR_MAX_ENTRIES 256 -> 1024 (32KB scan inside 64KB 0x3FFF_0000 window);
+  ~20 personas x 6 filters x 8 rates headroom.
+- K2/K3 kept at sign-extended raw Q2.25 (2^-25 LSB, Bug-2 fix) — contract
+  doc's "sh_k2[26:3] LSB=2^-22" flagged as stale.
+- Verify: tb_vcommit PASS (6 phases: sentinel field-only, raw 0x0050 swap,
+  failed load, manual-invalidation, FFFF sentinel, post-boot no-fade);
+  elab_fid2.log ELAB_OK 286W/0E zero voicing warnings; XDC lint 14/14
+  (new bchg path + current_bank_r sourced afid bus).
+- PARKED memory-voicing axis (Nagra-class): chain is Wiener(L-N-L) —
+  static k2/k3 covers house sound; two incremental extensions noted:
+  (a) 1-pole ~80Hz leaky integrator -> u_lf^3 term inside
+  dac_voicing_shaper = transformer flux 1/f LF saturation (~2 DSPs,
+  capped below corner = physical); optional u_lf^2 for DC-biased core;
+  (b) asymmetric-charge RC-bias state var = blocking/bias-wander
+  (dual-time-constant envelope modulating k2, ~3 DSPs); ceiling =
+  pruned Volterra templated on dpd_engine's certified structure.
+  dpd_engine stays dedicated to cell cal (2.77us memory vs ms/s-scale,
+  post-volume inside EF3 loop).

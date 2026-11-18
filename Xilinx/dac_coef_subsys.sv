@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-`include "spi_regs.svh"   // VOICING_ID_BASE (voicing preset -> directory ID)
+`include "spi_regs.svh"   // SPI register map defines
 
 // Coefficient Loading Subsystem
 // Combines:
@@ -45,7 +45,7 @@ module dac_coef_subsys #(
     input  logic              voicing_sh_en,
     input  logic signed [26:0] voicing_sh_k2,
     input  logic signed [26:0] voicing_sh_k3,
-    input  logic [3:0]        voicing_sh_preset,
+    input  logic [15:0]       voicing_sh_fid,
     input  logic              voicing_err_seen,     // clk_200m err parity back
 
     // Boot loader status (clk_200m domain, quasi-static level: all coefficient
@@ -85,7 +85,10 @@ module dac_coef_subsys #(
     output logic              voicing_ack_toggle,    // -> clk_200m commit_pending
     output logic              voicing_swap_busy,     // dsp_clk level -> status
     output logic              voicing_err_toggle,    // flips on failed preset load
-    output logic [3:0]        voicing_applied_preset,
+    output logic [15:0]       voicing_applied_fid,
+    output logic              voicing_bank_chg,   // dsp_clk toggle: flips on
+                                                  // ANY bank swap (voicing or
+                                                  // manual) for status CDC
     output logic              voicing_applied_en,
 
     // Status outputs (dsp_clk domain)
@@ -417,16 +420,14 @@ module dac_coef_subsys #(
         .fade_done          (boot_fade_done)
     );
 
-    voicing_commit_ctrl #(
-        .VOICING_ID_BASE   (`VOICING_ID_BASE)
-    ) u_voicing_commit (
+    voicing_commit_ctrl u_voicing_commit (
         .clk               (dsp_clk),
         .rst_n             (sys_rst_n),
         .commit_toggle_in  (voicing_commit_toggle),
         .sh_en             (voicing_sh_en),
         .sh_k2             (voicing_sh_k2),
         .sh_k3             (voicing_sh_k3),
-        .sh_preset         (voicing_sh_preset),
+        .sh_filter_id      (voicing_sh_fid),
         .fir_frame_done    (fir_frame_done),
         .bank_valid        (bank_valid),
         .mgr_busy          (mgr_busy),
@@ -439,7 +440,7 @@ module dac_coef_subsys #(
         .voicing_en        (voicing_en),
         .voicing_k2        (voicing_k2),
         .voicing_k3        (voicing_k3),
-        .applied_preset    (voicing_applied_preset),
+        .applied_filter_id (voicing_applied_fid),
         .ack_toggle        (voicing_ack_toggle),
         .swap_busy         (voicing_swap_busy),
         .vo_err_toggle     (voicing_err_toggle),
@@ -449,5 +450,21 @@ module dac_coef_subsys #(
         .fade_in_req       (vo_fade_in)
     );
     assign voicing_applied_en = voicing_en;
+
+    // Bank-changed event toggle: flips once per bank swap regardless of who
+    // requested it (voicing FSM, SPI filter select, boot). clk_200m captures
+    // voicing_applied_fid on its synced edge, so the status echo always
+    // tracks ground truth — no free-running 16-bit CDC bus.
+    logic [16:0] mgr_bank_d;
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) begin
+            mgr_bank_d       <= mgr_current_req;   // park — no phantom edge
+            voicing_bank_chg <= 1'b0;
+        end else begin
+            mgr_bank_d <= mgr_current_req;
+            if (mgr_current_req != mgr_bank_d)
+                voicing_bank_chg <= ~voicing_bank_chg;
+        end
+    end
 
 endmodule

@@ -14,15 +14,17 @@ proc check {name expr} {
 
 check commit_from {get_cells {u_ctrl_plane/voicing_commit_toggle_reg}}
 check commit_to   {get_cells {u_coef_subsys/u_voicing_commit/commit_sync_reg[0]}}
-check sh_from     {get_cells {u_ctrl_plane/voicing_sh_en_reg u_ctrl_plane/voicing_sh_k2_reg[*] u_ctrl_plane/voicing_sh_k3_reg[*] u_ctrl_plane/voicing_sh_preset_reg[*]}}
-check pend_to     {get_cells {u_coef_subsys/u_voicing_commit/pend_en_reg u_coef_subsys/u_voicing_commit/pend_k2_reg[*] u_coef_subsys/u_voicing_commit/pend_k3_reg[*] u_coef_subsys/u_voicing_commit/pend_preset_reg[*]}}
+check sh_from     {get_cells {u_ctrl_plane/voicing_sh_en_reg u_ctrl_plane/voicing_sh_k2_reg[*] u_ctrl_plane/voicing_sh_k3_reg[*] u_ctrl_plane/voicing_sh_fid_reg[*]}}
+check pend_to     {get_cells {u_coef_subsys/u_voicing_commit/pend_en_reg u_coef_subsys/u_voicing_commit/pend_k2_reg[*] u_coef_subsys/u_voicing_commit/pend_k3_reg[*] u_coef_subsys/u_voicing_commit/pend_filter_id_reg[*]}}
 check ack_from    {get_cells {u_coef_subsys/u_voicing_commit/ack_toggle_reg}}
 check ack_to      {get_cells {u_ctrl_plane/vo_ack_sync_reg[0]}}
 check err_from    {get_cells {u_coef_subsys/u_voicing_commit/vo_err_toggle_reg}}
 check err_to      {get_cells {u_ctrl_plane/vo_err_sync_reg[0]}}
 check busy_pin    {get_pins {u_ctrl_plane/vo_busy_sync_reg[0]/D}}
 check eseen_pin   {get_pins {u_coef_subsys/u_voicing_commit/err_seen_sync_reg[0]/D}}
-check appl_from   {get_cells {u_coef_subsys/u_voicing_commit/applied_preset_reg[*] u_coef_subsys/u_voicing_commit/voicing_en_reg}}
-check appl_to     {get_cells {u_ctrl_plane/vo_apreset_r_reg[*] u_ctrl_plane/vo_aen_r_reg}}
+check appl_from   {get_cells {u_coef_subsys/u_coef_mgr/current_bank_r_reg[*] u_coef_subsys/u_voicing_commit/voicing_en_reg}}
+check appl_to     {get_cells {u_ctrl_plane/vo_afid_r_reg[*] u_ctrl_plane/vo_aen_r_reg}}
+check bchg_from   {get_cells {u_coef_subsys/voicing_bank_chg_reg}}
+check bchg_to     {get_cells {u_ctrl_plane/vo_bchg_sync_reg[0]}}
 puts "XDC_CHECK done"
 quit
