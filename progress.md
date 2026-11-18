@@ -5864,3 +5864,42 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   latency), 7984/8000 voiced, post-convergence DC inject -73.5k LSBs.
 - Committed 53ee7a3. Elab re-check vs parameterized module running
   detached: Xilinx/elab_voicing2.log.
+
+## 2026-11-16 (cont.) - voicing step 1 audit + TB hardening -> PASS
+- Post-commit audit of dac_voicing_shaper.sv found+fixed:
+  (a) CRITICAL: bare part-selects are unsigned (IEEE 1800-2017 11.8.1) —
+      usq_full[52:35]*u1_d made u^3 positive on negative half-cycles, and
+      dc_acc[...] part-select corrupted tracker error -> signed wires +
+      $signed() casts on every arithmetic slice;
+  (b) CRITICAL: ucu_cl tested ucu_full[42] (not true sign bit [44]) ->
+      inverted polarity on 100% of reachable cubic overflows; now clamps
+      symmetric +-131071 off ucu_full[44];
+  (c) CRITICAL: u_norm tested u_slice[26] (=data_in[42], not sign) ->
+      polarity inverted for |x|>=4FS; exact -2.0 allowed -> u^2=+4.0
+      wrapped usq_w to -4.0; now tests data_in[47], clamps to
+      +2^25-1 / -(2^25)+1 (exact -2.0 excluded);
+  (d) Timing: single-cycle 27x27 cascade -> 27x18 u1*u_hi square +
+      18x27 cubic, all four products clk-pipelined (AREG/MREG/PREG
+      absorbable), ~4 DSP48E2/channel, +1.5ns slack @302MHz; u1_c1/u1_c2
+      pair u1 with the product pipes so every product reflects ONE sample;
+      sample latency dropped 5->2 strobes, zero added clk-domain latency
+      since inputs only change at strobes >=16 clk apart;
+  (e) (* use_dsp = "yes" *) on usq_p1/ucu_p1/hp2/hp3 vs fabric-CARRY8
+      lowering when k's are constant;
+  (f) translate_off assertion: in_valid spacing >=5 clks.
+- TB hardened: 0 dBFS coherent sine (bin 53/4096) -> 3-bin DFT measures
+  H2=-60.0 dBc / H3=-94.0 dBc EXACT theory; k3 exercised (was 0); P1
+  bypass now holds k2=67109/k3=-2684 hot -> true 0-LSB mux test; P3
+  overdrive burst +-4FS/+-1.7FS -> output sign never inverts (od_err=0).
+- dc_avg=-2.11e6 scare resolved: NOT an RTL bias — usq_ac[n] is the exact
+  first difference of dc_acc, so diff_sum over a non-coherent window
+  telescopes to 2*k2*(dc_acc_end-dc_acc_start) = +-100k dc_acc 2w-ripple
+  leakage. Predicted -2,110,198 vs measured -2,110,202 (4 LSB). Fix:
+  gate ALL accumulators to the coherent 4096-sample window (integer
+  H1/H2/H3 cycles -> boxcar mean on spectral nulls).
+- FINAL: [tb_voicing] PASS — errors=0, voiced=8196, od_err=0,
+  dc_avg=+3294 (~2*k3*-0.5LSB ucu_w floor = -158 dBFS), E[usq_ac]=0.0,
+  E[ucu_q]=-0.6. dc_est=15726 (u*u_hi truncation deficit on the square
+  MEAN ~4% is real math; tracker absorbs it — AC content unaffected,
+  H2 exact at -60.0).
+- Elab re-check detached: Xilinx/elab_voicing3.log (pending ELAB_OK).
