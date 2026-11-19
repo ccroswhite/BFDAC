@@ -183,8 +183,21 @@ module coef_bank_loader #(
     localparam int FIFO_DEPTH      = 256;
     localparam int FIFO_AW         = 8;
 
+    initial begin
+        assert (BEATS_PER_BURST <= 256)
+            else $fatal(1, "BEATS_PER_BURST exceeds the AXI4 256-beat limit");
+        assert (BEATS_PER_BURST <= FIFO_DEPTH)
+            else $fatal(1, "BEATS_PER_BURST exceeds FIFO_DEPTH (mailbox overflow)");
+    end
+
     logic [AXI_DATA_WIDTH-1:0]  fifo_mem [0:FIFO_DEPTH-1];
     logic [FIFO_AW-1:0]         fifo_wptr, fifo_rptr;
+    // Mailbox invariant: ST_RECV_R fills at most BEATS_PER_BURST beats
+    // (bounded by arlen <= 256 <= FIFO_DEPTH), then ST_DRAIN empties the
+    // same count. Producer/consumer never run concurrently, so the FIFO
+    // cannot overflow or underflow with a conforming burst plan.
+    // fifo_empty/fifo_full are diagnostic only (no flow control needed);
+    // fifo_count is also printed by the RLAST debug message.
     logic [FIFO_AW:0]           fifo_count;
     wire                        fifo_empty = (fifo_count == 0);
     wire                        fifo_full  = (fifo_count == FIFO_DEPTH);
@@ -292,6 +305,10 @@ module coef_bank_loader #(
     wire [7:0]  dir_packing       = dir_beat1[39:32];
     wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1);
     wire [31:0] dir_expect_bytes  = (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
+    // bank_base must leave room for the whole payload inside the 32-bit AXI
+    // space: {dir_ddr4_offset,4'b0} + payload_bytes <= 2^32 (no wrap).
+    wire        dir_addr_ok       =
+        ({dir_ddr4_offset, 4'b0000} <= (32'hFFFF_FFFF - dir_expect_bytes));
     wire [7:0] dir_rate_code = dir_beat0[31:24];
     wire [1:0] dir_rate_shift = dir_rate_code[2:1];
     wire [7:0] dir_rate_schema = dir_beat1[55:48];
@@ -451,7 +468,8 @@ module coef_bank_loader #(
                         if (enforce_rate_r && !dir_rate_ok) begin
                             load_err_code <= 2'd3;
                             state <= ST_ERR;
-                        end else if (!dir_packing_ok || dir_payload_bytes != dir_expect_bytes) begin
+                        end else if (!dir_packing_ok || dir_payload_bytes != dir_expect_bytes
+                                     || !dir_addr_ok) begin
                             load_err_code <= 2'd2;
                             state         <= ST_ERR;
                         end else begin

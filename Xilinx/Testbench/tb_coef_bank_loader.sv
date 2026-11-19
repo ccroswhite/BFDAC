@@ -856,6 +856,19 @@ module tb_coef_bank_loader;
                      load_err, load_err_code, total_writes);
             error_count = error_count + 1;
         end
+
+        // Malformed offset: bank_base + payload wraps the 32-bit AXI space
+        // -> code 2 (was: silently aliased into low memory).
+        dir_beat0[3] = mk_dir_entry(16'h0505, 32'hFFFF_FF00, BANK_SZ);
+        dir_beat1[3] = mk_dir_beat1(8'd0);
+        pulse_load_by_id(16'h0505, DIR_IMG_B);
+        wait_for_load_done(200_000);
+        repeat(4) @(posedge clk);
+        if (load_err !== 1'b1 || load_err_code !== 2'd2 || total_writes !== 0) begin
+            $display("ERROR: addr-wrap: expected err=1 code=2 writes=0, got err=%0b code=%0d writes=%0d",
+                     load_err, load_err_code, total_writes);
+            error_count = error_count + 1;
+        end
         $display("TEST 9 done. errors=%0d", error_count);
     endtask
 
@@ -872,7 +885,7 @@ module tb_coef_bank_loader;
         enforce_stream_rate = 1;
         stream_rate = 3'd7;
         pulse_load_by_id(16'h0101, DIR_IMG_A);
-        wait_for_load_done(1000000);
+        wait_for_load_done(LOAD_TIMEOUT);
         if (!load_err || load_err_code != 3 || total_writes != 0) begin
             $display("ERROR: incompatible rate metadata accepted");
             error_count++;
@@ -891,7 +904,7 @@ module tb_coef_bank_loader;
             dir_beat1[0][47:40] = 8'd3;
             dir_beat1[0][55:48] = 8'd3;
             pulse_load_by_id(16'h0101, DIR_IMG_A);
-            wait_for_load_done(1000000);
+            wait_for_load_done(LOAD_TIMEOUT);
             if (load_err || total_writes != NUM_MACS * COEF_DEPTH) begin
                 $display("ERROR: matching native-rate filter rejected");
                 error_count++;
