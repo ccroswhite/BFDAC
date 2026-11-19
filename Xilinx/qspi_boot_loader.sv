@@ -184,8 +184,7 @@ module qspi_boot_loader #(
     logic [31:0] cur_addr;          // flash byte address
     logic        fallback_done;     // carrier -> SoM Flash 1 retry used
     logic [127:0] hdr_acc;          // 16 header bytes
-    logic [4:0]  hdr_cnt;
-    logic [31:0] rec_dest, rec_len, rec_crc;
+    logic [31:0] rec_len, rec_crc;
     wire [32:0] rec_end_addr = {1'b0, hdr_acc[63:32]} +
                                {1'b0, hdr_acc[95:64]};
     localparam logic [32:0] CFLASH_CAPACITY_BYTES =
@@ -233,7 +232,6 @@ module qspi_boot_loader #(
             rd_addr      <= '0;
             rd_len       <= '0;
             cur_addr     <= '0;
-            hdr_cnt      <= '0;
             hdr_acc      <= '0;
             crc          <= '0;
             pack_cnt     <= '0;
@@ -248,7 +246,6 @@ module qspi_boot_loader #(
             axi_fail     <= 1'b0;
             format_fail  <= 1'b0;
             record_count <= '0;
-            rec_dest     <= '0;
             rec_len      <= '0;
             rec_crc      <= '0;
         end else begin
@@ -274,7 +271,6 @@ module qspi_boot_loader #(
                         rd_addr <= cur_addr;
                         rd_len  <= 24'd16;
                         rd_req  <= 1'b1;
-                        hdr_cnt <= '0;
                         if (rd_active) fst <= F_HDR_RX;
                     end
                 end
@@ -282,7 +278,6 @@ module qspi_boot_loader #(
                 F_HDR_RX: begin
                     if (rd_byte_valid) begin
                         hdr_acc <= {rd_byte, hdr_acc[127:8]};  // little-endian pack
-                        hdr_cnt <= hdr_cnt + 5'd1;
                     end
                     if (rd_done) begin
                         rd_req <= 1'b0;
@@ -302,7 +297,6 @@ module qspi_boot_loader #(
                             boot_ok     <= 1'b0;
                             fst         <= F_DONE;
                         end else begin
-                            rec_dest <= hdr_acc[63:32];
                             rec_len  <= hdr_acc[95:64];
                             rec_crc  <= hdr_acc[127:96];
                             crc      <= 32'hFFFFFFFF;
