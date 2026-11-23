@@ -231,7 +231,7 @@ module fir_polyphase_stereo #(
                 .OREG_A                  ("FALSE"),
                 .OREG_B                  ("TRUE"),
                 .IREG_PRE_A              ("FALSE"),
-                .IREG_PRE_B              ("TRUE"),
+                .IREG_PRE_B              ("FALSE"),
                 .AUTO_SLEEP_LATENCY      (8),
                 .AVG_CONS_INACTIVE_CYCLES(10),
                 .BWE_MODE_A              ("PARITY_INTERLEAVED"),

@@ -719,7 +719,9 @@ module acku15s_dac_top #(
         .GTS       (1'b0),
         .KEYCLEARB (1'b1),
         .PACK      (1'b0),
-        .USRCCLKO  (qspi_sck),
+        .USRCCLKO  ((qspi_sel_target != 2'd2) ? qspi_sck : 1'b0),  // SoM ops only:
+                                                  // carrier SCK stays off the
+                                                  // shared SoM CCLK trace
         .USRCCLKTS (1'b0),
         .USRDONEO  (1'b1),
         .USRDONETS (1'b1)

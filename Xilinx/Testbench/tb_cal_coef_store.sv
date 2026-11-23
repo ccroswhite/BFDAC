@@ -207,14 +207,25 @@ module tb_cal_coef_store;
         end
         $display("T7 DPD-idle commit and pending-write rejection: %s", errors ? "FAIL" : "PASS");
 
-        // ctrl-domain toggle phases survive a DSP rate reset; the store must
-        // adopt their current phase without fabricating a write or commit.
+        // Cell calibration is rate-independent: a DSP rate reset must NOT
+        // fabricate a write/commit AND must not revert the active bank or
+        // clear calibration_valid (R5-1.4: reverting to the zero bank locked
+        // out DPD_EN until a full re-upload).
         dsp_rst_n = 0;
         repeat (5) @(posedge dsp_clk);
         dsp_rst_n = 1;
         repeat (800) @(posedge dsp_clk);
-        if (commit_pending || active_bank !== 1'b0) begin
+        if (commit_pending) begin
             $display("FAIL T8: stale commit toggle replayed after DSP reset");
+            errors++;
+        end
+        if (active_bank !== 1'b1) begin
+            $display("FAIL T8: active bank reverted on DSP reset (calibration lost)");
+            errors++;
+        end
+        spi_read(9'd42, got);
+        if (got !== pat_a(9'd42)) begin
+            $display("FAIL T8: calibration content lost on DSP reset (%h)", got);
             errors++;
         end
         $display("T8 DSP reset with retained control toggles: %s", errors ? "FAIL" : "PASS");

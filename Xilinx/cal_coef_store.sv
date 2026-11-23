@@ -76,7 +76,20 @@ module cal_coef_store #(
 
     // =========================================================================
     // ctrl_clk -> dsp_clk CDC: write and commit toggles
+    //
+    // Bank state is rate-independent cell calibration: it must survive
+    // dsp_rst_n (asserted on every audio rate switch). Only the synchronized
+    // external reset (ctrl_rst_n = ext_rst_n) clears the sync chains and bank
+    // pointers; keeping the chains running across rate changes also removes
+    // the post-reset fill window that could fabricate a phantom edge.
     // =========================================================================
+    (* ASYNC_REG = "TRUE" *) logic [1:0] ext_rst_sync_dsp;
+    always_ff @(posedge dsp_clk or negedge ctrl_rst_n) begin
+        if (!ctrl_rst_n) ext_rst_sync_dsp <= '0;
+        else             ext_rst_sync_dsp <= {ext_rst_sync_dsp[0], 1'b1};
+    end
+    wire dsp_hard_rst_n = ext_rst_sync_dsp[1];
+
     (* ASYNC_REG = "TRUE" *) logic [2:0] wr_tg_sync_dsp;
     (* ASYNC_REG = "TRUE" *) logic [2:0] commit_tg_sync_dsp;
     logic [2:0] toggle_sync_warm;
@@ -84,7 +97,7 @@ module cal_coef_store #(
     logic wr_pulse_dsp, commit_pulse_dsp;
 
     always_ff @(posedge dsp_clk) begin
-        if (!dsp_rst_n) begin
+        if (!dsp_hard_rst_n) begin
             wr_tg_sync_dsp     <= '0;
             commit_tg_sync_dsp <= '0;
             toggle_sync_warm   <= '0;
@@ -95,7 +108,7 @@ module cal_coef_store #(
         end
     end
 
-    // Ignore synchronizer fill transitions after an audio-path reset. The
+    // Ignore synchronizer fill transitions after an external reset. The
     // control-domain request toggles survive rate changes; treating the
     // settled current phase as a new request would fabricate a write/commit.
     assign wr_pulse_dsp = (wr_tg_sync_dsp[2] ^ wr_tg_sync_dsp[1]) &&
@@ -115,7 +128,7 @@ module cal_coef_store #(
     wire         write_rejected_dsp = wr_pulse_dsp && (pending || commit_pulse_dsp);
 
     always_ff @(posedge dsp_clk) begin
-        if (dsp_rst_n && wr_pulse_dsp && !write_rejected_dsp) begin
+        if (dsp_hard_rst_n && wr_pulse_dsp && !write_rejected_dsp) begin
             if (active_sel)
                 mem0[wr_addr] <= wr_data;  // bank1 active -> write bank0
             else
@@ -128,7 +141,7 @@ module cal_coef_store #(
     always_ff @(posedge dsp_clk or negedge ctrl_rst_n) begin
         if (!ctrl_rst_n)
             write_reject_toggle <= 1'b0;
-        else if (dsp_rst_n && write_rejected_dsp)
+        else if (dsp_hard_rst_n && write_rejected_dsp)
             write_reject_toggle <= ~write_reject_toggle;
     end
 
@@ -136,7 +149,7 @@ module cal_coef_store #(
     // Atomic commit at the sample boundary
     // =========================================================================
     always_ff @(posedge dsp_clk) begin
-        if (!dsp_rst_n) begin
+        if (!dsp_hard_rst_n) begin
             active_sel <= 1'b0;
             pending    <= 1'b0;
             calibration_valid_dsp <= 1'b0;
@@ -172,8 +185,26 @@ module cal_coef_store #(
         rd_data_dsp  <= active_sel ? mem1[rd_addr_dsp] : mem0[rd_addr_dsp];
     end
 
+    // Capture the returning bus only after rd_addr has been stable for >= 8
+    // ctrl_clk cycles (~40 ns, several times the rd_addr->rd_data_dsp crossing
+    // latency). The CE qualification turns the rd_data_dsp -> rd_data and
+    // rd_addr -> rd_addr_meta crossings into clock-enable controlled CDC-15
+    // paths instead of unconstrained CDC-1/CDC-6.
+    logic [8:0] rd_addr_d;
+    logic [3:0] rd_addr_stable;
+    always_ff @(posedge ctrl_clk) begin
+        if (!ctrl_rst_n) begin
+            rd_addr_d      <= '0;
+            rd_addr_stable <= '0;
+        end else begin
+            rd_addr_d <= rd_addr;
+            if (rd_addr_d != rd_addr)        rd_addr_stable <= '0;
+            else if (!(&rd_addr_stable))     rd_addr_stable <= rd_addr_stable + 4'd1;
+        end
+    end
+
     always_ff @(posedge ctrl_clk)
-        rd_data <= rd_data_dsp;    // quasi-static resample (XDC max_delay)
+        if (rd_addr_stable[3]) rd_data <= rd_data_dsp;  // quasi-static resample
 
     // Status back to ctrl domain (single-bit levels, 2-FF sync each)
     (* ASYNC_REG = "TRUE" *) logic [1:0] active_sync_ctrl, pending_sync_ctrl, cal_valid_sync_ctrl;

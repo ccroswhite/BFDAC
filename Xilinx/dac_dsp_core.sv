@@ -21,7 +21,7 @@ module dac_dsp_core #(
     parameter int TAPS_PER_PHASE = 256,  // production
     parameter int CELL_TEST_MUTE_CYCLES = 4000000,
     parameter bit SYM_FOLD_EN  = 1'b1,
-    parameter bit QUAD_URAM_EN = 1'b1
+    parameter bit QUAD_URAM_EN = 1'b0
 )(
     // Single clock domain — all logic runs on the 278/302 MHz audio-family dsp_clk
     input  logic        dsp_clk,

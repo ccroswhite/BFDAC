@@ -379,6 +379,7 @@ module qspi_boot_loader #(
     logic [23:0] w_words_left;
     logic [4:0]  w_beats_left;    // beats remaining in the current burst
     logic [4:0]  w_burst_beats;
+    wire  [4:0]  max_beats_256b = 5'd16 - {1'b0, w_addr[7:4]};  // beats to next 256 B boundary
 
     assign m_axi_awsize  = 3'b100;   // 16 bytes/beat
     assign m_axi_awburst = 2'b01;    // INCR
@@ -416,16 +417,21 @@ module qspi_boot_loader #(
                         done_toggle_ui <= ~done_toggle_ui;
                         wst            <= W_IDLE;
                     end else begin
-                        w_burst_beats <= (w_words_left >= BURST_BEATS[23:0])
-                                         ? 5'(BURST_BEATS) : w_words_left[4:0];
-                        m_axi_awaddr  <= 32'(w_addr);
-                        m_axi_awlen   <= (w_words_left >= BURST_BEATS[23:0])
-                                         ? 8'(BURST_BEATS - 1)
-                                         : 8'(w_words_left[4:0] - 5'd1);
-                        m_axi_awvalid <= 1'b1;
-                        wst           <= W_DATA;
-                        w_beats_left  <= (w_words_left >= BURST_BEATS[23:0])
-                                         ? 5'(BURST_BEATS) : w_words_left[4:0];
+                        // Clamp this burst to the next 256-byte boundary: a
+                        // 16-byte-aligned start plus a fixed 16-beat burst
+                        // could cross a 4 KB boundary (AXI4 A3.4.1). After the
+                        // first clamped burst, w_addr is 256 B aligned and no
+                        // later burst can cross.
+                        w_burst_beats  <= (w_words_left >= 24'(max_beats_256b))
+                                          ? max_beats_256b : w_words_left[4:0];
+                        m_axi_awaddr   <= 32'(w_addr);
+                        m_axi_awlen    <= (w_words_left >= 24'(max_beats_256b))
+                                          ? 8'(max_beats_256b - 5'd1)
+                                          : 8'(w_words_left[4:0] - 5'd1);
+                        m_axi_awvalid  <= 1'b1;
+                        wst            <= W_DATA;
+                        w_beats_left   <= (w_words_left >= 24'(max_beats_256b))
+                                          ? max_beats_256b : w_words_left[4:0];
                     end
                 end
 
