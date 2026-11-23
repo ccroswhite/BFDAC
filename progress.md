@@ -6467,3 +6467,8 @@ the mid-run reorg — reorganized tree verified end-to-end.
   Added explicit ties + same request->applied model. TB_PASS: 262 windows,
   manual cell/DC/tone end-to-end. Sweep: only spi+cell TBs were affected;
   tb_dac_ctrl_plane was already wired. Gate relaunched v4.
+- review4_gate_v4: 27/27 PASS, 0 FAIL on final RTL (22:48). Full stream-
+  rates gate green with all review-4 fixes + three gate-caught regressions
+  resolved (bank_base param override, spi TB applied-rate model, RTZ stall
+  watchdog + cell-measurement TB hookups). RTL epic verification complete;
+  only synth_1 post-synth checks remain (tag_pipe_0 SRL + inference).
