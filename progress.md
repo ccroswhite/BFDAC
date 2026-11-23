@@ -6454,3 +6454,16 @@ the mid-run reorg — reorganized tree verified end-to-end.
   passed vacuously: applied=Z made !=applied false so no event fired);
   added 0x21 W1C next to the 0x16 sticky clears at the 5 IRQ-release
   checks per the contract. 25/25 PASS, 0 FAIL. Gate relaunched v3.
+- GATE REGRESSION FIX 3 (tb_cell_measurement + REAL RTL BUG): two layers.
+  (a) REAL regression from R4-2.1: free-running rtz_gate replayed the last
+  cell_cap word at 75% duty forever on stream stall/diagnostic exit —
+  "diagnostics did not exit without audio". Old rtz_phase parked when
+  captures stopped. Fix: cell_alive watchdog in cell_clk domain (set on
+  cell_capture_en, clears after 16 missed cell_clk = 2 frames) qualifies
+  cascode emission; frame timing stays pace_div-locked (zero jitter kept).
+  (b) Same tri0->logic unconnected-input hazard as tb_spi_ctrl_plane:
+  stream_busy/stream_clocks_ready/stream_fault/stream_audio_ready +
+  stream_applied_rate unconnected -> bench_available=X -> FSM stuck.
+  Added explicit ties + same request->applied model. TB_PASS: 262 windows,
+  manual cell/DC/tone end-to-end. Sweep: only spi+cell TBs were affected;
+  tb_dac_ctrl_plane was already wired. Gate relaunched v4.

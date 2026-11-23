@@ -691,6 +691,29 @@ module dac_dsp_core #(
         end
     end
 
+    // Stream-alive watchdog: while samples flow, cell_capture_en arrives
+    // once per 8-cycle frame; two full missed frames (16 cell_clk) means the
+    // stream stalled or diagnostics exited — silence the output rather than
+    // replay the last DEM word at 75% duty forever. The gate window itself
+    // stays pace_div-locked; alive only qualifies emission, so pulse timing
+    // keeps zero CDC jitter. Timeout >> sync jitter (±1 cell_clk).
+    logic       cell_alive;
+    logic [4:0] cell_alive_cnt;
+
+    always_ff @(posedge cell_clk) begin
+        if (!cell_rst_n) begin
+            cell_alive     <= 1'b0;
+            cell_alive_cnt <= '0;
+        end else if (cell_capture_en) begin
+            cell_alive     <= 1'b1;
+            cell_alive_cnt <= '0;
+        end else if (cell_alive_cnt != 5'd16) begin
+            cell_alive_cnt <= cell_alive_cnt + 1'b1;
+        end else begin
+            cell_alive <= 1'b0;
+        end
+    end
+
     logic rtz_gate;
 
     assign rtz_gate = (pace_div != 3'd0) && (pace_div != 3'd7);
@@ -703,8 +726,8 @@ module dac_dsp_core #(
             cascode_iob_l <= '0;
             cascode_iob_r <= '0;
         end else begin
-            cascode_iob_l <= rtz_gate ? cell_cap_l : 64'd0;
-            cascode_iob_r <= rtz_gate ? cell_cap_r : 64'd0;
+            cascode_iob_l <= (rtz_gate && cell_alive) ? cell_cap_l : 64'd0;
+            cascode_iob_r <= (rtz_gate && cell_alive) ? cell_cap_r : 64'd0;
         end
     end
 

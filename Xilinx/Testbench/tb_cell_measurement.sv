@@ -17,6 +17,10 @@ module tb_cell_measurement;
     logic button1 = 1, button2 = 1;
     wire manual_busy, manual_led, manual_req, manual_ack, manual_ready, manual_available;
     wire [10:0] manual_cmd;
+    logic [2:0] stream_rate_request;
+    logic       stream_rate_toggle;
+    logic [2:0] stream_applied_rate;
+    logic       rate_tgl_q;
     wire [31:0] manual_status;
     bench_test_controller #(.CLK_HZ(120), .DEBOUNCE_CYCLES(4), .SELECT_CYCLES(360), .CANCEL_CYCLES(240)) ui (
         .clk(ctrl_clk), .rst_n(rst_n), .select_n(button1), .step_n(button2),
@@ -51,8 +55,29 @@ module tb_cell_measurement;
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
         .boot_crc_fail(1'b0), .boot_axi_fail(1'b0), .flash_cmd_err(1'b0),
         .stream_source_valid(unmute), .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack),
-        .bench_busy(manual_busy), .bench_available(manual_available), .bench_status(manual_status)
+        .bench_busy(manual_busy), .bench_available(manual_available), .bench_status(manual_status),
+        // formerly tri0/tri1 defaults — now explicit (tri ports removed)
+        .cal_write_reject_toggle(1'b0), .calibration_valid(1'b1),
+        .stream_busy(1'b0), .stream_clocks_ready(1'b1),
+        .stream_fault(1'b0), .stream_audio_ready(1'b1),
+        .stream_applied_rate(stream_applied_rate),
+        .stream_rate_request(stream_rate_request),
+        .stream_rate_toggle(stream_rate_toggle)
     );
+
+    // Stream-subsystem apply model (same as tb_spi_ctrl_plane): the ctrl
+    // plane emits rate REQUESTS; the sequencer applies them post-relock and
+    // reports stream_applied_rate. One-cycle apply preserves ordering.
+    always @(posedge ctrl_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            rate_tgl_q          <= 1'b0;
+            stream_applied_rate <= 3'd0;
+        end else begin
+            rate_tgl_q <= stream_rate_toggle;
+            if (stream_rate_toggle != rate_tgl_q)
+                stream_applied_rate <= stream_rate_request;
+        end
+    end
 
     dac_dsp_core #(.NUM_MACS(4), .TAPS_PER_PHASE(16), .CELL_TEST_MUTE_CYCLES(4096)) core (
         .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n), .fir_rst_n(rst_n),
