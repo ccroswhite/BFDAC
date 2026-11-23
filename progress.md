@@ -6446,3 +6446,11 @@ the mid-run reorg — reorganized tree verified end-to-end.
   param is an elaboration constant so it folds to shifts anyway. Standalone
   tb_coef_bank_loader re-run: ALL 11 TESTS PASSED, 0 errors. Relaunched
   gate as logs/review4_gate_v2.
+- GATE REGRESSION FIX 2 (tb_spi_ctrl_plane): stream_applied_rate was left
+  unconnected when base_rate_sel changed to derived-assign
+  (=stream_applied_rate[0]) — output read Z (tests [2]/[9]). Added TB
+  applied-rate model (request toggle -> applied next cycle) + port hookup.
+  The rate-apply then correctly rang the stream_event doorbell (v1 had
+  passed vacuously: applied=Z made !=applied false so no event fired);
+  added 0x21 W1C next to the 0x16 sticky clears at the 5 IRQ-release
+  checks per the contract. 25/25 PASS, 0 FAIL. Gate relaunched v3.

@@ -61,6 +61,26 @@ module tb_spi_ctrl_plane;
     logic        coef_load_start;
     logic        source_valid;
 
+    // Stream-subsystem apply model: the ctrl plane emits a rate REQUEST
+    // (stream_rate_request + toggle); the sequencer applies it after the
+    // mute+relock sequence and reports stream_applied_rate. base_rate_sel
+    // now derives from applied_rate, so this TB must close the loop or the
+    // register reads Z. One-cycle apply preserves request->applied order.
+    logic [2:0] stream_rate_request;
+    logic       stream_rate_toggle;
+    logic [2:0] stream_applied_rate;
+    logic       rate_tgl_q;
+    always @(posedge clk or negedge ext_rst_n) begin
+        if (!ext_rst_n) begin
+            rate_tgl_q         <= 1'b0;
+            stream_applied_rate <= 3'd0;
+        end else begin
+            rate_tgl_q <= stream_rate_toggle;
+            if (stream_rate_toggle != rate_tgl_q)
+                stream_applied_rate <= stream_rate_request;
+        end
+    end
+
     dac_ctrl_plane u_dut (
         .clk                    (clk),
         .ext_rst_n              (ext_rst_n),
@@ -97,6 +117,9 @@ module tb_spi_ctrl_plane;
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
         .stream_source_valid    (source_valid),
+        .stream_rate_request    (stream_rate_request),
+        .stream_rate_toggle     (stream_rate_toggle),
+        .stream_applied_rate    (stream_applied_rate),
         // formerly tri0/tri1 defaults — now explicit (tri ports removed)
         .cal_write_reject_toggle(1'b0),
         .calibration_valid      (1'b1),
@@ -390,6 +413,7 @@ module tb_spi_ctrl_plane;
         // 6. Clear sticky error register (addr=0x16, data=0xF clears all error bits)
         //    Verifies write-1-to-clear logic and IRQ line releases when all errors cleared
         spi_write(7'h16, 24'h00_000F);
+        spi_write(7'h21, 24'h000007);  // + W1C stream-event doorbell [0],[2]
         #(CLK_PERIOD_NS * 20);
         if (fpga_irq_n !== 1)
             $display("FAIL: [6] fpga_irq_n still low after sticky clear (addr=0x16 wr=0xF)");
@@ -489,6 +513,7 @@ module tb_spi_ctrl_plane;
 
             // 14. W1C full clear (0xFF) also clears CMD_ERR_INFO
             spi_write(7'h16, 24'h0000FF);
+            spi_write(7'h21, 24'h000007);  // + W1C stream-event doorbell [0],[2]
             #(CLK_PERIOD_NS * 20);
             spi_read(7'h11, rd);
             spi_read(7'h1C, rd2);
@@ -545,6 +570,7 @@ module tb_spi_ctrl_plane;
             else
                 $display("PASS: [18] 39-bit runt frame -> sticky[4] frame error, reason FRAME_LEN");
             spi_write(7'h16, 24'h0000FF);
+            spi_write(7'h21, 24'h000007);  // + W1C stream-event doorbell [0],[2]
             #(CLK_PERIOD_NS * 20);
             if (fpga_irq_n !== 1)
                 $display("FAIL: [18b] IRQ not released after final W1C");
@@ -565,6 +591,7 @@ module tb_spi_ctrl_plane;
                 $display("PASS: [19a] coef_load_err code=1 -> sticky[6], info={0x0A, FILT_NOTFOUND}");
             // Level stays high: W1C must clear and it must NOT re-latch (edge-triggered)
             spi_write(7'h16, 24'h0000FF);
+            spi_write(7'h21, 24'h000007);  // + W1C stream-event doorbell [0],[2]
             #(CLK_PERIOD_NS * 20);
             spi_read(7'h11, rd);
             if (rd[7:0] !== 8'h00 || fpga_irq_n !== 1)
@@ -589,6 +616,7 @@ module tb_spi_ctrl_plane;
                 $display("PASS: [20] coef_load_err code=2 -> sticky[6], info={0x0A, FILT_SIZE}");
             coef_load_err = 0;
             spi_write(7'h16, 24'h0000FF);
+            spi_write(7'h21, 24'h000007);  // + W1C stream-event doorbell [0],[2]
             #(CLK_PERIOD_NS * 20);
             if (fpga_irq_n !== 1)
                 $display("FAIL: [20b] IRQ not released after W1C");
