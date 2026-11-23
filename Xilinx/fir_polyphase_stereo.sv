@@ -17,7 +17,7 @@
 //    - RAMB36 : 768 SDP window BRAMs (28.6%), 0 LUTRAM
 // =============================================================================
 module fir_polyphase_stereo #(
-    parameter int NUM_MACS       = 128,   // multiple of MACS_PER_U; 80 -> 5.24M, 128 -> 8.39M, 256 -> 16.78M effective taps
+    parameter int NUM_MACS       = 80,    // multiple of MACS_PER_U; 80 -> 5.24M (production), 128 -> 8.39M, 256 -> 16.78M effective taps
     parameter int TAPS_PER_PHASE = 256,   // 16x-normalized TPP: COEF_DEPTH = 16 * TAPS_PER_PHASE
     parameter int DATA_WIDTH     = 24,
     parameter int COEF_WIDTH     = 18,

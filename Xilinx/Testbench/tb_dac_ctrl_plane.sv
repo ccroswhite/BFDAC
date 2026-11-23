@@ -101,8 +101,17 @@ module tb_dac_ctrl_plane;
     );
 
     // Track filter_load_req pulses
-    int load_req_count = 0;
-    always @(posedge clk) if (filter_load_req) load_req_count++;
+    // filter_load_req is a toggle now (one flip per request, 2026-11-22) —
+    // count flips, not level-high cycles. Gated on ext_rst_n so the
+    // X->0 init transition can't count as phantom requests.
+    int  load_req_count = 0;
+    logic filter_load_req_d = 0;
+    always @(posedge clk) begin
+        if (ext_rst_n) begin
+            filter_load_req_d <= filter_load_req;
+            if (filter_load_req !== filter_load_req_d) load_req_count++;
+        end
+    end
 
     int errors = 0;
 

@@ -86,7 +86,7 @@ create_generated_clock -name cell_clk [get_pins u_clk_gen/u_mmcm/CLKOUT1]
 set_false_path -to [get_pins {
     svalid_sync_chain_reg[0]/D
     rate_sel_sync_chain_reg[0]/D
-    level_req_sync_chain_reg[0]/D
+    level_req_tog_sync_reg[0]/D
     vol_tog_sync_reg[0]/D
     stream_automute_sync_reg[0]/D
     u_coef_subsys/boot_ok_sync_reg[0]/D
@@ -95,9 +95,11 @@ set_false_path -to [get_pins {
 }]
 
 # clk_200m -> dsp_clk held multi-bit control buses (sampled after sync edge).
+# level_target: toggle-handshake -- level_target_q holds in clk_200m, captured
+# into level_target_dsp on the synced req edge (tear-free, no CDC-6).
 set_max_delay -datapath_only 5.0 \
-    -from [get_clocks clk_200m] \
-    -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
+    -from [get_cells {level_target_q_reg[*]}] \
+    -to   [get_cells {level_target_dsp_reg[*]}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells -hierarchical -filter {NAME =~ sys_volume_q_reg*}] \
     -to   [get_cells {sys_volume_dsp_reg[*]}]
@@ -113,27 +115,51 @@ set_false_path \
     -to   [get_clocks {dsp_clk cell_clk}]
 
 # dsp_clk -> clk_200m single-bit status synchronizer first stages + status readback FFs.
+# (2026-11-22: mgr_busy/bank_valid/coef_load_done/clk_locked are now proper
+#  2-FF ASYNC_REG chains in u_ctrl_plane — false-path their first stages
+#  instead of the old single-FF *_r targets.)
 set_false_path -to [get_pins {
     u_ctrl_plane/i2s_err_sync_reg[0]/D
     u_ctrl_plane/switch_busy_sync_reg[0]/D
     u_ctrl_plane/line_mute_sync_reg[0]/D
+    u_ctrl_plane/mgr_busy_sync_reg[0]/D
+    u_ctrl_plane/bank_valid_sync_reg[0]/D
+    u_ctrl_plane/load_done_sync_reg[0]/D
+    u_ctrl_plane/clk_lock_sync_reg[0]/D
 }]
+# current_bank_id_r still captures the quasi-static dsp_clk bus directly on
+# the synced vo_bchg edge — bounded skew keeps the edge-window sample safe.
 set_max_delay -datapath_only 5.0 \
     -from [get_clocks dsp_clk] \
     -to   [get_cells {
-        u_ctrl_plane/mgr_busy_r_reg
-        u_ctrl_plane/bank_valid_r_reg
-        u_ctrl_plane/coef_load_done_r_reg
         u_ctrl_plane/current_bank_id_r_reg[*]
     }]
 
-# Serial DATA synchronizer (i2s_data)
-# and tagged launch-event crossing.
-set_false_path -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D}]
+# Automute relay sys_ready: clk_locked (MMCM, async) and stream_busy
+# (clk_200m) 2-FF chains in dsp_clk — no comb logic ahead of stage 0.
+set_false_path -to [get_pins {
+    clk_lock_dsync_reg[0]/D
+    stream_busy_dsync_reg[0]/D
+}]
+
+# Serial DATA synchronizers: dedicated 2-FF chain per source pin, muxed
+# AFTER sync in dsp_clk (mux-before-sync would put a cross-domain net in
+# front of the metastability stage). src_sel is a clean clk_200m register.
+set_false_path -to [get_pins {u_i2s_ingress/data_sync_reg[0]/D u_i2s_ingress/data2_sync_reg[0]/D}]
+set_false_path -to [get_pins {u_i2s_ingress/sel_sync_reg[0]/D}]
 set_false_path -to [get_pins {u_i2s_ingress/enable_cell_reg[0]/D u_i2s_ingress/enable_sync_reg[0]/D u_i2s_ingress/valid_sync_reg[0]/D}]
+# i2s_rx_trim: quasi-static 5-bit bus clk_200m -> dsp_clk. The ingress
+# change-detect flushes + re-arms capture on any trim_sync != trim_applied,
+# so a bounded skew window converges within one re-arm; only changed while
+# muted. i2s_rx_trim_q is the clk_200m launch register (CDC-10 clean).
+set_max_delay -datapath_only 5.0 \
+    -from [get_cells {i2s_rx_trim_q_reg[*]}] \
+    -to   [get_cells {u_i2s_ingress/trim_meta_reg[*]}]
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_i2s_ingress/launch_toggle_reg u_i2s_ingress/launch_bit_reg[*]}] \
-    -to   [get_cells {u_i2s_ingress/launch_sync_reg[0] u_i2s_ingress/tag_pipe_reg[0][*]}]
+    -to   [get_cells {u_i2s_ingress/launch_sync_reg[0] u_i2s_ingress/tag_pipe_0_reg[*]}]
+# tag_pipe_0 is kept out of SRL inference (shreg_extract=no + KEEP) so the
+# get_cells above always resolves to fabric FFs.
 
 # cell_clk -> dsp_clk (CDC audit, Step 4C.2)
 # pace_tgl (cell_clk /8 tick toggle in dac_dsp_core section 6) crosses to the
@@ -607,12 +633,16 @@ set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_coef_subsys/u_coef_mgr/target_bank_reg[*]}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_loader/* && IS_SEQUENTIAL}]
 
-# 5b) failed-load flag ui_clk -> dsp_clk: level set >= 1 ui_clk before load_done toggle.
+# 5b) failed-load flag ui_clk -> dsp_clk: level set >= 1 ui_clk before
+#     load_done toggle. Both u_coef_mgr and u_voicing_commit sample it only
+#     AT the done edge (quasi-static by then) — cover both destinations
+#     (2026-11-22: u_voicing_commit was previously unconstrained here).
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_reg}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_mgr/* && IS_SEQUENTIAL}]
+    -to   [get_cells -hierarchical -filter {(NAME =~ u_coef_subsys/u_coef_mgr/* || NAME =~ u_coef_subsys/u_voicing_commit/*) && IS_SEQUENTIAL}]
 
-# 5c) failed-load flag + code ui_clk -> clk_200m: level into 2-FF sync in dac_ctrl_plane.
+# 5c) failed-load event dsp_clk -> clk_200m: coef_load_err is now a dsp_clk
+#     toggle (loader_err_tog) into a 2-FF XOR sync in dac_ctrl_plane.
 set_false_path -to [get_pins {u_ctrl_plane/load_err_sync_reg[0]/D}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_code_reg[*]}] \
@@ -832,7 +862,12 @@ set_input_delay -clock [get_clocks cf_sck_ext] -clock_fall -max 7.5 [get_ports {
 set_input_delay -clock [get_clocks cf_sck_ext] -clock_fall -min 1.5 [get_ports {cf_dq[1]}]
 set_multicycle_path 3 -setup -end -from [get_ports {cf_dq[1]}] \
     -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*] || NAME =~ u_flash_ctrl/rd_byte_reg[*] || (NAME =~ u_flash_ctrl/read_buffer_reg* && IS_SEQUENTIAL)}]
-set_multicycle_path 2 -hold  -end -from [get_ports {cf_dq[1]}] \
+# Hold MCP is 1, not setup-1: cf_sck_ext is a CONTINUOUS 10 ns clock, so the
+# next falling edge launches bit k+1 only 5 ns before the t=20 ns capture of
+# bit k. -hold 2 pulled the hold check back to C=15 ns vs L=15 ns (0 ns of
+# real protection); -hold 1 enforces the true physical check that bit k+1
+# does not arrive inside the hold window of the 20 ns capture.
+set_multicycle_path 1 -hold  -end -from [get_ports {cf_dq[1]}] \
     -to [get_cells -hierarchical -filter {NAME =~ u_flash_ctrl/rx_sr_reg[*] || NAME =~ u_flash_ctrl/rd_byte_reg[*] || (NAME =~ u_flash_ctrl/read_buffer_reg* && IS_SEQUENTIAL)}]
 # SIO2/SIO3 are static-high unused data lanes in x1 mode.
 set_false_path -to [get_ports {cf_dq[2] cf_dq[3]}]
@@ -861,21 +896,14 @@ set_multicycle_path 1 -hold -start \
 # on u_automute, u_coef_mgr, and the FIFO Gray pointers.
 # Bucketed per channel/family: a single >10k-object -to filter is dropped
 # entirely at XDC read time (Constraints 18-929), so keep each group small.
-set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]
-# Broad catch-all (post-route audit 2026-11-14): the KU15P fit spreads the
-# reset tree across gen_ch coefficient banks and non-u_*_fir sinks -- 8439
-# failing endpoints when scoped to u_l_fir/u_r_fir only. Release stays a
-# bounded (6.6 ns, ~2 dsp_clk) checked event, not a false path.
-set_max_delay 6.6 -from $rst_src_cells
-# Unrolled per-channel/family (foreach/if are not supported in XDC).
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/*boundary*/R}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/*boundary*/R}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/* && REF_PIN_NAME =~ RST*}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/* && REF_PIN_NAME =~ RST*}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/*snap*/R}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/*snap*/R}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_l_fir/* && REF_PIN_NAME == R && NAME !~ *boundary* && NAME !~ *snap*}]
-set_max_delay 6.6 -from $rst_src_cells -to [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/u_r_fir/* && REF_PIN_NAME == R && NAME !~ *boundary* && NAME !~ *snap*}]
+# Dedicated reset trees (RTL split 2026-11-23): dsp_rst_tree_n = sys_rst_n
+# keeps single-cycle recovery for one-hot FSMs + Gray pointers (u_automute,
+# u_coef_mgr, u_voicing_commit, u_cal_store, cf_rptr); dsp_rst_fir_tree_n
+# fans out ONLY inside u_dsp_core/u_stereo_fir, so an unscoped -to lands
+# exclusively on skew-tolerant sinks (the per-bucket -to filters are
+# superseded -- the tree itself is now the scope).
+set rst_fir_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_fir_tree_n_reg*}]
+set_max_delay 6.6 -from $rst_fir_cells
 
 # rate_shift_q is quasi-static: it only changes while the MMCM is in reset /
 # stream is stopped, so its fanout inside the FIR cannot race live data.

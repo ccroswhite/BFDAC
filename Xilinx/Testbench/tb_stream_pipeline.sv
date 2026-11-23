@@ -18,7 +18,7 @@ module tb_stream_pipeline;
         .new_sample(sample_valid), .i2s_err(serial_error), .transport_fault(serial_fault)
     );
     dac_dsp_core #(.NUM_MACS(4), .TAPS_PER_PHASE(16)) core (
-        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n),
+        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n), .fir_rst_n(rst_n),
         .audio_l(audio_l), .audio_r(audio_r), .new_sample(sample_valid), .force_zero(1'b0),
         .rate_shift(shift), .stream_fault(stream_fault),
         .fir_frame_done(fir_frame_done),

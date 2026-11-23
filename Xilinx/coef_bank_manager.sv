@@ -111,12 +111,6 @@ module coef_bank_manager #(
             // Default: pulses deassert each cycle
             load_start_r <= 1'b0;
 
-            // Always-on request queue. Most-recent-wins.
-            if (bank_select_pulse) begin
-                queued_bank  <= bank_select_req;
-                queued_valid <= 1'b1;
-            end
-
             unique case (state)
 
                 // -------------------------------------------------------------
@@ -176,6 +170,18 @@ module coef_bank_manager #(
                 end
 
             endcase
+
+            // Always-on request queue. Most-recent-wins. Placed AFTER the
+            // FSM so an arriving request survives a same-cycle ST_IDLE
+            // consume of the previous queue entry (non-blocking
+            // last-assignment-wins: without this order, queued_valid <= 0 in
+            // ST_IDLE silently drops a coincident bank_select_pulse — and if
+            // the dropped pulse was a voicing request, voicing_commit_ctrl
+            // deadlocks in V_WAIT_DONE for the rest of power-on).
+            if (bank_select_pulse) begin
+                queued_bank  <= bank_select_req;
+                queued_valid <= 1'b1;
+            end
         end
     end
 
@@ -185,6 +191,8 @@ module coef_bank_manager #(
     assign load_start      = load_start_r;
     assign current_bank_id = current_bank_r;
     assign bank_valid      = bank_valid_r;
-    assign busy            = (state != ST_IDLE);
+    // queued_valid counts as busy: a queued request launches next cycle,
+    // and voicing_commit_ctrl must not interleave its own request in the gap.
+    assign busy            = (state != ST_IDLE) || queued_valid;
 
 endmodule

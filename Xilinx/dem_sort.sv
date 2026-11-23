@@ -61,7 +61,7 @@ module dem_sort #(
     // one cycle ahead (PRIME state primes the first pair), compare against
     // the registered pair the next cycle. Costs 1 extra cycle per update
     // (35 total vs a ~45 dsp_clk budget at the 6.144 MHz cell rate).
-    logic signed [ACC_WIDTH-1:0] mj0, mj1;   // prefetched metric pair
+    (* MAX_FANOUT = 16 *) logic signed [ACC_WIDTH-1:0] mj0, mj1; // prefetched
     logic [JW-2:0]               jpair_d;    // index of the pair held in mj0/mj1
 
     // Selection from ranks (comb) — used in UPDATE
@@ -76,6 +76,9 @@ module dem_sort #(
             state        <= IDLE;
             amp_q        <= '0;
             jpair        <= '0;
+            jpair_d      <= '0;
+            mj0          <= '0;
+            mj1          <= '0;
             resistor_out <= '0;
             valid_out    <= 1'b0;
             for (int i = 0; i < ARRAY_SIZE; i++) begin

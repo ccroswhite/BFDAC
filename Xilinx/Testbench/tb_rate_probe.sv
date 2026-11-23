@@ -34,7 +34,7 @@ module tb_rate_probe;
     always #(CELL_CLK_PERIOD/2) cell_clk = ~cell_clk;
 
     dac_dsp_core #(.NUM_MACS(NUM_MACS)) u_dut (
-        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(sys_rst_n),
+        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(sys_rst_n), .fir_rst_n(sys_rst_n),
         .audio_l(audio_l), .audio_r(audio_r), .new_sample(new_sample),
         .force_zero(1'b0),
         .coef_we(coef_we), .coef_waddr(coef_waddr), .coef_wdata(coef_wdata),

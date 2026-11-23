@@ -84,6 +84,24 @@ module coef_mute_envelope #(
     logic [FADE_LEN_LOG2-1:0]     counter;
     logic [15:0]                  gain_r;
     logic                         fade_done_r;
+    logic [15:0]                  rom_dout;
+
+    // ROM output stage: unconditional synchronous read every cycle so the
+    // table infers a RAMB36E2 with DOA_REG instead of distributed LUTRAM
+    // (muxing 16'hFFFF/16'h0000 constants at the LUT output kills BRAM
+    // packing and hurts timing). counter is quasi-static between
+    // sample_ticks, so the registered dout is already settled with the
+    // right entry whenever a tick arrives — the pipeline is transparent.
+    // fade_out_req is folded into the address ONLY from ST_IDLE (the sole
+    // state where it starts a fade) so a tick one cycle after the
+    // IDLE->FADE_OUT edge still reads the 0xFFFF end of the table — while
+    // a stray fade_out_req during FADE_IN cannot corrupt the ramp.
+    wire [FADE_LEN_LOG2-1:0] rom_addr =
+        (state == ST_FADE_OUT || (state == ST_IDLE && fade_out_req))
+            ? FADE_LEN_LOG2'(FADE_LEN - 1) - counter
+            : counter;
+    always_ff @(posedge clk)
+        rom_dout <= envelope_lut[rom_addr];
 
     // Last-tick detector: when counter reaches FADE_LEN-1 on a sample_tick,
     // the next state transition fires. Computed once for clarity.
@@ -115,7 +133,7 @@ module coef_mute_envelope #(
                 ST_FADE_OUT: begin
                     if (sample_tick) begin
                         // gain steps 0xFFFF -> 0 over FADE_LEN samples
-                        gain_r <= envelope_lut[FADE_LEN_LOG2'(FADE_LEN - 1) - counter];
+                        gain_r <= rom_dout;
                         if (counter_at_end) begin
                             counter     <= '0;
                             state       <= ST_FULL_MUTE;
@@ -136,7 +154,7 @@ module coef_mute_envelope #(
                 ST_FADE_IN: begin
                     if (sample_tick) begin
                         // gain steps 0 -> 0xFFFF over FADE_LEN samples
-                        gain_r <= envelope_lut[counter];
+                        gain_r <= rom_dout;
                         if (counter_at_end) begin
                             counter     <= '0;
                             state       <= ST_IDLE;

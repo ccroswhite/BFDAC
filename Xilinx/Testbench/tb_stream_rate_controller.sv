@@ -34,6 +34,33 @@ module tb_stream_rate_controller;
                 $fatal(1,"wrong applied rate/ack/polarity");
             checks++;
         end
+        // Same-family rate change (bit0 stays 1): the 2026-11-22 relay-click
+        // fix — mmcm_rst must NEVER assert; clk stays locked, only path_reset
+        // flushes the DSP pipeline. (applied_rate==7, odd -> request 5.)
+        begin
+            bit bad = 0;
+            requested_rate = 3'b101; req_toggle = ~req_toggle;
+            for (int i = 0; i < 35; i++) begin
+                cycles(1);
+                if (mmcm_rst) bad = 1;
+            end
+            if (bad) $fatal(1,"same-family change asserted mmcm_rst (relay click)");
+            wait_ready();
+            if (applied_rate != 5 || clk_sel !== 0)
+                $fatal(1,"same-family apply failed");
+            checks++;
+            // Restore to 7 (same-family again) — the fault/recovery test
+            // below expects applied_rate==7.
+            requested_rate = 3'b111; req_toggle = ~req_toggle;
+            for (int i = 0; i < 35; i++) begin
+                cycles(1);
+                if (mmcm_rst) bad = 1;
+            end
+            if (bad) $fatal(1,"same-family 5->7 asserted mmcm_rst");
+            wait_ready();
+            if (applied_rate != 7) $fatal(1,"same-family restore failed");
+            checks++;
+        end
         fail_clock=1; cycles(20);
         if(ready) $fatal(1,"ready while clock failed");
         fail_clock=0; wait_ready();

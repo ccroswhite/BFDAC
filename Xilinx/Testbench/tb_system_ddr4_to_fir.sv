@@ -95,7 +95,11 @@ module tb_system_ddr4_to_fir;
         .ui_clk_sync_rst    (~ui_rst_n),
         .dsp_clk            (dsp_clk),
         .sys_rst_n          (dsp_rst_n),
+        .ext_rst_n          (dsp_rst_n),
         .sample_768k_tick   (sample_768k_tick),
+        .fir_frame_done     (sample_768k_tick),  // free-running frame-boundary tick
+        .stream_rate        (3'd0),              // enforce=0: legacy slots + dir w/o rate check
+        .enforce_stream_rate(1'b0),
         .coef_bank_id       (coef_bank_id_tb),
         .coef_load_start    (coef_load_start_tb),
         .filter_id          (filter_id_tb),
@@ -275,22 +279,28 @@ module tb_system_ddr4_to_fir;
             $display("PASS: %s = %0d", name, got);
     endtask
 
+    // Request inputs are TOGGLES now (one flip per request, 2026-11-22) —
+    // a 1->0->1 pulse would be two requests.
     task automatic legacy_load(input [3:0] bank);
         @(posedge dsp_clk); coef_bank_id_tb    <= bank;
-        @(posedge dsp_clk); coef_load_start_tb <= 1'b1;
-        @(posedge dsp_clk); coef_load_start_tb <= 1'b0;
+        @(posedge dsp_clk); coef_load_start_tb <= ~coef_load_start_tb;
     endtask
 
     task automatic filter_load(input [15:0] id);
         @(posedge dsp_clk); filter_id_tb       <= id;
-        @(posedge dsp_clk); filter_load_req_tb <= 1'b1;
-        @(posedge dsp_clk); filter_load_req_tb <= 1'b0;
+        @(posedge dsp_clk); filter_load_req_tb <= ~filter_load_req_tb;
     endtask
 
     task automatic wait_load_done(input string what);
         fork
             begin : w_done
-                @(posedge dsp_clk iff coef_load_done);
+                // coef_load_done is a stretched level (~8 dsp_clk cycles so
+                // the slower clk_200m cannot miss it). A level check armed
+                // during the PREVIOUS load's tail returns immediately with
+                // stale status; wait for the level to clear first, then
+                // catch the next rising edge.
+                wait (!coef_load_done);
+                @(posedge coef_load_done);
                 $display("[%0t] %s: coef_load_done", $time, what);
                 disable w_to;
             end
@@ -301,7 +311,15 @@ module tb_system_ddr4_to_fir;
                 disable w_done;
             end
         join
-        repeat (20) @(posedge dsp_clk);   // manager SWITCHING -> IDLE, status settle
+        // Manager's ST_WAIT_BOUNDARY holds the atomic swap until the next
+        // frame-boundary tick (SAMPLE_DIV dsp_clk cycles apart), so a fixed
+        // 20-cycle settle races the swap. Wait for the manager to return to
+        // IDLE instead, bounded at two ticks so failures can't hang the TB.
+        fork : settle
+            begin wait (!mgr_busy); end
+            begin repeat (2 * SAMPLE_DIV + 20) @(posedge dsp_clk); end
+        join_any
+        disable settle;
     endtask
 
     // Drive N INPUT-rate samples (48 kHz = one per 16 output ticks; the FIR

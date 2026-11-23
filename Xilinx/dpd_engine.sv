@@ -102,7 +102,8 @@ module dpd_engine #(
     logic               a_one2d, b_one2d;
     logic signed [17:0] a_coef, b_coef;
     logic signed [16:0] a_p17, b_p17;
-    logic signed [34:0] a_mul, b_mul, a_mulr, b_mulr;
+    (* use_dsp = "yes" *) logic signed [34:0] a_mul, b_mul;
+    (* use_dsp = "yes" *) logic signed [34:0] a_mulr, b_mulr;
     logic signed [ACCW-1:0] a_shift, b_shift;
     logic signed [ACCW-1:0] accA, accB;
 
@@ -110,6 +111,8 @@ module dpd_engine #(
     logic signed [ACCW-1:0] sum_r, sumh_r;
     logic [2:0]  fin;           // one-hot-ish finish pipeline
     assign busy = running || (|fin);
+
+    wire launching = y_valid && dpd_enable;
 
     function automatic logic signed [5:0] hsel(input logic [2:0] lag);
         return hist[lag];
@@ -191,22 +194,35 @@ module dpd_engine #(
             corr_valid <= 1'b0;
 
             // ---------------- launch --------------------------------------
-            if (y_valid && dpd_enable) begin
-                // shift history with the fresh code (hist[0] = current)
-                hist[0] <= 6'(y - 7'd32);
+            // shift history on EVERY y_valid so a re-enabled DPD never
+            // consumes stale lags from a prior session. y is range-checked
+            // at the NS quantizer (0..63); clamp defensively anyway.
+`ifndef SYNTHESIS
+            if (y_valid && (y > 7'd63))
+                $display("%0t DPD_WARN: y=%0d out of range (max 63)", $time, y);
+`endif
+            if (y_valid) begin
+                hist[0] <= (y > 7'd63) ? 6'sd31 : 6'(y - 7'd32);
                 for (int i = 1; i < 17; i++) hist[i] <= hist[i-1];
-                y_r     <= y;
+            end
+            if (launching) begin
+                y_r     <= (y > 7'd63) ? 7'd63 : y;
                 running <= 1'b1;
-                step    <= '0;
+                step    <= 6'd1;                 // step 0 issued below
                 accA    <= '0;
                 accB    <= '0;
                 fin     <= '0;
+                // issue step-0 meta ops directly on the launch cycle
+                cal_addr_a <= A_SHQ;  opA_s0 <= OP_META_SHQ;
+                cal_addr_b <= A_SHS;  opB_s0 <= OP_META_SHS;
+                a_h0 <= 6'sd1; a_h1 <= 6'sd1; a_h2 <= 6'sd1; a_one2 <= 1'b1;
+                b_h0 <= 6'sd1; b_h1 <= 6'sd1; b_h2 <= 6'sd1; b_one2 <= 1'b1;
             end else if (running) begin
                 if (step <= 6'd30) step <= step + 6'd1;
             end
 
             // ---------------- issue stage (s0) -----------------------------
-            if (running && step <= 6'd30) begin
+            if (running && step <= 6'd30 && !launching) begin
                 cal_addr_a <= adrA_c;
                 cal_addr_b <= adrB_c;
                 opA_s0     <= opA_c;
@@ -248,17 +264,27 @@ module dpd_engine #(
                         b_one2 <= 1'b1;
                     end
                 endcase
-            end else begin
+            end else if (!launching) begin
                 opA_s0 <= OP_IDLE;
                 opB_s0 <= OP_IDLE;
             end
 
             // ---------------- pipeline flags -------------------------------
-            opA_p[1] <= opA_s0;  opB_p[1] <= opB_s0;
-            for (int i = 2; i <= 5; i++) begin
-                opA_p[i] <= opA_p[i-1];
-                opB_p[i] <= opB_p[i-1];
+            // drain any ops still in flight when a relaunch overruns the
+            // engine — otherwise leftovers would corrupt accA/accB.
+            if (launching) begin
+                for (int i = 1; i <= 5; i++) begin
+                    opA_p[i] <= OP_IDLE;
+                    opB_p[i] <= OP_IDLE;
+                end
+            end else begin
+                opA_p[1] <= opA_s0;  opB_p[1] <= opB_s0;
+                for (int i = 2; i <= 5; i++) begin
+                    opA_p[i] <= opA_p[i-1];
+                    opB_p[i] <= opB_p[i-1];
+                end
             end
+
 
             // ---------------- s1: RAM data back; captures; prod12 ----------
             a_p12  <= a_h0 * a_h1;
@@ -267,17 +293,19 @@ module dpd_engine #(
             a_one2d<= a_one2; b_one2d<= b_one2;
             a_coef <= signed'(cal_data_a[17:0]);
             b_coef <= signed'(cal_data_b[17:0]);
-            case (opA_p[1])
-                OP_META_SHQ: shQ <= cal_data_a[5:0];
-                OP_META_SHF: shF <= cal_data_a[5:0];
-                default: ;
-            endcase
-            case (opB_p[1])
-                OP_META_SHS: shS <= cal_data_b[5:0];
-                OP_META_GF:  gf  <= cal_data_b[5:0];
-                OP_LUT:      lut_r <= signed'(cal_data_b);
-                default: ;
-            endcase
+            if (!launching) begin
+                case (opA_p[1])
+                    OP_META_SHQ: shQ <= cal_data_a[5:0];
+                    OP_META_SHF: shF <= cal_data_a[5:0];
+                    default: ;
+                endcase
+                case (opB_p[1])
+                    OP_META_SHS: shS <= cal_data_b[5:0];
+                    OP_META_GF:  gf  <= cal_data_b[5:0];
+                    OP_LUT:      lut_r <= signed'(cal_data_b);
+                    default: ;
+                endcase
+            end
 
             // ---------------- s2: prod17 (coef arrives here too) -----------
             a_p17   <= a_one2d ? 17'(a_p12) : 17'(a_p12 * a_h2d);
@@ -303,34 +331,42 @@ module dpd_engine #(
             endcase
 
             // ---------------- s6: accumulate (STAT/FIR negative) -----------
-            case (opA_p[5])
-                OP_MAC_Q:          accA <= accA + a_shift;
-                OP_MAC_S, OP_MAC_F: accA <= accA - a_shift;
-                default: ;
-            endcase
-            case (opB_p[5])
-                OP_MAC_Q:          accB <= accB + b_shift;
-                OP_MAC_F:          accB <= accB - b_shift;
-                default: ;
-            endcase
+            // Suppressed on the launch edge so a stale in-flight MAC can't
+            // NBA-override the launch's accA/accB clear (relaunch overrun).
+            if (!launching) begin
+                case (opA_p[5])
+                    OP_MAC_Q:           accA <= accA + a_shift;
+                    OP_MAC_S, OP_MAC_F: accA <= accA - a_shift;
+                    default: ;
+                endcase
+                case (opB_p[5])
+                    OP_MAC_Q:           accB <= accB + b_shift;
+                    OP_MAC_F:           accB <= accB - b_shift;
+                    default: ;
+                endcase
+            end
 
             // ---------------- finish: sum, round, output -------------------
-            // last issue at step 30 -> its acc update lands 6 cycles later
-            // (step counter parks at 31; count the drain with fin)
-            if (running && step == 6'd31) begin
-                // wait for pipes to drain: opA_p[5] returns to IDLE after
-                // the last MAC's accumulate. Kick the finish chain then.
-                if (opA_p[5] == OP_IDLE && opB_p[5] == OP_IDLE
-                    && fin == 3'b000) fin <= 3'b001;
+            // last issue at step 30 -> its acc update lands 6 cycles later.
+            // Kick fin one cycle earlier: the last accumulate is in flight
+            // the moment p[5] holds the final op with p[4] already drained
+            // (accA/accB update on the same edge fin[0] is set; sum_r reads
+            // the settled value one cycle later in fin[1]).
+            if (running && step == 6'd31 && fin == 3'b000) begin
+                if (opA_p[4] == OP_IDLE && opA_p[5] != OP_IDLE
+                    && opB_p[4] == OP_IDLE) fin <= 3'b001;
             end
             if (fin[0]) begin
                 sum_r  <= accA + accB;
                 fin    <= 3'b010;
             end else if (fin[1]) begin
-                sumh_r <= sum_r + (ACCW'(1) <<< (gf - 6'd1));
+                // register the dynamic shift separately — breaks the
+                // barrel-shifter -> 38-bit adder -> shift chain for timing
+                sumh_r <= (sum_r + ((gf == 6'd0) ? ACCW'(0)
+                                    : (ACCW'(1) <<< (gf - 6'd1)))) >>> gf;
                 fin    <= 3'b100;
             end else if (fin[2]) begin
-                corr       <= (ACCW'(lut_r) + (sumh_r >>> gf)) <<< (FRAC - F);
+                corr       <= (ACCW'(lut_r) + sumh_r) <<< (FRAC - F);
                 corr_valid <= 1'b1;
                 fin        <= '0;
                 running    <= 1'b0;

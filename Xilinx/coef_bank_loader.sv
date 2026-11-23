@@ -104,7 +104,7 @@
 //  current 5.3 ms fade budget.
 // =============================================================================
 module coef_bank_loader #(
-    parameter int            NUM_MACS         = 1024,  // Any multiple of 64; taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int            NUM_MACS         = 80,    // production (5x16=80 DQ); taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int            COEF_WIDTH       = 18,
     parameter int            COEF_DEPTH       = 1024,  // 16 phases * 64 taps/phase
     parameter int            BANK_BITS        = 4,                // up to 16 banks
@@ -117,8 +117,8 @@ module coef_bank_loader #(
 )(
     input  logic                          clk,
     input  logic                          rst_n,
-    input  tri0                           enforce_stream_rate,
-    input  tri0 [2:0]                     stream_rate,
+    input  logic                           enforce_stream_rate,
+    input  logic [2:0]                     stream_rate,
 
     // -- Control interface (from coef_bank_manager) ----------------------
     input  logic                          load_start,
@@ -272,6 +272,18 @@ module coef_bank_loader #(
     logic [AXI_DATA_WIDTH-1:0]   dir_beat1;
     logic [2:0] rate_r;
     logic enforce_rate_r;
+    // stream_rate is a clk_200m-driven, quasi-static bus (changes only during
+    // a muted stream-rate apply, when the manager is reset and cannot launch
+    // a load). Still, capture it through a bit-independent 2-FF ui_clk sync
+    // so rate_r can never latch a metastable bit — a torn value could let a
+    // wrong-rate directory entry slip the rate check and load mismatched
+    // coefficients silently.
+    (* ASYNC_REG = "TRUE" *) logic [2:0] stream_rate_ui1;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] stream_rate_ui2;
+    always_ff @(posedge clk) begin
+        stream_rate_ui1 <= stream_rate;
+        stream_rate_ui2 <= stream_rate_ui1;
+    end
     logic                        packed_r;      // current load uses the packed payload
     logic [31:0]                 pk_burst;      // packed: burst number (0..PK_BURSTS-1)
     logic [8:0]                  pk_burst_beats;// packed: beats in the current burst
@@ -306,9 +318,21 @@ module coef_bank_loader #(
     wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1);
     wire [31:0] dir_expect_bytes  = (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
     // bank_base must leave room for the whole payload inside the 32-bit AXI
-    // space: {dir_ddr4_offset,4'b0} + payload_bytes <= 2^32 (no wrap).
-    wire        dir_addr_ok       =
-        ({dir_ddr4_offset, 4'b0000} <= (32'hFFFF_FFFF - dir_expect_bytes));
+    // space: start_byte + payload_bytes <= 2^32 (end-exclusive, so a payload
+    // ending exactly at 2^32 is legal). dir_ddr4_offset is in 16-B units, so
+    // the byte start is {offset,4'b0}; offset[31:28]!=0 puts the start past
+    // 2^32 and fails the range check outright.
+    // ALIGNMENT (AXI4 A3.4.1): all bursts are fixed BEATS_PER_BURST*16B and
+    // burst N starts at bank_base + N*4KB, so bank_base MUST be 4KB-aligned
+    // or every INCR burst crosses a 4KB boundary -> SLVERR/hang on the MIG.
+    // dir_ddr4_offset[7:0]==0 enforces this; the voicing generator must pad
+    // each DDR4 image to a 4KB boundary.
+    wire [35:0] dir_byte_start = {dir_ddr4_offset, 4'b0000};
+    wire [35:0] dir_end_byte   = dir_byte_start + 36'(dir_expect_bytes);
+    wire        dir_addr_ok    =
+        (dir_ddr4_offset[7:0]   == 8'h00) &&        // 4KB-aligned image start
+        (dir_ddr4_offset[31:28] == 4'h0)  &&        // start fits in 32b space
+        (dir_end_byte <= 36'h1_0000_0000);          // payload does not wrap
     wire [7:0] dir_rate_code = dir_beat0[31:24];
     wire [1:0] dir_rate_shift = dir_rate_code[2:1];
     wire [7:0] dir_rate_schema = dir_beat1[55:48];
@@ -319,6 +343,9 @@ module coef_bank_loader #(
         ((dir_rate_schema == 8'd3) &&
          (dir_rate_shift == rate_r[2:1]) &&
          (dir_rate_shift_mirror == {6'd0, rate_r[2:1]}));
+    // NOTE (intentional inversion): the directory rate_code byte encodes the
+    // family bit with OPPOSITE polarity to stream_rate/filter_id (dir bit0:
+    // 0=48k/1=44.1k per bfd_staging.py; rate_r[0]: 1=48k/0=44.1k), hence ~.
     wire dir_rate_ok = dir_rate_version_ok &&
                        (dir_rate_code[0] == ~rate_r[0]) &&
                        (dir_rate_code[7:3] == 0) &&
@@ -405,18 +432,24 @@ module coef_bank_loader #(
                         pk_waddr      <= '0;
                         pk_left       <= 32'(PK_TOTAL_COEFS);
                         load_err      <= 1'b0;
-                        load_err_code <= 2'd0;
-                        rate_r <= stream_rate;
+                        load_err_code <= 3'd0;
+                        rate_r <= stream_rate_ui2;
                         enforce_rate_r <= enforce_stream_rate;
                         if (load_by_id) begin
                             dir_idx <= '0;
                             state   <= ST_DIR_AR;
                         end else if (enforce_stream_rate) begin
-                            load_err_code <= 2'd3;
+                            load_err_code <= 3'd3;
                             state <= ST_ERR;
                         end else begin
+                            // Legacy slot base = id * NUM_MACS * COEF_DEPTH*4.
+                            // COEF_DEPTH is always a power of two, so write it
+                            // as (id*NUM_MACS) << log2(COEF_DEPTH*4): a small
+                            // constant shift-add on a 4-bit id, never an
+                            // inferred combinational multiplier at ui_clk.
                             bank_base <= DDR4_BASE_ADDR
-                                       + (AXI_ADDR_WIDTH'(load_bank_id) * BANK_SIZE_BYTES);
+                                       + AXI_ADDR_WIDTH'((32'(load_bank_id) * NUM_MACS)
+                                                         << ($clog2(COEF_DEPTH) + 2));
                             state     <= ST_ISSUE_AR;
                         end
                     end
@@ -462,15 +495,15 @@ module coef_bank_loader #(
                 // ----- DIRECTORY: terminator / match / advance -----
                 ST_DIR_CHECK: begin
                     if (dir_terminator) begin
-                        load_err_code <= 2'd1;
+                        load_err_code <= 3'd1;
                         state         <= ST_ERR;
                     end else if (dir_filter_id == filter_id_r) begin
                         if (enforce_rate_r && !dir_rate_ok) begin
-                            load_err_code <= 2'd3;
+                            load_err_code <= 3'd3;
                             state <= ST_ERR;
                         end else if (!dir_packing_ok || dir_payload_bytes != dir_expect_bytes
                                      || !dir_addr_ok) begin
-                            load_err_code <= 2'd2;
+                            load_err_code <= 3'd2;
                             state         <= ST_ERR;
                         end else begin
                             bank_base <= AXI_ADDR_WIDTH'({dir_ddr4_offset, 4'b0000});
@@ -478,7 +511,7 @@ module coef_bank_loader #(
                             state     <= ST_ISSUE_AR;
                         end
                     end else if (32'(dir_idx) == DIR_MAX_ENTRIES - 1) begin
-                        load_err_code <= 2'd1;
+                        load_err_code <= 3'd1;
                         state         <= ST_ERR;
                     end else begin
                         dir_idx <= dir_idx + 1'b1;
@@ -509,24 +542,30 @@ module coef_bank_loader #(
                         beat_count    <= '0;
                         axi_read_error <= 1'b0;
                         state         <= ST_RECV_R;
+                        `ifdef SIM_DEBUG
                         $display("[AR_HS @%0t] mac=%0d burst=%0d beat_count_now=%0d (resetting to 0)",
                             $time, mac_idx, burst_idx, beat_count);
+                        `endif
                     end
                 end
 
                 // ----- RECV R into FIFO -----
                 ST_RECV_R: begin
                     if (m_axi_rvalid && m_axi_rready) begin
+                        `ifdef SIM_DEBUG
                         if (beat_count == 0)
                             $display("[BEAT0 @%0t] mac=%0d burst=%0d first beat rvalid+rready", $time, mac_idx, burst_idx);
+                        `endif
                         // Latch rdata now; fifo_we_d1 fires next cycle to write it.
                         // This breaks any same-cycle dependency on m_axi_rdata.
                         fifo_din   <= m_axi_rdata;
                         fifo_we_d1 <= 1'b1;
                         if (m_axi_rresp != 2'b00)
                             axi_read_error <= 1'b1;
+                        `ifdef SIM_DEBUG
                         if (beat_count == 0)
                             $display("[DIN_HS0 @%0t] beat0 handshake m_axi_rdata=%0h", $time, m_axi_rdata);
+                        `endif
                         beat_count <= beat_count + 1'b1;
                         if (m_axi_rlast) begin
                             m_axi_rready <= 1'b0;
@@ -539,8 +578,10 @@ module coef_bank_loader #(
                                 drain_count <= '0;
                                 state       <= ST_RECV_WAIT;
                             end
+                            `ifdef SIM_DEBUG
                             $display("[RLAST @%0t] mac=%0d burst=%0d beat_cnt=%0d fifo_wptr=%0d fifo_rptr=%0d fifo_cnt=%0d",
                                 $time, mac_idx, burst_idx, beat_count+1, fifo_wptr, fifo_rptr, fifo_count+1);
+                            `endif
                         end
                     end
                 end
@@ -568,9 +609,11 @@ module coef_bank_loader #(
                             beat_buf    <= fifo_rdata;
                             beat_loaded <= 1'b1;
                             beat_slice  <= '0;
+                            `ifdef SIM_DEBUG
                             if (drain_count == 0)
                                 $display("[BEATBUF0 @%0t] fifo_rdata=%0h (beat0 coef0 expected=%0h)",
                                     $time, fifo_rdata, mac_idx * COEF_DEPTH + burst_idx * COEFS_PER_BURST);
+                            `endif
                         end
                     end
 
@@ -606,9 +649,11 @@ module coef_bank_loader #(
                         coef_wmac  <= mac_idx;
                         coef_waddr <= $clog2(COEF_DEPTH)'(32'(burst_idx) * COEFS_PER_BURST + 32'(drain_count));
                         coef_wdata <= slice_coef;
+                        `ifdef SIM_DEBUG
                         if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS-1) && drain_count < 4)
                             $display("[DRAIN255 @%0t] burst=%0d drain=%0d wdata=%0h",
                                 $time, burst_idx, drain_count, slice_coef);
+                        `endif
 
                         drain_count <= drain_count + 1'b1;
                         if (beat_slice == 3'd3) begin

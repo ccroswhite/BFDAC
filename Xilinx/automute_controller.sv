@@ -38,7 +38,8 @@ module automute_controller #(
     parameter logic [27:0] SWITCH_CYCLES = 28'd3_025_000    // ~10ms level-apply window
 )(
     input  logic clk,           // audio-family DSP clock (277.898/302.474 MHz)
-    input  logic rst_n,
+    input  logic rst_n,         // dsp pipeline reset — pulses on rate changes
+    input  logic rst_relay_n,   // power-only reset (ext_rst_n): relay + level latch
 
     // Control Plane
     input  logic sys_ready,     // 1 = clocks locked + pg_all (safe to expose XLR)
@@ -73,10 +74,14 @@ module automute_controller #(
     logic [2:0]  level_target_q1, level_target_q2;
     logic [2:0]  level_relay_int;
 
-    // Level state: reset only on rst_n. The synced target must be stable for
-    // two cycles before it counts (multi-bit CDC: bits may land a cycle apart).
+    // Level state: reset only on rst_relay_n (power-on) — NOT on the dsp
+    // pipeline reset, which pulses on every stream-rate change. The header
+    // promise "level is never silently reverted" was broken before
+    // 2026-11-22: rst_n is sys_rst_n and reverts level_relay_int to 2 Vrms
+    // mid-session on every rate switch. The synced target must be stable
+    // for two cycles before it counts (multi-bit CDC).
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (!rst_relay_n) begin
             level_target_q1 <= 3'b000;
             level_target_q2 <= 3'b000;
             level_relay_int <= 3'b000;
@@ -97,14 +102,22 @@ module automute_controller #(
     assign rate_changed = (base_rate_sel ^ rate_sel_q);
 
     always_ff @(posedge clk) begin
-        if (!rst_n || !sys_ready || test_active) begin
-            // Hard path: output physically disconnected. Relay drops on power/
-            // clock loss and on factory test entry — the ONLY mid-session
-            // relay opens (ruling 2026-11-15).
-            state           <= ST_OPEN;
+        if (!rst_n || !rst_relay_n || !sys_ready || test_active) begin
+            // Hard path: output physically disconnected on power/clock loss
+            // (!sys_ready — planned rate relocks hold sys_ready via busy in
+            // top), external reset, or factory test isolation — the ONLY
+            // mid-session relay opens (ruling 2026-11-15). A bare dsp
+            // pipeline reset (rate or source change) must NOT drop the
+            // mechanical relay: the drive latch holds and the FSM simply
+            // restarts muted in ARMED.
             timer           <= '0;
-            line_mute_drive <= 1'b0;
             force_zero      <= 1'b1;
+            if (!rst_relay_n || !sys_ready || test_active) begin
+                state           <= ST_OPEN;
+                line_mute_drive <= 1'b0;
+            end else begin
+                state <= line_mute_drive ? ST_ARMED : ST_OPEN;
+            end
         end else if (state != ST_OPEN && state != ST_SETTLING &&
                      (i2s_err || rate_changed || !unmute_req)) begin
             // Digital mute ONLY — the relay stays closed (no click). Every
@@ -189,6 +202,15 @@ module automute_controller #(
                         state <= unmute_req ? ST_PLAYING : ST_ARMED;
                         timer <= '0;
                     end
+                end
+
+                default: begin
+                    // Illegal encoding (one-hot glitch/SEU): recover to the
+                    // safest physical state — relay open, output clamped.
+                    state           <= ST_OPEN;
+                    line_mute_drive <= 1'b0;
+                    force_zero      <= 1'b1;
+                    timer           <= '0;
                 end
             endcase
         end

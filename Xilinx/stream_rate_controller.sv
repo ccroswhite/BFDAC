@@ -19,13 +19,20 @@ module stream_rate_controller #(
     logic [31:0] timer;
     logic [2:0] target;
     logic request_epoch;
+    // relock_req: a same-oscillator-family rate change (target[0] ==
+    // applied_rate[0], e.g. 48k -> 96k) does not need an MMCM reset — only
+    // the DSP pipeline flush that path_reset provides. Keeping clk_locked
+    // high through such transactions also keeps the analog automute relay
+    // quiet (no mechanical click on routine rate switches). An UNPLANNED
+    // unlock always forces a full relock.
+    logic relock_req;
     (* ASYNC_REG = "TRUE" *) logic [1:0] lock_sync;
 
     assign busy = state != RUN || req_toggle != ack_toggle;
     assign ready = state == RUN && lock_sync[1] && !busy;
     // Carrier hardware: low enables 49.152MHz, high enables 45.1584MHz.
     assign clk_sel = ~applied_rate[0];
-    assign mmcm_rst = state == RESET_CLOCK || state == SETTLE;
+    assign mmcm_rst = (state == RESET_CLOCK || state == SETTLE) && relock_req;
     assign path_reset = state == RESET_CLOCK || state == SETTLE || state == LOCK_WAIT;
     assign serial_enable = state == RUN || state == MUTE_WAIT;
 
@@ -36,6 +43,7 @@ module stream_rate_controller #(
             target <= 0;
             applied_rate <= 0;
             request_epoch <= 0;
+            relock_req <= 1'b1;     // power-on: first acquire is a full relock
             ack_toggle <= 0;
             lock_sync <= 0;
         end else begin
@@ -45,10 +53,14 @@ module stream_rate_controller #(
                     if (req_toggle != ack_toggle) begin
                         target <= requested_rate;
                         request_epoch <= req_toggle;
+                        // Family switch (44.1k<->48k) needs the MMCM reset;
+                        // same-family changes keep the clock locked.
+                        relock_req <= (requested_rate[0] != applied_rate[0]);
                         timer <= MUTE_CYCLES - 1;
                         state <= MUTE_WAIT;
                     end else if (!lock_sync[1]) begin
                         target <= applied_rate;
+                        relock_req <= 1'b1;   // unplanned unlock: full relock
                         timer <= MUTE_CYCLES - 1;
                         state <= MUTE_WAIT;
                     end

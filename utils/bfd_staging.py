@@ -33,6 +33,10 @@ FILT_NOTFOUND / FILT_SIZE / format_fail):
   * Directory payload_bytes = NUM_MACS*COEF_DEPTH*4 (packing=0) or
     ceil(NUM_MACS*COEF_DEPTH/7)*16 (packing=1) and must equal the actual
     .bfc payload size.
+  * Directory ddr4_offset: byte address of the payload in 16-B units and
+    must be 4 KiB-aligned (offset[7:0]==0). The loader issues fixed 4 KiB
+    AXI4 bursts and rejects a non-aligned image (AXI4 A3.4.1 forbids an
+    INCR burst crossing a 4 KiB boundary -> SLVERR/hang on the MIG).
   * rate_code bit0: 0 = 48k family, 1 = 44.1k family; bits[2:1] =
     rate_shift; bits[7:3] = 0. Directory schema byte = 3 (V3 multirate).
 
@@ -241,6 +245,10 @@ def build_image(filters: list[BfcFilter],
                 flash_capacity: int = FLASH1_CAPACITY
                 ) -> tuple[bytes, dict]:
     coef_depth = 16 * taps_per_phase
+    if align % 4096:
+        raise ValueError(
+            f"align {align} must be a multiple of 4096: the loader issues "
+            f"fixed 4KiB AXI4 bursts and rejects non-4KiB-aligned payloads")
     if len(filters) > DEFAULT_DIR_MAX:
         raise ValueError(f"{len(filters)} filters > DIR_MAX_ENTRIES "
                          f"{DEFAULT_DIR_MAX}")
@@ -353,6 +361,10 @@ def verify_image(path: Path, num_macs: int, taps_per_phase: int,
                 if plen != exp_plen:
                     problems.append(f"dir id {fid}: payload_bytes {plen} "
                                     f"!= {exp_plen}")
+                if off16 & 0xFF:
+                    problems.append(
+                        f"dir id {fid}: ddr4_offset 0x{off16 << 4:X} not "
+                        f"4KiB-aligned (AXI4 4KB burst rule)")
                 if packing not in (0, 1):
                     problems.append(f"dir id {fid}: packing {packing} illegal")
                 if rcode >> 3:
@@ -517,8 +529,9 @@ def main() -> None:
                     default=DEFAULT_DIR_BASE)
     im.add_argument("--payload-base", type=lambda x: int(x, 0),
                     default=DEFAULT_PAYLOAD_BASE)
-    im.add_argument("--align", type=lambda x: int(x, 0), default=16,
-                    help="payload placement granularity (default 16B)")
+    im.add_argument("--align", type=lambda x: int(x, 0), default=4096,
+                    help="payload placement granularity (default 4KiB; the "
+                         "loader requires dir offsets 4KiB-aligned)")
     im.add_argument("--flash-capacity", type=lambda x: int(x, 0),
                     default=FLASH1_CAPACITY)
     im.set_defaults(fn=cmd_image)

@@ -71,6 +71,7 @@ module dac_voicing_shaper #(
     logic signed [44:0] ucu_full;
     (* use_dsp = "yes" *) logic signed [44:0] hp2;     // Q5.40 (DSP48E2)
     (* use_dsp = "yes" *) logic signed [44:0] hp3;     // Q5.40 (DSP48E2)
+    (* use_dsp = "yes" *) logic signed [44:0] hp2_m, hp3_m; // PREG stage
     logic signed [45:0] harm_sum;                  // Q5.40
 
     // ---- Combinational helpers (signed everywhere: bare part-selects are
@@ -99,6 +100,11 @@ module dac_voicing_shaper #(
     wire  signed [48:0] x_ext   = {x_d2[47], x_d2};
     wire  signed [48:0] h_ext   = {{3{harm_sum[45]}}, harm_sum};
 
+    // h_ext <<< 1 below bakes in FS_SHIFT - 40 == 1; fail elaboration if a
+    // future override ever breaks that assumption.
+    initial assert (FS_SHIFT == 41)
+        else $fatal(1, "dac_voicing_shaper: FS_SHIFT=%0d, harm scale wrong", FS_SHIFT);
+
     function automatic logic signed [47:0] sat48(input logic signed [48:0] s);
         if (s > 49'sh0_7FFF_FFFF_FFFF)
             return 48'sh7FFF_FFFF_FFFF;
@@ -115,6 +121,7 @@ module dac_voicing_shaper #(
             usq_p1   <= '0;  usq_full <= '0;
             ucu_p1   <= '0;  ucu_full <= '0;
             hp2      <= '0;  hp3      <= '0;
+            hp2_m    <= '0;  hp3_m    <= '0;
             harm_sum <= '0;
         end else begin
             // u1_c2 is u1 delayed 2 clks so it pairs with usq_full (the
@@ -127,7 +134,9 @@ module dac_voicing_shaper #(
             ucu_full <= ucu_p1;
             hp2      <= k2 * usq_ac;               // 27x18 -> 1 DSP48E2
             hp3      <= k3 * ucu_q;                // 27x18 -> 1 DSP48E2
-            harm_sum <= hp2 + hp3;
+            hp2_m    <= hp2;                       // MREG -> PREG stage
+            hp3_m    <= hp3;
+            harm_sum <= hp2_m + hp3_m;
         end
     end
 

@@ -7,11 +7,12 @@
 //
 // DUAL SOURCE (2026-11-20): i2s_data = XMOS stream, i2s_data2 = AP McASP0
 // stream — both slave-TX on the shared FPGA-generated BCLK/LRCLK (Option A).
-// src_sel muxes the incoming pin BEFORE the capture pipeline; a select change
-// flushes the pipeline and re-arms framing, so the first sample of the new
-// source is always a complete frame (no torn words). rx_trim is per-source
-// from the register map (the two return paths have different isolator
-// channels + serializers). The control plane mutes across the switch.
+// Each source pin has a dedicated 2-FF ASYNC_REG chain and src_sel muxes the
+// SYNCHRONIZED outputs inside dsp_clk; a select change flushes the pipeline
+// and re-arms framing, so the first sample of the new source is always a
+// complete frame (no torn words). rx_trim is per-source from the register
+// map (the two return paths have different isolator channels + serializers).
+// The control plane mutes across the switch.
 module i2s_master_ingress (
     input logic dsp_clk, cell_clk, rst_n, enable, source_valid,
     input logic [1:0] rate_shift,
@@ -56,13 +57,18 @@ module i2s_master_ingress (
     end
 
     (* ASYNC_REG = "TRUE" *) logic [2:0] launch_sync;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] data_sync, enable_sync, valid_sync, sel_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] data_sync, data2_sync, enable_sync, valid_sync, sel_sync;
     (* ASYNC_REG = "TRUE" *) logic [4:0] trim_meta, trim_sync;
     logic [4:0] trim_applied;
     logic sel_applied;
     // Max capture delay: rate_shift=0 gives 46 + rx_trim[4:0](max 31) = 77
     localparam int PIPE_DEPTH = 78;
     logic [PIPE_DEPTH-1:0] sample_pipe;
+    // Stage 0 is the CDC capture point for the cell_clk launch_bit bus and is
+    // named in the XDC; KEEP/shreg_extract=no prevents Vivado folding it into
+    // an SRL32 with stages 1..77 (SRLs have poor CDC characteristics and would
+    // break the get_cells pattern). tag_pipe[0] is left unused.
+    (* KEEP = "TRUE", shreg_extract = "no" *) logic [5:0] tag_pipe_0;
     logic [5:0] tag_pipe [PIPE_DEPTH];
     logic [31:0] serial_word;
     logic [23:0] left_word;
@@ -72,8 +78,12 @@ module i2s_master_ingress (
     logic [6:0] delay_cycles;
     wire launch_event = launch_sync[2] ^ launch_sync[1];
     wire capture = sample_pipe[delay_cycles];
-    wire [5:0] capture_bit = tag_pipe[delay_cycles];
-    wire [31:0] shifted_word = {serial_word[30:0], data_sync[1]};
+    wire [5:0] capture_bit = (delay_cycles == 0) ? tag_pipe_0 : tag_pipe[delay_cycles];
+    // Source mux AFTER the per-pin synchronizers: muxing async pins ahead of
+    // data_sync[0] would put a cross-domain control net in front of the
+    // metastability stage (glitch can carry the wrong source's bit).
+    wire data_bit = sel_sync[1] ? data2_sync[1] : data_sync[1];
+    wire [31:0] shifted_word = {serial_word[30:0], data_bit};
     wire [13:0] watchdog_limit = (14'd11704 >> rate_shift) + 14'd128;
     assign i2s_err = !valid_sync[1] || cadence_fault;
     assign transport_fault = cadence_fault;
@@ -88,9 +98,11 @@ module i2s_master_ingress (
     end
     always_ff @(posedge dsp_clk or negedge rst_n) begin
         if (!rst_n) begin
-            launch_sync <= 0; data_sync <= 0; enable_sync <= 0; valid_sync <= 0;
+            launch_sync <= 0; data_sync <= 0; data2_sync <= 0;
+            enable_sync <= 0; valid_sync <= 0;
             sel_sync <= 0; sel_applied <= 0;
             trim_meta <= 0; trim_sync <= 0; trim_applied <= 0;
+            tag_pipe_0 <= 0;
             sample_pipe <= 0; serial_word <= 0; left_word <= 0;
             expected_bit <= 0; frame_armed <= 0; cadence_fault <= 0;
             watchdog <= 0; audio_l <= 0; audio_r <= 0; new_sample <= 0;
@@ -99,15 +111,17 @@ module i2s_master_ingress (
         end else begin
             launch_sync <= {launch_sync[1:0], launch_toggle};
             sel_sync <= {sel_sync[0], src_sel};
-            data_sync <= {data_sync[0], sel_sync[1] ? i2s_data2 : i2s_data};
+            data_sync  <= {data_sync[0],  i2s_data};
+            data2_sync <= {data2_sync[0], i2s_data2};
             enable_sync <= {enable_sync[0], enable};
             valid_sync <= {valid_sync[0], source_valid};
             trim_meta <= rx_trim;
             trim_sync <= trim_meta;
             new_sample <= 0;
             sample_pipe <= {sample_pipe[PIPE_DEPTH-2:0], launch_event};
-            if (launch_event) tag_pipe[0] <= launch_bit;
-            for (int i = 1; i < PIPE_DEPTH; i++) tag_pipe[i] <= tag_pipe[i-1];
+            if (launch_event) tag_pipe_0 <= launch_bit;
+            tag_pipe[1] <= tag_pipe_0;
+            for (int i = 2; i < PIPE_DEPTH; i++) tag_pipe[i] <= tag_pipe[i-1];
             if (!enable_sync[1]) begin
                 sample_pipe <= 0; frame_armed <= 0; expected_bit <= 0;
                 watchdog <= 0; cadence_fault <= 0;
@@ -136,6 +150,11 @@ module i2s_master_ingress (
                 end
             end
             if (trim_sync != trim_applied || sel_sync[1] != sel_applied) begin
+                // Quasi-static bus: a per-bit skew during a multi-bit trim
+                // change can compare-mismatch on a transient value, but the
+                // compare self-corrects next cycle and every apply flushes +
+                // re-arms anyway — converges within ~1 dsp_clk of the bus
+                // settling. Trim only changes while muted per contract.
                 trim_applied <= trim_sync;
                 sel_applied <= sel_sync[1];
                 sample_pipe <= 0;

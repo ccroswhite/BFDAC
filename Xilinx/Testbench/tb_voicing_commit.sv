@@ -59,6 +59,7 @@ module tb_voicing_commit;
     endtask
 
     logic prev_ack;
+    logic prev_err;
     initial begin
         repeat (10) @(posedge clk);
         rst_n <= 1;
@@ -115,6 +116,15 @@ module tb_voicing_commit;
         coef_load_done   = 1'b1; @(posedge clk);
         coef_load_done = 1'b0; coef_load_failed = 1'b0;
         mgr_busy = 1'b0;
+        // Fixed V_ERR_FADE (2026-11-22): did_fade=1 -> V_FADE_IN holds
+        // fade_in_req until fade_done, and ack waits for it. A bare 1-cycle
+        // fade_in pulse + immediate ack would be missed by the envelope
+        // engine and leave the DAC permanently muted.
+        wait (fade_in_req === 1'b1);
+        repeat (5) @(posedge clk);
+        check(fade_in_req === 1'b1, "P3: fade_in_req HELD, not a 1-cycle pulse");
+        check(ack_toggle === prev_ack, "P3: ack held until fade-in completes");
+        @(negedge clk); fade_done = 1'b1; @(negedge clk); fade_done = 1'b0;
         wait (ack_toggle !== prev_ack);
         check(vo_err_toggle === 1'b1, "P3: err_toggle flipped");
         check(applied_filter_id === 16'h0050, "P3: filter_id NOT applied on failure");
@@ -159,6 +169,23 @@ module tb_voicing_commit;
         wait (ack_toggle !== prev_ack);
         check(applied_filter_id === 16'h0201, "P6: boot-path fid applied");
         check(!fade_in_req, "P6: no fade-in either (boot envelope owns it)");
+
+        // ---- P7: post-boot commit FAILS with !bank_valid — stays muted ---
+        bank_valid = 1'b0;
+        mgr_current_bank = '0;
+        prev_err = vo_err_toggle;
+        prev_ack = ack_toggle;
+        commit(1'b1, 27'sd0, 27'sd0, 16'h0303);
+        wait (vo_req_pulse === 1'b1);
+        mgr_busy = 1'b1;
+        repeat (10) @(posedge clk);
+        coef_load_failed = 1'b1;
+        coef_load_done   = 1'b1; @(posedge clk);
+        coef_load_done = 1'b0; coef_load_failed = 1'b0;
+        mgr_busy = 1'b0;
+        wait (ack_toggle !== prev_ack);
+        check(vo_err_toggle !== prev_err, "P7: err_toggle flipped");
+        check(!fade_in_req, "P7: failed boot load does NOT fade in (mute held)");
 
         if (errors == 0) $display("[tb_vcommit] PASS");
         else             $display("[tb_vcommit] FAIL errors=%0d", errors);

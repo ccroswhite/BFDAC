@@ -6358,3 +6358,83 @@ Covers R1-R3 deltas (STREAM_EVENT W1C + preempt bits + source IRQs, rate_req_src
 shadow, mandatory 0x1B[4:2] arm-echo), T15a-e unit tests, plus the BAD_ADDR decode
 fix (I2S_SRC/VOICING_FILTER_ID now in valid-address case). Suite ran clean across
 the mid-run reorg — reorganized tree verified end-to-end.
+
+## cont12 — EXTERNAL REVIEW CRITICALS FIXED (2026-11-23, reviewer findings 1.1-1.5, all verified pre-fix)
+- 1.1 torn multi-bit CDC: level_target[2:0] no longer crosses via 3 indep 2-FF
+  chains. New vol_tog-style handshake: level_switch_req pulse toggles
+  level_req_tog + holds word in level_target_q (clk_200m); dsp_clk edge-detect
+  captures into level_target_dsp -> u_automute. level_switch_req no longer
+  dangles (was ILA-only). XDC: dead level_req_sync_chain_reg[0]/D pin ->
+  level_req_tog_sync_reg[0]/D; multi-bit rule retargeted q->dsp regs.
+- 1.2 unconstrained ingress CDC: i2s_data2 got its own 2-FF ASYNC_REG chain;
+  src_sel now muxes SYNCHRONIZED data in dsp_clk (was comb mux feeding
+  data_sync[0]). clk_200m launch regs added for comb-mux outputs feeding syncs:
+  stream_valid_sel_q, i2s_rx_trim_q (CDC-10). XDC: data2_sync/sel_sync
+  false-paths + 5ns datapath bound on rx_trim (quasi-static, change-detect
+  flush converges).
+- 1.3 comb OR before sync: stream_fault_dsp + i2s_fault_dsp registered in
+  dsp_clk ahead of clk_200m syncs; u_ctrl_plane .i2s_err now i2s_fault_dsp.
+- 1.4 unscoped reset relax: RTL split — dedicated dsp_rst_fir_tree_n feeds
+  u_stereo_fir only (new dac_dsp_core.fir_rst_n port); XDC 6.6ns relax now
+  -from $rst_fir_cells only. sys_rst_n keeps single-cycle recovery for
+  automute/coef_subsys FSMs + Gray pointers. Dead $rst_src_cells removed.
+- 1.5 cf_sck MISO hold: set_multicycle_path 2 -hold -> 1 -hold (xdc ~844).
+  Continuous 10ns launch clock means next bit launches 5ns before the 20ns
+  capture; -hold 2 gave a degenerate 0ns check. NOTE: post-route hold slack
+  must be re-checked — may expose a real violation needing IOB retime.
+- VERIFIED: xvlog 0 err all-RTL; tb_i2s_dual_src PASS (4 cases),
+  tb_vu13p_top 12/12, tb_dac_dsp_core ALL PASS (new port tied in 5 TBs).
+- NOT SIM-COVERED: XDC rules (need next impl run: report_cdc CDC-6/10,
+  TIMING-6/7, hold slack on cf_dq[1], level_req_tog pin match).
+
+## cont13 — REVIEW-4 FINDINGS (2026-11-22, reviewer: "Silent FIR, Corrupted Samples & DPD Wraparound")
+- 1.1 FALSE POSITIVE: fir_rst_n was already wired (.fir_rst_n(sys_rst_fir_n) via
+  dedicated dsp_rst_fir_tree fanout) — stale reviewer snapshot, no action.
+- 1.2 CRITICAL, FIXED+VERIFIED: vol_valid_pipe was 6-deep vs 4-stage data path —
+  valid fired 2 cycles late, each valid captured the NEXT sample's data
+  (x0 dropped, x7 duplicated). Now [3:0] pipe, volumed_valid=pipe[3].
+- 1.3 LATENT, HARDENED: y==64 would wrap hist[0]/y_r[5:0] (unreachable today —
+  NS Stage-D clamps code_c via range_c to 0..63). Added defensive clamp on
+  hist/y_r + sim-only range warning; hist now shifts on EVERY y_valid (was
+  gated by dpd_enable -> stale lags on re-enable).
+- 1.4 CRITICAL, FIXED+VERIFIED: dpd_engine latency was ~42-43 cycles vs 49.23
+  budget (80/13 clock ratio) — near-zero slack. Step-0 meta ops now issue on
+  the launch cycle, fin triggers one cycle earlier (p[4]==IDLE && p[5]!=IDLE),
+  launch drains opA_p/opB_p + suppresses stale s1-meta/s6-acc on the launch
+  edge (overrun-safe relaunch). tb_dpd_engine: 2000x2 golden BIT-EXACT,
+  corr latency now 40 cycles vs 44 budget. Also registered the fin[1]
+  dynamic shift + gf==0 guard + use_dsp on muls.
+- 2.1 MEDIUM, FIXED+VERIFIED: pace_div/pace_tgl now reset by cell_rst_n (was
+  sys_rst_n = wrong domain); cell_rst_n generator moved above pacer. RTZ
+  reworked: rtz_gate = pace_div phases 1-6 (crystal-locked, zero CDC jitter);
+  dem_update_tgl/cell_capture_en now only refresh cell_shadow; cell_cap
+  switches at pace_div==7 frame boundary (no truncated/early cascode pulses,
+  and last word holds on stall instead of old park-at-0=-FS). Verified:
+  tb_stream_pipeline 8/8 (capture cadence 8, RTZ run-length 6).
+- 2.2 MEDIUM, FIXED: voicing_shaper hp2/hp3 got +1 PREG stage (hp2_m/hp3_m);
+  combined_volume now sys_volume[21:0]x{1'b0,env} single 26x17 DSP48E2 with
+  AREG/BREG/MREG/PREG + round-to-nearest (envelope 0xFFFF ~exact unity, was
+  truncating 28 LSB). FS_SHIFT==41 elaboration assert added.
+- 2.3 MEDIUM, FIXED: dem_sort mj0/mj1 MAX_FANOUT=16 + mj0/mj1/jpair_d reset;
+  pace_fifo read registered (pace_fifo_dout -> RAMB DOA_REG) with write-
+  forward when wptr==rptr (empty-FIFO fill).
+- TB FIX (tb_dac_dsp_core TEST2): old L==R bit-exact check was vacuous under
+  old parked RTZ (drain samples read 0==0) and is architecturally invalid
+  since 9fefafa made L/R dither independent — now checks mid-scale
+  thermometer window (28..36 cells, skip legitimate 0 off-phase/drain).
+  All 8 tests pass.
+- REGRESSIONS: relaunching tb_system_ddr4_to_fir + tb_vu13p_top detached.
+
+### cont13 verification results (final RTL, post-review-4):
+- tb_dpd_engine: ALL PASS — 2000x2 golden bit-exact ON+OFF, corr latency 40cyc
+  vs strict 44cyc budget (was ~42-43; launch-issue+early-fin verified live).
+- tb_stream_pipeline: 8/8 (capture cadence 8 cell_clk, RTZ run-length 6).
+- tb_dac_dsp_core: 8/8 (TEST2 -> mid-scale thermometer window; bit-exact L==R
+  invalid since 9fefafa independent L/R dither + vacuous under old parked RTZ).
+- tb_vu13p_top: 12/12 PASS (compiled fresh post-edit 21:37).
+- tb_system_ddr4_to_fir: TB_PASS T1-T7 (21:43, incl. T7 err code 2 +
+  bank_valid held + no-write invariants).
+- logs/stream_rates_gate_v1 27/27 PASS was the PRE-EDIT baseline (16:07-16:16).
+- IN FLIGHT: review4_gate_v1 — full 27-stage stream-rates gate on final RTL
+  (run_stream_rates.ps1, logs/review4_gate_v1/summary.log; compile+rate_control
+  already green at launch).

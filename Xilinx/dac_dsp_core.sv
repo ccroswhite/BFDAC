@@ -17,8 +17,8 @@
 //  10.  IOB output registers : staging (dsp_clk) -> CDC -> RTZ pattern gen + IOB
 // =============================================================================
 module dac_dsp_core #(
-    parameter int NUM_MACS = 1024,
-    parameter int TAPS_PER_PHASE = 64,
+    parameter int NUM_MACS = 80,  // production geometry (5x16=80 DQ)
+    parameter int TAPS_PER_PHASE = 256,  // production
     parameter int CELL_TEST_MUTE_CYCLES = 4000000,
     parameter bit SYM_FOLD_EN  = 1'b1,
     parameter bit QUAD_URAM_EN = 1'b1
@@ -26,6 +26,7 @@ module dac_dsp_core #(
     // Single clock domain — all logic runs on the 278/302 MHz audio-family dsp_clk
     input  logic        dsp_clk,
     input  logic        sys_rst_n,
+    input  logic        fir_rst_n,   // dedicated FIR tree (relaxed release; sinks are skew-tolerant)
 
     // Audio input (from dac_i2s_ingress, dsp_clk domain)
     input  logic [23:0] audio_l,
@@ -111,7 +112,7 @@ module dac_dsp_core #(
         .QUAD_URAM_EN   (QUAD_URAM_EN)
     ) u_stereo_fir (
         .clk                  (dsp_clk),
-        .rst_n                (sys_rst_n),
+        .rst_n                (fir_rst_n),
         .rate_shift           (rate_shift),
         .input_overrun        (fir_overrun),
         .new_sample_valid     (new_sample),
@@ -245,13 +246,25 @@ module dac_dsp_core #(
     // =========================================================================
     // 5. Volume multiplier - shared combined_volume, stereo paths
     // =========================================================================
+    // sys_volume is Q16.16 with max 28.0 (32'h001C_0000, volume_q24_to_gain_q16)
+    // -> 22 active bits. Single 26x17 DSP48E2 with full AREG/BREG/MREG/PREG
+    // pipelining + round-to-nearest so 0xFFFF envelope = exact unity gain.
     (* use_dsp = "yes" *) logic [31:0] combined_volume;
-    logic [47:0] combined_volume_product;
-    assign combined_volume_product =
-        48'(sys_volume) * 48'(boot_envelope_gain);
+    logic [21:0] cvol_a_r;                       // AREG
+    logic [16:0] cvol_b_r;                       // BREG (unsigned envelope)
+    (* use_dsp = "yes" *) logic [38:0] cvol_m;   // MREG: 22x17 product
     always_ff @(posedge dsp_clk) begin
-        if (!sys_rst_n) combined_volume <= '0;
-        else            combined_volume <= combined_volume_product[47:16];
+        if (!sys_rst_n) begin
+            cvol_a_r         <= '0;
+            cvol_b_r         <= '0;
+            cvol_m           <= '0;
+            combined_volume  <= '0;
+        end else begin
+            cvol_a_r        <= sys_volume[21:0];
+            cvol_b_r        <= {1'b0, boot_envelope_gain};
+            cvol_m          <= cvol_a_r * cvol_b_r;
+            combined_volume <= 32'((cvol_m + 39'h8000) >> 16);
+        end
     end
 
     logic signed [47:0] vol_a_l_r1;
@@ -261,7 +274,7 @@ module dac_dsp_core #(
     (* use_dsp = "yes" *) logic signed [79:0] vol_p_l_r3, vol_p_r_r3;
     logic signed [47:0] vol_a_r_r1;
     logic signed [63:0] volumed_l, volumed_r;
-    logic        [5:0]  vol_valid_pipe;
+    logic        [3:0]  vol_valid_pipe;   // 4-stage data pipe -> 4-deep valid
     logic               volumed_valid;
 
     always_ff @(posedge dsp_clk) begin
@@ -287,16 +300,17 @@ module dac_dsp_core #(
             vol_p_r_r3 <= vol_mlo_r_r2 + (vol_mhi_r_r2 <<< 16);
             volumed_l  <= vol_p_l_r3[79:16];
             volumed_r  <= vol_p_r_r3[79:16];
-            vol_valid_pipe <= {vol_valid_pipe[4:0], hb3_l_valid};
+            vol_valid_pipe <= {vol_valid_pipe[2:0], hb3_l_valid};
         end
     end
 
-    assign volumed_valid = vol_valid_pipe[5];
+    assign volumed_valid = vol_valid_pipe[3];
 
     // =========================================================================
     // 6. Sample pacer (Round 30) — elastic FIFO + cell_clk/8 tick.
     // =========================================================================
     logic [95:0] pace_fifo [256];
+    logic [95:0] pace_fifo_dout;   // registered read -> BRAM DOA_REG=1
     logic [7:0]  pace_wptr, pace_rptr;
     logic [8:0]  pace_count;
     logic        pace_valid;
@@ -316,8 +330,20 @@ module dac_dsp_core #(
     logic [2:0] pace_div;
     logic       pace_tgl;
 
+    (* ASYNC_REG = "TRUE" *) logic [1:0] cell_rst_sync;
+    logic cell_rst_n;
+
+    // cell_clk-domain reset release: async assert, synchronized deassert.
+    always_ff @(posedge cell_clk or negedge sys_rst_n) begin
+        if (!sys_rst_n)
+            cell_rst_sync <= 2'b00;
+        else
+            cell_rst_sync <= {cell_rst_sync[0], 1'b1};
+    end
+    assign cell_rst_n = cell_rst_sync[1];
+
     always_ff @(posedge cell_clk) begin
-        if (!sys_rst_n) begin
+        if (!cell_rst_n) begin
             pace_div <= '0;
             pace_tgl <= 1'b0;
         end else begin
@@ -362,9 +388,16 @@ module dac_dsp_core #(
             pace_fault   <= 0;
         end else begin
             pace_valid <= 1'b0;
+            // BRAM-style registered read: rptr is stable between ticks so the
+            // dout reg is already settled when pace_tick consumes it. Forward
+            // the write data when the write slot IS the read slot (only when
+            // the FIFO is empty — writes are blocked when full).
+            pace_fifo_dout <= pace_fifo[pace_rptr];
             if (volumed_valid && pace_count != 9'd256) begin
                 pace_fifo[pace_wptr] <= {ns_feed(volumed_l), ns_feed(volumed_r)};
                 pace_wptr <= pace_wptr + 8'd1;
+                if (pace_wptr == pace_rptr)
+                    pace_fifo_dout <= {ns_feed(volumed_l), ns_feed(volumed_r)};
             end
             // synthesis translate_off
             if (volumed_valid && pace_count == 9'd256 && !pace_ovf_warned) begin
@@ -376,7 +409,7 @@ module dac_dsp_core #(
             if (pace_tick && pace_started && pace_count == 0) pace_fault <= 1;
             if (volumed_valid && pace_count == 256) pace_fault <= 1;
             if (pace_tick && pace_started && pace_count != 0) begin
-                {paced_l, paced_r} <= pace_fifo[pace_rptr];
+                {paced_l, paced_r} <= pace_fifo_dout;
                 pace_rptr  <= pace_rptr + 8'd1;
                 pace_valid <= 1'b1;
             end
@@ -621,17 +654,6 @@ module dac_dsp_core #(
             dem_update_tgl <= ~dem_update_tgl;
     end
 
-    (* ASYNC_REG = "TRUE" *) logic [1:0] cell_rst_sync;
-    logic cell_rst_n;
-
-    always_ff @(posedge cell_clk or negedge sys_rst_n) begin
-        if (!sys_rst_n)
-            cell_rst_sync <= 2'b00;
-        else
-            cell_rst_sync <= {cell_rst_sync[0], 1'b1};
-    end
-    assign cell_rst_n = cell_rst_sync[1];
-
     (* ASYNC_REG = "TRUE" *) logic [2:0] tgl_sync;
     logic cell_capture_en;
 
@@ -643,31 +665,35 @@ module dac_dsp_core #(
     end
     assign cell_capture_en = tgl_sync[2] ^ tgl_sync[1];
 
+    // RTZ frame is locked to pace_div (crystal-derived cell_clk/8 counter) so
+    // the 6-of-8 gate window has zero CDC jitter. cell_capture_en only
+    // refreshes the shadow word; the visible output switches at the frame
+    // boundary (pace_div==7) so a cascode pulse can never be truncated by a
+    // late or early CDC edge.
+    logic [63:0] cell_shadow_l, cell_shadow_r;
     logic [63:0] cell_cap_l, cell_cap_r;
 
     always_ff @(posedge cell_clk) begin
         if (!cell_rst_n) begin
-            cell_cap_l <= '0;
-            cell_cap_r <= '0;
-        end else if (cell_capture_en) begin
-            cell_cap_l <= staging_l;
-            cell_cap_r <= staging_r;
+            cell_shadow_l <= '0;
+            cell_shadow_r <= '0;
+            cell_cap_l    <= '0;
+            cell_cap_r    <= '0;
+        end else begin
+            if (cell_capture_en) begin
+                cell_shadow_l <= staging_l;
+                cell_shadow_r <= staging_r;
+            end
+            if (pace_div == 3'd7) begin
+                cell_cap_l <= cell_shadow_l;
+                cell_cap_r <= cell_shadow_r;
+            end
         end
     end
 
-    logic [2:0] rtz_phase;
-    logic       rtz_gate;
+    logic rtz_gate;
 
-    always_ff @(posedge cell_clk) begin
-        if (!cell_rst_n)
-            rtz_phase <= 3'd7;
-        else if (cell_capture_en)
-            rtz_phase <= 3'd0;
-        else if (rtz_phase != 3'd7)
-            rtz_phase <= rtz_phase + 3'd1;
-    end
-
-    assign rtz_gate = (rtz_phase != 3'd0) && (rtz_phase != 3'd7);
+    assign rtz_gate = (pace_div != 3'd0) && (pace_div != 3'd7);
 
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_l;
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_r;

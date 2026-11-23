@@ -8,6 +8,14 @@
 // stages every record into DDR4, CRC-checked. No ARM involvement;
 // coef_ready gates the FIR coefficient loader (dac_coef_subsys filter loads).
 //
+// Post-EOS access (verified 2026-11-22): `start` = EOS && MIG
+// init_calib_complete. DDR4 calibration runs ~ms after EOS, so both
+// flashes have orders of magnitude more idle time than the STARTUPE3
+// pin-handoff requires — no explicit dummy USRCCLKO cycles are needed.
+// The coefficient flash (qspi1_*) sits on dedicated bank-65 user IOs and
+// never participates in configuration; Flash 0 (the config flash, via
+// STARTUPE3) is only touched on the carrier-fallback path, long after EOS.
+//
 // Boot source (Macronix carrier selection, bom item 18b): with
 // BOOT_FROM_CARRIER = 1 the chain is read from carrier x1 SPI first
 // (rd_target = 1). If the very first header there carries no magic (device absent, erased or

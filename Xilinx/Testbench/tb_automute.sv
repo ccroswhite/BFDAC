@@ -22,6 +22,7 @@ module tb_automute;
 
     logic clk;
     logic rst_n;
+    logic rst_relay_n;   // power-only reset (independent of pipeline rst_n)
     logic sys_ready;
     logic test_active;
     logic unmute_req;
@@ -42,6 +43,7 @@ module tb_automute;
     ) u_dut (
         .clk              (clk),
         .rst_n            (rst_n),
+        .rst_relay_n      (rst_relay_n),
         .sys_ready        (sys_ready),
         .test_active      (test_active),
         .unmute_req       (unmute_req),
@@ -91,6 +93,7 @@ module tb_automute;
     initial begin
         $display("Starting automute_controller testbench (three-tier mute)");
         rst_n            = 0;
+        rst_relay_n      = 0;
         sys_ready        = 0;
         test_active      = 0;
         unmute_req       = 0;
@@ -100,6 +103,7 @@ module tb_automute;
 
         repeat(5) @(posedge clk);
         rst_n = 1;
+        rst_relay_n = 1;
         repeat(2) @(posedge clk);
 
         // 1. Power-up but NOT ready: relay must stay open even with unmute
@@ -182,6 +186,28 @@ module tb_automute;
         sys_ready = 1;
         wait (line_mute_drive === 1 && force_zero === 0);
         $display("PASS: recovered to PLAYING after power fault");
+
+        // 10. PIPELINE RESET (rate-change equivalent): rst_n pulses while
+        //     rst_relay_n stays high — the mechanical relay must NOT drop.
+        //     FSM restarts muted in ARMED, then re-flushes to PLAYING.
+        rst_n = 0;
+        repeat(3) @(posedge clk);
+        check(line_mute_drive === 1 && force_zero === 1,
+              "pipeline reset: relay held closed (no click), output clamped");
+        check(level_relay_drive === 3'b100,
+              "level cap survives pipeline reset (was reverting to 2V)");
+        rst_n = 1;
+        wait (force_zero === 0);
+        $display("PASS: relay held + resumed after pipeline reset");
+
+        // 11. POWER RESET (rst_relay_n): the real open event — relay drops.
+        rst_relay_n = 0;
+        repeat(3) @(posedge clk);
+        check(line_mute_drive === 0 && force_zero === 1,
+              "power reset opens relay");
+        rst_relay_n = 1;
+        wait (line_mute_drive === 1);
+        $display("PASS: relay re-energized after power reset");
 
         if (fail_count == 0) $display("TB_PASS: tb_automute all tests passed");
         else                 $display("TB_FAIL: %0d errors (tb_automute)", fail_count);

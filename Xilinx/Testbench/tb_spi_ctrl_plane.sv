@@ -96,7 +96,15 @@ module tb_spi_ctrl_plane;
         .clk_source_sel         (clk_source_sel),
         .coef_bank_id           (coef_bank_id),
         .coef_load_start        (coef_load_start),
-        .stream_source_valid    (source_valid)
+        .stream_source_valid    (source_valid),
+        // formerly tri0/tri1 defaults — now explicit (tri ports removed)
+        .cal_write_reject_toggle(1'b0),
+        .calibration_valid      (1'b1),
+        .bench_busy             (1'b0),
+        .stream_busy            (1'b0),
+        .stream_clocks_ready    (1'b1),
+        .stream_fault           (1'b0),
+        .stream_audio_ready     (1'b1)
     );
 
     // Clock generation

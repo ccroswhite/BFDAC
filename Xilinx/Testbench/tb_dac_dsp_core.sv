@@ -84,7 +84,7 @@ module tb_dac_dsp_core;
     ) u_dut (
         .dsp_clk            (dsp_clk),
         .cell_clk           (cell_clk),
-        .sys_rst_n          (sys_rst_n),
+        .sys_rst_n          (sys_rst_n), .fir_rst_n(sys_rst_n),
         .audio_l            (audio_l),
         .audio_r            (audio_r),
         .new_sample         (new_sample),
@@ -253,31 +253,35 @@ module tb_dac_dsp_core;
             send_sample(24'h0, 24'h0);
             wait_pipeline_drain(NUM_PHASES + 4);
         end
-        // Capture steady-state cascode outputs over 4 consecutive samples
-        nonzero_l = 0;  // reuse: counts L?R mismatches
-        nonzero_r = 0;  // reuse: counts unstable (consecutive diff) events
-        t2_prev_l = cascode_l;
-        t2_prev_r = cascode_r;
+        // Capture steady-state cascode outputs over 4 consecutive samples.
+        // NOTE: L/R use independently-seeded TPDF dither (commit 9fefafa), so
+        // identical zero inputs legitimately produce different dem codes and
+        // different cell patterns. The valid invariant is symmetric MID-SCALE
+        // thermometer: each channel must sit near 32-of-64 cells on.
+        nonzero_l = 0;  // reuse: counts samples outside mid-code window
+        nonzero_r = 0;  // reuse: counts X-propagation events
         repeat(4) begin
             send_sample(24'h0, 24'h0);
             wait_pipeline_drain(NUM_PHASES + 4);
-            $display("  cascode_l=0x%0h  cascode_r=0x%0h", cascode_l, cascode_r);
-            if (cascode_l !== cascode_r) nonzero_l++;
-            if (cascode_l !== t2_prev_l || cascode_r !== t2_prev_r) nonzero_r++;
-            t2_prev_l = cascode_l;
-            t2_prev_r = cascode_r;
+            $display("  cascode_l=0x%0h (%0d cells)  cascode_r=0x%0h (%0d cells)",
+                     cascode_l, $countones(cascode_l),
+                     cascode_r, $countones(cascode_r));
+            if ($isunknown(cascode_l) || $isunknown(cascode_r)) nonzero_r++;
+            // 0x0 is legitimate: RTZ off-phases (0/7) and drained stream.
+            if (cascode_l !== '0 && cascode_r !== '0 &&
+                ($countones(cascode_l) < 28 || $countones(cascode_l) > 36 ||
+                 $countones(cascode_r) < 28 || $countones(cascode_r) > 36))
+                nonzero_l++;
         end
         if (nonzero_l == 0 && nonzero_r == 0) begin
-            $display("  PASS: L=R symmetric and stable on zero input");
+            $display("  PASS: both channels mid-scale thermometer on zero input");
             pass_count++;
-        end else if (nonzero_l > 0) begin
-            $display("  FAIL: L?R asymmetry on zero path (%0d mismatches)", nonzero_l);
+        end else if (nonzero_r > 0) begin
+            $display("  FAIL: X propagation in cascode (%0d events)", nonzero_r);
             fail_count++;
         end else begin
-            $display("  INFO: output still settling (%0d changes) ? treating as PASS",
-                     nonzero_r);
-            $display("  PASS: L=R symmetric on zero input (settling allowed)");
-            pass_count++;
+            $display("  FAIL: cell count outside mid-scale window (%0d)", nonzero_l);
+            fail_count++;
         end
 
         // ==================================================================

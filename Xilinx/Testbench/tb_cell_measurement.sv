@@ -34,7 +34,7 @@ module tb_cell_measurement;
         .SETTLE_CYCLES(28'd100),
         .SWITCH_CYCLES(28'd100)
     ) auto (
-        .clk(dsp_clk), .rst_n(rst_n),
+        .clk(dsp_clk), .rst_n(rst_n), .rst_relay_n(rst_n),
         .sys_ready(1'b1), .test_active(1'b0),
         .unmute_req(unmute && !manual_busy), .base_rate_sel(1'b0),
         .i2s_err(1'b0), .level_target(3'b000),
@@ -55,7 +55,7 @@ module tb_cell_measurement;
     );
 
     dac_dsp_core #(.NUM_MACS(4), .TAPS_PER_PHASE(16), .CELL_TEST_MUTE_CYCLES(4096)) core (
-        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n),
+        .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n), .fir_rst_n(rst_n),
         .audio_l(24'd0), .audio_r(24'd0), .new_sample(1'b0), .force_zero(1'b1),
         .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0),
         .coef_we(1'b0), .coef_waddr(8'd0), .coef_wdata(18'd0), .coef_wmac(2'b0),

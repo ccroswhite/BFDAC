@@ -13,12 +13,12 @@
 //   to (COEF_DEPTH >> rate_shift) for 100% compatibility with coef_bank_loader.
 // =============================================================================
 module fir_polyphase_interpolator #(
-    parameter int NUM_MACS       = 128,
+    parameter int NUM_MACS       = 80,
     parameter int DATA_WIDTH     = 24,
     parameter int COEF_WIDTH     = 18,
     parameter int ACC_WIDTH      = 48,
     parameter int NUM_PHASES     = 16,
-    parameter int TAPS_PER_PHASE = 64,
+    parameter int TAPS_PER_PHASE = 256,  // production
     parameter bit SYM_FOLD_EN    = 1'b0,
     parameter bit WIN_BRAM_EN    = 1'b1,
     parameter bit RATE_SCALE_TPP = (NUM_PHASES == 2),

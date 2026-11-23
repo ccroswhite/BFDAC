@@ -178,7 +178,8 @@ module voicing_commit_ctrl (
                             // Fade out only if a live bank is playing; on a
                             // post-boot commit (!bank_valid) the boot
                             // envelope already holds mute — skip straight to
-                            // the request, still run fade-in at the end.
+                            // the request (the boot-in-progress path in
+                            // dac_coef_subsys owns the first fade-in).
                             did_fade <= bank_valid;
                             state    <= bank_valid ? V_FADE_OUT : V_REQ;
                         end else begin
@@ -232,12 +233,21 @@ module voicing_commit_ctrl (
                 end
 
                 V_ERR_FADE: begin
-                    // Load failed: no apply, just restore audio and release
-                    // the commit handshake with an error pulse for sticky[6].
+                    // Load failed: no apply. Error toggle for sticky[6],
+                    // then the fade-out must be UNDONE only if one actually
+                    // happened — a bare 1-cycle fade_in_req pulse is missed
+                    // by the sample-tick envelope engine ~99% of the time
+                    // (permanent mute), and fade-in with !bank_valid would
+                    // unmute an unloaded bank. V_FADE_IN holds the request
+                    // until fade_done before acking.
                     vo_err_toggle <= ~vo_err_toggle;
-                    fade_in_req  <= 1'b1;
-                    ack_toggle   <= ~ack_toggle;
-                    state        <= V_IDLE;
+                    if (did_fade) begin
+                        fade_in_req <= 1'b1;
+                        state       <= V_FADE_IN; // hold fade_in_req until fade_done, then ack
+                    end else begin
+                        ack_toggle  <= ~ack_toggle;
+                        state       <= V_IDLE;    // keep boot mute engaged when !bank_valid
+                    end
                 end
 
                 default: state <= V_IDLE;

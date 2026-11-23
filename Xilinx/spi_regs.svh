@@ -12,10 +12,12 @@
 //  spi_xmos_* (XMOS audio bridge) and spi_ap_* (host AP, isolated). Reads are
 //  unrestricted for both ports. Write access is partitioned in dac_ctrl_plane:
 //  XMOS owns the audio-path subset {NOP, RATE,
-//  STICKY_W1C, STREAM_RATE, STREAM_VALID}; all other
+//  STICKY_W1C, STREAM_RATE, STREAM_VALID, STREAM_EVENT}; all other
 //  write registers (volume/level, filter/bank, cal, flash/update,
 //  bench/cell-test) are AP-only — a denied XMOS write reports BAD_ADDR and
-//  does not execute. Ruled 2026-11-14: VOLUME and LEVEL are AP-owned (UAC2
+//  does not execute. STREAM_EVENT is W1C and XMOS-masked to bits {0,2}
+//  (its own event domain; the AP clears all three). Ruled 2026-11-14:
+//  VOLUME and LEVEL are AP-owned (UAC2
 //  volume control disabled; the application sets level/volume — XMOS has no
 //  access). OUTSEL/headphone path removed entirely (2026-11-14 ruling: no
 //  headphone output stage). UNMUTE retired 2026-11-15: stream arm is
@@ -72,6 +74,11 @@
 `define SPI_W_CELL_TEST_R      7'h19
 `define SPI_W_STREAM_RATE      7'h1A  // [2:0]={rate_shift[1:0],family48}; 24-bit PCM/32-bit slots
 `define SPI_W_STREAM_VALID     7'h1B  // [0]=XMOS stream-live flag; zero on underrun/stop (XMOS-only 11-15)
+                                      //   [4:2]=rate_req_src1 arm-rate echo: an arming write
+                                      //   ([0]=1 while src1 is selected) MUST echo the XMOS's
+                                      //   stored rate_req_src1 or the arm is refused
+                                      //   (stream_event[2] echo_mismatch). [4:2] is a payload,
+                                      //   not a rate write — use STREAM_RATE to change rate.
 `define SPI_W_I2S_SRC          7'h1C  // DUAL-SOURCE restore 2026-11-20 (AP-only): the AP owns input
                                       // select and its own stream declaration; XMOS writes denied.
                                       //   [0]    src_sel: 0 = XMOS (i2s_data), 1 = AP (i2s_data2)
@@ -118,10 +125,14 @@
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026
 `define SPI_R_STICKY_ERR       7'h11  // [7:0] sticky bits (see SPI_STICKY_*)
-`define SPI_R_CTRL_STATE       7'h12  // {clk_source_sel, base_rate_sel, rsvd, level[1:0]}
+`define SPI_R_CTRL_STATE       7'h12  // {rsvd[31:7], last_wr_src[6], clk_source_sel[5],
+                                      //  base_rate_sel[4], rsvd[3], cmd_level[2:0]}
 `define SPI_R_COEF_STATUS      7'h13  // {bank_valid[12], mgr_busy[11], load_done[10],
                                       //  clk_src[9], base_rate[8], cur_bank[7:4], bank_id[3:0]}
-`define SPI_R_MUTE_STATUS      7'h14  // {i2s_err, switch_busy, rsvd, line_mute, unmute}
+`define SPI_R_MUTE_STATUS      7'h14  // {rsvd[31:5], i2s_err[4], switch_busy[3],
+                                      //  rsvd[2] (hardwired 0), line_mute[1], unmute[0]
+                                      //  (hardwired 0 — UNMUTE retired 2026-11-15;
+                                      //  stream arm = STREAM_VALID, user mute = VOLUME)}
 `define SPI_R_CLK_STATUS       7'h15  // {dpd_enable, ddr4_calib, clk_locked}
 `define SPI_R_FILTER_LIST_STAT 7'h16  // {rsvd[11], list_len[10:5], cur_index[4:0]}
 `define SPI_R_FILTER_IDS       7'h17  // {next_in_list_id[31:16], cur_filter_id[15:0]}

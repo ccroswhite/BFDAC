@@ -158,7 +158,7 @@ module acku15s_dac_top #(
     logic mclk;           // BUFG'd mclk (HDIO pin -> global route -> MMCM CLKIN1)
     logic dsp_clk;
     logic clk_locked;
-    logic sys_rst_n;
+    logic sys_rst_n, sys_rst_fir_n;
     logic base_rate_sel;
     logic clk_source_sel;
 
@@ -194,11 +194,25 @@ module acku15s_dac_top #(
     logic i2s_src_sel, stream_valid_sel;   // dual-source 2026-11-20: sel + muxed stream-live
     logic [4:0] i2s_rx_trim;
     logic core_stream_fault, serial_fault;
+    // clk_200m launch regs (CDC-10) + their dsp_clk-side registers, all
+    // declared here because the dsp_clk capture block above uses them.
+    logic [2:0] level_target_q;
+    logic       level_req_tog;
+    logic [4:0] i2s_rx_trim_q;
+    logic       stream_valid_sel_q;
+    logic       stream_fault_dsp, i2s_fault_dsp;
     logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
     (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] audio_ready_sync;
+    logic audio_frame_ready;
     always_ff @(posedge clk_200m) begin
-        if (!ext_rst_n) stream_fault_sync <= 0;
-        else stream_fault_sync <= {stream_fault_sync[0], core_stream_fault || serial_fault};
+        if (!ext_rst_n) begin
+            stream_fault_sync <= 0;
+            audio_ready_sync  <= '0;
+        end else begin
+            stream_fault_sync <= {stream_fault_sync[0], stream_fault_dsp};
+            audio_ready_sync  <= {audio_ready_sync[0], audio_frame_ready};
+        end
     end
     stream_rate_controller #(
         .MUTE_CYCLES(MUTE_DELAY_CYCLES),
@@ -216,7 +230,6 @@ module acku15s_dac_top #(
     logic stream_valid_dsp;
     logic base_rate_sel_sync;
     logic [2:0] level_target;
-    logic [2:0] level_target_sync;
 
     // Reset synchronizer + 2-stage replicable fanout tree across SLRs.
     // Async assertion ensures immediate flush even while dsp_clk is stopped
@@ -242,27 +255,93 @@ module acku15s_dac_top #(
     end
     assign sys_rst_n = dsp_rst_tree_n;
 
+    // Dedicated FIR reset tree: u_stereo_fir carries ~8k sinks whose
+    // release skew is benign (history_clear_sweep re-zeroes the window
+    // BRAMs and clr_s3 clears accumulators post-reset), so its tree gets
+    // the relaxed ~2 dsp_clk recovery in the XDC. sys_rst_n keeps
+    // single-cycle recovery for one-hot FSMs and Gray pointers
+    // (u_automute, u_coef_subsys) where release skew corrupts state.
+    (* MAX_FANOUT = 64 *) logic dsp_rst_fir_lvl1_n;
+    (* MAX_FANOUT = 64 *) logic dsp_rst_fir_tree_n;
+    always_ff @(posedge dsp_clk or negedge dsp_reset_release) begin
+        if (!dsp_reset_release) begin
+            dsp_rst_fir_lvl1_n <= 1'b0;
+            dsp_rst_fir_tree_n <= 1'b0;
+        end else begin
+            dsp_rst_fir_lvl1_n <= dsp_reset_sync[1];
+            dsp_rst_fir_tree_n <= dsp_rst_fir_lvl1_n;
+        end
+    end
+    assign sys_rst_fir_n = dsp_rst_fir_tree_n;
+
     // CDC: SPI control signals from clk_200m to dsp_clk domain.
-    // level_target is quasi-static: it is written by SPI strictly before its
-    // req pulse and only sampled by the sequencer many cycles later (while
-    // muted), so a 2-FF chain per bit is sufficient.
+    // svalid/rate_sel are single-bit levels -> 2-FF chains.
+    // level_target uses the same toggle-handshake as sys_volume below:
+    // level_target_q holds the word in clk_200m while level_req_tog toggles
+    // on the SPI write pulse; dsp_clk captures the held word on the synced
+    // edge. A 3x2-FF bit chain can skew by a cycle and present a torn
+    // intermediate code to u_automute (CDC-6).
+    // Power-only reset for dsp_clk state that must survive stream-rate
+    // changes (asymmetric-reset fix 2026-11-22): sys_rst_n pulses on every
+    // rate/source switch, but the automute relay latch, the level-cap state,
+    // and the pg_all qualifier must hold through those events. Async-assert,
+    // sync-release, same template as the reset trees above.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] pwr_rst_sync;
+    logic pwr_rst_n;
+    always_ff @(posedge dsp_clk or negedge ext_rst_n) begin
+        if (!ext_rst_n) pwr_rst_sync <= 2'b00;
+        else            pwr_rst_sync <= {pwr_rst_sync[0], 1'b1};
+    end
+    assign pwr_rst_n = pwr_rst_sync[1];
+
     (* ASYNC_REG = "TRUE" *) logic [1:0] svalid_sync_chain;
     (* ASYNC_REG = "TRUE" *) logic [1:0] rate_sel_sync_chain;
-    (* ASYNC_REG = "TRUE" *) logic [5:0] level_target_sync_chain;  // 3 bits x 2 stages
+    (* ASYNC_REG = "TRUE" *) logic [2:0] level_req_tog_sync;
+    logic [2:0] level_target_dsp;
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
-            svalid_sync_chain        <= '0;
-            rate_sel_sync_chain      <= '0;
-            level_target_sync_chain  <= '0;
+            svalid_sync_chain      <= '0;
+            rate_sel_sync_chain    <= '0;
         end else begin
-            svalid_sync_chain        <= {svalid_sync_chain[0], stream_valid_sel};
-            rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
-            level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
+            svalid_sync_chain      <= {svalid_sync_chain[0], stream_valid_sel_q};
+            rate_sel_sync_chain    <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
+        end
+        // level handshake: power-reset only. Clearing on sys_rst_n would
+        // revert level_target_dsp to 3'b000 across a rate change and make
+        // u_automute see a bogus level-switch request to 2 Vrms.
+        if (!pwr_rst_n) begin
+            level_req_tog_sync     <= '0;
+            level_target_dsp       <= 3'b000;
+        end else begin
+            level_req_tog_sync     <= {level_req_tog_sync[1:0], level_req_tog};
+            if (level_req_tog_sync[2] ^ level_req_tog_sync[1])
+                level_target_dsp <= level_target_q;
         end
     end
     assign stream_valid_dsp       = svalid_sync_chain[1];
     assign base_rate_sel_sync     = rate_sel_sync_chain[1];
-    assign level_target_sync      = level_target_sync_chain[5:3];
+
+    // clk_200m launch registers for the dsp_clk crossings above and for
+    // u_i2s_ingress: sync inputs must be driven by a launch-domain
+    // register, never a combinational mux (CDC-10). stream_valid_sel and
+    // i2s_rx_trim are comb muxes inside u_ctrl_plane; level_target_q holds
+    // the SPI word while level_req_tog carries the write pulse as a toggle.
+    // All three are quasi-static, so one extra clk_200m is benign.
+    always_ff @(posedge clk_200m) begin
+        if (!ext_rst_n) begin
+            level_target_q     <= 3'b000;
+            level_req_tog      <= 1'b0;
+            i2s_rx_trim_q      <= 5'd8;
+            stream_valid_sel_q <= 1'b0;
+        end else begin
+            if (level_switch_req) begin
+                level_target_q <= level_target;
+                level_req_tog  <= ~level_req_tog;
+            end
+            i2s_rx_trim_q      <= i2s_rx_trim;
+            stream_valid_sel_q <= stream_valid_sel;
+        end
+    end
 
     logic cell_clk;
 
@@ -351,6 +430,21 @@ module acku15s_dac_top #(
     logic        new_sample;
     (* MARK_DEBUG = "TRUE" *) logic i2s_err;
 
+    // Fault ORs are registered in dsp_clk AHEAD of the clk_200m
+    // synchronizers: combinational logic into a sync stage can pass
+    // sub-cycle glitches into the resolving flop (CDC-10). All sources
+    // are dsp_clk levels, so registering adds only ~3 ns of latency,
+    // irrelevant for sticky fault reporting.
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) begin
+            stream_fault_dsp <= 1'b0;
+            i2s_fault_dsp    <= 1'b0;
+        end else begin
+            stream_fault_dsp <= core_stream_fault || serial_fault;
+            i2s_fault_dsp    <= i2s_err || core_stream_fault;
+        end
+    end
+
     // Mute / relay control (dsp_clk domain)
     (* MARK_DEBUG = "TRUE" *) logic force_zero;
     (* MARK_DEBUG = "TRUE" *) logic line_mute_drive;
@@ -389,25 +483,31 @@ module acku15s_dac_top #(
     // Output LEVEL as a digital gain cap (bom 7 ruling 2026-10-07; dsp_clk).
     // The applied level code comes from the automute sequencer, which only
     // changes it while muted + force-zeroed, so the gain step is click-free.
-    // Q0.16 gain relative to 6 Vrms full scale (0xFFFF = x1):
+    // Q0.17 gain relative to 6 Vrms full scale (17'h10000 = x1):
     //   6 V x1 | 4 V x2/3 | 2 V x1/3 | 0.6 V x1/10 | 0.2 V x1/30
     // Folded into the boot-envelope word the DSP volume stage already
     // multiplies by, so dac_dsp_core is untouched: env_level_gain =
-    // boot_envelope_gain * level_gain >> 16 (one 16x16 DSP, slow control).
+    // boot_envelope_gain * level_gain >> 16 (one 16x17 DSP, slow control).
+    // 6 V uses 17'h10000, not 16'hFFFF: the old Q0.16 "unity" computed
+    // 0xFFFF*0xFFFF>>16 = 0xFFFE — unity in name only, -1 LSB forever.
     // SNR at the XLR follows the signal (analog floor ~1.4 uV rms is fixed):
     // 132.8 / 129.3 / 123.3 / 112.8 / 103.3 dB0 for 6 / 4 / 2 / 0.6 / 0.2 V.
-    logic [15:0] level_gain;
+    logic [16:0] level_gain;
+    logic [32:0] env_product;
     (* use_dsp = "yes" *) logic [15:0] env_level_gain;
     always_ff @(posedge dsp_clk) begin
         case (level_relay_drive)
-            3'b000:  level_gain <= 16'd21845;  // 2 Vrms   (x1/3,  -9.54 dB)
-            3'b001:  level_gain <= 16'd43691;  // 4 Vrms   (x2/3,  -3.52 dB)
-            3'b010:  level_gain <= 16'hFFFF;   // 6 Vrms   (x1,      0 dB)
-            3'b011:  level_gain <= 16'd6554;   // 0.6 Vrms (x1/10, -20.0 dB)
-            3'b100:  level_gain <= 16'd2185;   // 0.2 Vrms (x1/30, -29.5 dB)
-            default: level_gain <= 16'd21845;  // reserved codes -> 2 V (safe)
+            3'b000:  level_gain <= 17'd21845;  // 2 Vrms   (x1/3,  -9.54 dB)
+            3'b001:  level_gain <= 17'd43691;  // 4 Vrms   (x2/3,  -3.52 dB)
+            3'b010:  level_gain <= 17'h10000;  // 6 Vrms   (x1,    exact 0 dB)
+            3'b011:  level_gain <= 17'd6554;   // 0.6 Vrms (x1/10, -20.0 dB)
+            3'b100:  level_gain <= 17'd2185;   // 0.2 Vrms (x1/30, -29.5 dB)
+            default: level_gain <= 17'd21845;  // reserved codes -> 2 V (safe)
         endcase
-        env_level_gain <= 16'((32'(boot_envelope_gain) * 32'(level_gain)) >> 16);
+        // Product staged one cycle (DSP MREG): 16x17 at 357 MHz needs the
+        // internal pipe to make timing; env path is quasi-static anyway.
+        env_product    <= 33'(boot_envelope_gain) * 33'(level_gain);
+        env_level_gain <= 16'(env_product[32:16]);
     end
 
     // Sample tick (dsp_clk domain)
@@ -540,11 +640,19 @@ module acku15s_dac_top #(
         .spi_miso       (qspi_miso)
     );
 
-    // Boot gate: end-of-startup AND DDR4 calibrated (both synced to clk_200m)
+    // Boot gate: end-of-startup AND DDR4 calibrated (both synced to clk_200m).
+    // These chains DO take ext_rst_n: it also resets the loader FSM and the
+    // MIG, so a free-running chain would hold boot_start high for ~2 clk_200m
+    // cycles after release and start staging into a re-calibrating DDR4.
     (* ASYNC_REG = "TRUE" *) logic [1:0] calib_sync_boot, eos_sync_boot;
     always_ff @(posedge clk_200m) begin
-        calib_sync_boot <= {calib_sync_boot[0], ddr4_init_calib_complete};
-        eos_sync_boot   <= {eos_sync_boot[0],   startup_eos};
+        if (!ext_rst_n) begin
+            calib_sync_boot <= '0;
+            eos_sync_boot   <= '0;
+        end else begin
+            calib_sync_boot <= {calib_sync_boot[0], ddr4_init_calib_complete};
+            eos_sync_boot   <= {eos_sync_boot[0],   startup_eos};
+        end
     end
     assign boot_start = calib_sync_boot[1] && eos_sync_boot[1];
 
@@ -602,7 +710,9 @@ module acku15s_dac_top #(
         .PREQ      (),
         .DI        (startup_di),
         .DO        ({2'b11, 1'b0, qspi_mosi}),
-        .DTS       (4'b0110),                     // D1 (MISO) + D2 inputs
+        .DTS       (4'b0010),                     // only D1 (MISO) is an input;
+                                                  // D2 (WP#) must DRIVE the '1'
+                                                  // in DO or Flash-0 WP# floats
         .FCSBO     (qspi_sel_flash0 ? qspi_cs_n : 1'b1),
         .FCSBTS    (1'b0),
         .GSR       (1'b0),
@@ -665,6 +775,7 @@ module acku15s_dac_top #(
         .ui_clk_sync_rst        (ddr4_ui_clk_sync_rst),
         .dsp_clk                (dsp_clk),
         .sys_rst_n              (sys_rst_n),
+        .ext_rst_n              (ext_rst_n),
         .stream_rate            (applied_stream_rate),
         .enforce_stream_rate    (1'b1),
         .sample_768k_tick       (sample_768k_tick),
@@ -740,7 +851,10 @@ module acku15s_dac_top #(
         end
     end
     always_ff @(posedge dsp_clk) begin
-        if (!sys_rst_n) pg_all_sync <= 0;
+        // Power-reset only: clearing this on sys_rst_n would drop the
+        // pg_all qualifier on every rate change and re-open the XLR relay
+        // through u_automute's sys_ready gate (mechanical click).
+        if (!pwr_rst_n) pg_all_sync <= 0;
         else pg_all_sync <= {pg_all_sync[0], pg_all};
     end
     bench_test_controller u_bench_ctrl (
@@ -780,7 +894,7 @@ module acku15s_dac_top #(
         .coef_load_err          (coef_load_err),
         .coef_load_err_code     (coef_load_err_code),
         .cal_write_reject_toggle(cal_write_reject_toggle),
-        .i2s_err                (i2s_err || core_stream_fault),
+        .i2s_err                (i2s_fault_dsp),
         .switch_busy            (switch_busy),
         .clk_locked             (clk_locked),
         .ddr4_init_calib_complete (ddr4_init_calib_complete),
@@ -830,6 +944,7 @@ module acku15s_dac_top #(
         .stream_rate_toggle     (stream_rate_toggle),
         .stream_source_valid    (stream_source_valid),
         .stream_source_valid2   (),
+        .stream_audio_ready     (audio_ready_sync[1]),
         .i2s_src_sel            (i2s_src_sel),
         .stream_valid_sel       (stream_valid_sel),
         .i2s_rx_trim            (i2s_rx_trim),
@@ -888,7 +1003,7 @@ module acku15s_dac_top #(
         .enable                 (serial_enable),
         .source_valid           (stream_valid_sel),
         .rate_shift             (applied_stream_rate[2:1]),
-        .rx_trim                (i2s_rx_trim),
+        .rx_trim                (i2s_rx_trim_q),
         .src_sel                (i2s_src_sel),
         .i2s_bclk               (i2s_bclk),
         .i2s_lrclk              (i2s_lrclk),
@@ -899,7 +1014,7 @@ module acku15s_dac_top #(
         .new_sample             (new_sample),
         .i2s_err                (i2s_err),
         .transport_fault        (serial_fault),
-        .audio_frame_ready      ()
+        .audio_frame_ready      (audio_frame_ready)
     );
 
     // ==============================================================
@@ -926,15 +1041,31 @@ module acku15s_dac_top #(
     assign test_mode_active = cell_test_cfg[0][7] | cell_test_cfg[1][7] |
                               bench_busy;
 
+    // Relay sys_ready: a PLANNED stream-rate transaction (u_stream_rate.busy
+    // covers MUTE_WAIT..STARTUP, including the intentional MMCM relock of a
+    // 44.1k<->48k family switch) counts as "ready" so clk_locked dipping
+    // mid-transaction does not click the mechanical relay. An UNPLANNED
+    // unlock (state==RUN, busy==0) still opens it. Both raw sources are
+    // 2-FF synced into dsp_clk before the OR — no comb-before-sync crossing.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] clk_lock_dsync    = '0;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] stream_busy_dsync = '0;
+    always_ff @(posedge dsp_clk) begin
+        clk_lock_dsync    <= {clk_lock_dsync[0], clk_locked};
+        stream_busy_dsync <= {stream_busy_dsync[0], stream_busy};
+    end
+    wire sys_ready_relay = pg_all_sync[1] &&
+                           (clk_lock_dsync[1] || stream_busy_dsync[1]);
+
     automute_controller u_automute (
         .clk              (dsp_clk),
         .rst_n            (sys_rst_n),
-        .sys_ready        (clk_locked && pg_all_sync[1]),
+        .rst_relay_n      (pwr_rst_n),
+        .sys_ready        (sys_ready_relay),
         .test_active      (test_mode_active),
         .unmute_req       (stream_valid_dsp && stream_automute_sync[1] && bank_valid),
         .base_rate_sel    (base_rate_sel_sync),
         .i2s_err          (i2s_err || core_stream_fault),
-        .level_target     (level_target_sync),
+        .level_target     (level_target_dsp),
         .line_mute_drive  (line_mute_drive),
         .level_relay_drive(level_relay_drive),
         .force_zero       (force_zero),
@@ -955,10 +1086,14 @@ module acku15s_dac_top #(
     ila_wrapper #(
         .PROBE_WIDTH (16)
     ) u_ila_ctrl (
+        // NOTE: probe mixes domains — stream_valid_dsp / level_switch_req /
+        // dpd_deadline_miss are dsp_clk signals sampled on clk_200m. All are
+        // levels (valid/fault are sticky until reset), so only edge timing —
+        // not value — is ambiguous. For pulse-accurate debug use a dsp_clk ILA.
         .clk   (clk_200m),
         .probe ({stream_valid_dsp, level_switch_req, fpga_irq_n,
                  line_mute_drive,
-                 force_zero, i2s_err, 10'b0})
+                 force_zero, i2s_err, dpd_deadline_miss, 9'b0})
     );
 `endif
 
@@ -972,6 +1107,7 @@ module acku15s_dac_top #(
         .dsp_clk                (dsp_clk),
         .cell_clk               (cell_clk),
         .sys_rst_n              (sys_rst_n),
+        .fir_rst_n              (sys_rst_fir_n),
         .audio_l                (audio_l),
         .audio_r                (audio_r),
         .new_sample             (new_sample),
