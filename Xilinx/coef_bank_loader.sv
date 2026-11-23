@@ -442,14 +442,14 @@ module coef_bank_loader #(
                             load_err_code <= 3'd3;
                             state <= ST_ERR;
                         end else begin
-                            // Legacy slot base = id * NUM_MACS * COEF_DEPTH*4.
-                            // COEF_DEPTH is always a power of two, so write it
-                            // as (id*NUM_MACS) << log2(COEF_DEPTH*4): a small
-                            // constant shift-add on a 4-bit id, never an
-                            // inferred combinational multiplier at ui_clk.
+                            // Legacy slot base = id * BANK_SIZE_BYTES.
+                            // BANK_SIZE_BYTES is an elaboration constant, so
+                            // the 4-bit-id product folds to shift-adds at
+                            // synth — and (unlike the NUM_MACS*COEF_DEPTH*4
+                            // default) it honors an explicit override, which
+                            // the sim harness uses for max-filter slot stride.
                             bank_base <= DDR4_BASE_ADDR
-                                       + AXI_ADDR_WIDTH'((32'(load_bank_id) * NUM_MACS)
-                                                         << ($clog2(COEF_DEPTH) + 2));
+                                       + (AXI_ADDR_WIDTH'(load_bank_id) * BANK_SIZE_BYTES);
                             state     <= ST_ISSUE_AR;
                         end
                     end

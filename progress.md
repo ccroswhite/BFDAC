@@ -6438,3 +6438,11 @@ the mid-run reorg — reorganized tree verified end-to-end.
 - IN FLIGHT: review4_gate_v1 — full 27-stage stream-rates gate on final RTL
   (run_stream_rates.ps1, logs/review4_gate_v1/summary.log; compile+rate_control
   already green at launch).
+- GATE REGRESSION FIX (post-commit): review4_gate_v1 failed filter_rate —
+  my review-2.4 bank-stride "shift-add" inlined the NUM_MACS*COEF_DEPTH*4
+  DEFAULT, ignoring the BANK_SIZE_BYTES override (TB uses 4MB production
+  slots for 1MB sim filters; every non-zero legacy bank issued ARs 4x too
+  low, 256 errors/bank). Reverted to load_bank_id*BANK_SIZE_BYTES — the
+  param is an elaboration constant so it folds to shifts anyway. Standalone
+  tb_coef_bank_loader re-run: ALL 11 TESTS PASSED, 0 errors. Relaunched
+  gate as logs/review4_gate_v2.
