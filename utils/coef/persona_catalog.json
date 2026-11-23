@@ -1,0 +1,548 @@
+{
+  "schema_version": 1,
+  "description": "BFDAC Layer-1 (Stage 1A FIR) + Layer-2 (dac_voicing_shaper) Persona & Filter Catalog",
+  "target_defaults": {
+    "num_macs": 128,
+    "taps_per_phase": 256,
+    "sym_fold": true,
+    "packing": 1,
+    "ddr4_base_addr": "0x00000000",
+    "dir_base_addr": "0x3FFF0000",
+    "dir_max_entries": 1024
+  },
+  "filter_id_encoding": {
+    "format": "{persona_id[6:0], filter_idx[5:0], rate_code[2:0]}",
+    "persona_shift": 9,
+    "persona_max": 126,
+    "filter_shift": 3,
+    "filter_max": 63,
+    "rate_mask": 7,
+    "keep_bank_sentinel": "0xFFFF"
+  },
+  "rates": [
+    { "rate_code": 0, "sample_rate_hz": 48000,  "rate_shift": 0, "family_44k1": 0 },
+    { "rate_code": 1, "sample_rate_hz": 44100,  "rate_shift": 0, "family_44k1": 1 },
+    { "rate_code": 2, "sample_rate_hz": 96000,  "rate_shift": 1, "family_44k1": 0 },
+    { "rate_code": 3, "sample_rate_hz": 88200,  "rate_shift": 1, "family_44k1": 1 },
+    { "rate_code": 4, "sample_rate_hz": 192000, "rate_shift": 2, "family_44k1": 0 },
+    { "rate_code": 5, "sample_rate_hz": 176400, "rate_shift": 2, "family_44k1": 1 },
+    { "rate_code": 6, "sample_rate_hz": 384000, "rate_shift": 3, "family_44k1": 0 },
+    { "rate_code": 7, "sample_rate_hz": 352800, "rate_shift": 3, "family_44k1": 1 }
+  ],
+  "stage1b_audit": {
+    "hb_taps": [63, 63, 31],
+    "hb_kaiser_beta": [16.0, 16.0, 13.5],
+    "ultrasonic_band_hz": [24000.0, 68000.0]
+  },
+  "personas": [
+    {
+      "persona_id": 0,
+      "key": "reference_bench",
+      "name": "QA Reference Bench",
+      "execution_class": "baseline",
+      "shaper": {
+        "voicing_en": false,
+        "k2_float": 0.0,
+        "k3_float": 0.0,
+        "k2_q25": 0,
+        "k3_q25": 0,
+        "h2_dbc_0dbfs": null,
+        "h3_dbc_0dbfs": null
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.0,
+        "lf_corner_hz": 80.0,
+        "hf_tilt_db_20k": 0.0,
+        "hf_corner_hz": 10000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "ref_kaiser_brickwall",
+          "name": "F1 Reference Brickwall",
+          "window": "kaiser",
+          "beta": 18.0,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.495,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -125.0
+        }
+      ]
+    },
+    {
+      "persona_id": 1,
+      "key": "dcs_vivaldi_apex",
+      "name": "dCS Vivaldi APEX",
+      "execution_class": "both",
+      "shaper": {
+        "voicing_en": true,
+        "k2_float": 0.0001588656,
+        "k3_float": 0.0,
+        "k2_q25": 5331,
+        "k3_q25": 0,
+        "h2_dbc_0dbfs": -82.0,
+        "h3_dbc_0dbfs": null
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.0,
+        "lf_corner_hz": 80.0,
+        "hf_tilt_db_20k": 0.0,
+        "hf_corner_hz": 12000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "dcs_f1_sharp",
+          "name": "F1 Sharp Linear",
+          "window": "kaiser",
+          "beta": 17.5,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.493,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -124.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "dcs_f2_relaxed",
+          "name": "F2 Relaxed Linear",
+          "window": "kaiser",
+          "beta": 14.0,
+          "span_fraction": 0.25,
+          "fc_fs_ratio": 0.456,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -110.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "dcs_f3_compact_relaxed",
+          "name": "F3 Compact Relaxed",
+          "window": "kaiser",
+          "beta": 12.0,
+          "span_fraction": 0.04,
+          "fc_fs_ratio": 0.452,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -96.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "dcs_f4_compact_apodizing",
+          "name": "F4 Compact Apodizing",
+          "window": "apodizing_cos",
+          "cos_power": 3.0,
+          "span_fraction": 0.025,
+          "fc_fs_ratio": 0.442,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.1,
+          "max_image_dbc": -95.0
+        },
+        {
+          "filter_idx": 4,
+          "key": "dcs_f5_sym_apodizing",
+          "name": "F5 Symmetrical Apodizing",
+          "window": "apodizing_cos",
+          "cos_power": 2.5,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.444,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -120.0
+        },
+        {
+          "filter_idx": 5,
+          "key": "dcs_f6_ultra_short",
+          "name": "F6 Ultra-Short Transient",
+          "window": "gaussian_spline",
+          "sigma": 0.30,
+          "span_fraction": 0.015,
+          "fc_fs_ratio": 0.440,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.15,
+          "max_image_dbc": -78.0
+        }
+      ]
+    },
+    {
+      "persona_id": 2,
+      "key": "chord_quartet",
+      "name": "Chord Quartet",
+      "execution_class": "coef_only",
+      "shaper": {
+        "voicing_en": false,
+        "k2_float": 0.0,
+        "k3_float": 0.0,
+        "k2_q25": 0,
+        "k3_q25": 0,
+        "h2_dbc_0dbfs": null,
+        "h3_dbc_0dbfs": null
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.0,
+        "lf_corner_hz": 80.0,
+        "hf_tilt_db_20k": 0.0,
+        "hf_corner_hz": 12000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "chord_f1_wta_full",
+          "name": "F1 WTA1 Incisive Neutral",
+          "window": "wta_cos",
+          "cos_power": 2.0,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.496,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -122.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "chord_f2_wta_hf",
+          "name": "F2 WTA1 Neutral + HF Roll-Off",
+          "window": "wta_cos",
+          "cos_power": 2.0,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.496,
+          "hf_roll_hz": 20500.0,
+          "extra_hf_db_20k": -0.15,
+          "max_image_dbc": -122.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "chord_f3_wta_warm",
+          "name": "F3 WTA Warm",
+          "window": "wta_cos",
+          "cos_power": 3.0,
+          "span_fraction": 0.25,
+          "fc_fs_ratio": 0.485,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.10,
+          "max_image_dbc": -118.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "chord_f4_wta_warm_hf",
+          "name": "F4 WTA Warm + HF Roll-Off",
+          "window": "wta_cos",
+          "cos_power": 3.0,
+          "span_fraction": 0.0625,
+          "fc_fs_ratio": 0.480,
+          "hf_roll_hz": 20500.0,
+          "extra_hf_db_20k": -0.25,
+          "max_image_dbc": -110.0
+        }
+      ]
+    },
+    {
+      "persona_id": 3,
+      "key": "berkeley_alpha_3p",
+      "name": "Berkeley Audio Alpha 3P",
+      "execution_class": "coef_only",
+      "shaper": {
+        "voicing_en": false,
+        "k2_float": 0.0,
+        "k3_float": 0.0,
+        "k2_q25": 0,
+        "k3_q25": 0,
+        "h2_dbc_0dbfs": null,
+        "h3_dbc_0dbfs": null
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.0,
+        "lf_corner_hz": 80.0,
+        "hf_tilt_db_20k": 0.0,
+        "hf_corner_hz": 12000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "brk_f1_steep_low_overhang",
+          "name": "F1 Steep Low-Overhang",
+          "window": "kaiser",
+          "beta": 15.5,
+          "span_fraction": 0.02,
+          "fc_fs_ratio": 0.488,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -108.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "brk_f2_apodizing",
+          "name": "F2 Apodizing Fast",
+          "window": "apodizing_cos",
+          "cos_power": 2.5,
+          "span_fraction": 0.02,
+          "fc_fs_ratio": 0.444,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -100.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "brk_f3_gentle_transient",
+          "name": "F3 Gentle Half-Ringing",
+          "window": "kaiser",
+          "beta": 10.5,
+          "span_fraction": 0.01,
+          "fc_fs_ratio": 0.435,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.20,
+          "max_image_dbc": -82.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "brk_f4_studio_brickwall",
+          "name": "F4 Studio Reference Brickwall",
+          "window": "kaiser",
+          "beta": 17.0,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.490,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -122.0
+        }
+      ]
+    },
+    {
+      "persona_id": 4,
+      "key": "nagra_reference",
+      "name": "Nagra Reference DAC",
+      "execution_class": "both",
+      "shaper": {
+        "voicing_en": true,
+        "k2_float": 0.002,
+        "k3_float": -0.00008,
+        "k2_q25": 67109,
+        "k3_q25": -2684,
+        "h2_dbc_0dbfs": -60.0,
+        "h3_dbc_0dbfs": -94.0
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.20,
+        "lf_corner_hz": 90.0,
+        "hf_tilt_db_20k": -0.35,
+        "hf_corner_hz": 8500.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "nagra_f1_classic_spline",
+          "name": "F1 Classic Spline-Gaussian",
+          "window": "gaussian_spline",
+          "sigma": 0.28,
+          "span_fraction": 0.02,
+          "fc_fs_ratio": 0.442,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -72.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "nagra_f2_extended_air",
+          "name": "F2 Extended Bandwidth",
+          "window": "kaiser",
+          "beta": 14.5,
+          "span_fraction": 0.25,
+          "fc_fs_ratio": 0.478,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.15,
+          "max_image_dbc": -112.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "nagra_f3_apodizing_master",
+          "name": "F3 Apodizing Master",
+          "window": "apodizing_cos",
+          "cos_power": 2.5,
+          "span_fraction": 0.125,
+          "fc_fs_ratio": 0.446,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -108.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "nagra_f4_extra_silk",
+          "name": "F4 Transformer Silk Tilt",
+          "window": "gaussian_spline",
+          "sigma": 0.27,
+          "span_fraction": 0.03,
+          "fc_fs_ratio": 0.440,
+          "hf_roll_hz": 19500.0,
+          "extra_hf_db_20k": -0.25,
+          "max_image_dbc": -76.0
+        },
+        {
+          "filter_idx": 4,
+          "key": "nagra_f5_tight_transient",
+          "name": "F5 Tight Transient",
+          "window": "kaiser",
+          "beta": 12.5,
+          "span_fraction": 0.03,
+          "fc_fs_ratio": 0.460,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -95.0
+        }
+      ]
+    },
+    {
+      "persona_id": 5,
+      "key": "msb_cascade",
+      "name": "MSB Cascade",
+      "execution_class": "both",
+      "shaper": {
+        "voicing_en": true,
+        "k2_float": 0.0,
+        "k3_float": -0.000050357,
+        "k2_q25": 0,
+        "k3_q25": -1690,
+        "h2_dbc_0dbfs": null,
+        "h3_dbc_0dbfs": -98.0
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.05,
+        "lf_corner_hz": 70.0,
+        "hf_tilt_db_20k": -0.10,
+        "hf_corner_hz": 11000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "msb_f1_cascade_brickwall",
+          "name": "F1 Cascade Reference Brickwall",
+          "window": "kaiser",
+          "beta": 19.5,
+          "span_fraction": 1.0,
+          "fc_fs_ratio": 0.495,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -125.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "msb_f2_cascade_apodizing",
+          "name": "F2 Cascade Apodizing",
+          "window": "apodizing_cos",
+          "cos_power": 2.5,
+          "span_fraction": 0.5,
+          "fc_fs_ratio": 0.448,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -118.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "msb_f3_ladder_smooth",
+          "name": "F3 Ladder Smooth Contour",
+          "window": "kaiser",
+          "beta": 15.0,
+          "span_fraction": 0.25,
+          "fc_fs_ratio": 0.470,
+          "hf_roll_hz": 20000.0,
+          "extra_hf_db_20k": -0.25,
+          "max_image_dbc": -112.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "msb_f4_gaussian_smooth",
+          "name": "F4 Gaussian Transient",
+          "window": "gaussian_spline",
+          "sigma": 0.29,
+          "span_fraction": 0.025,
+          "fc_fs_ratio": 0.450,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.15,
+          "max_image_dbc": -78.0
+        },
+        {
+          "filter_idx": 4,
+          "key": "msb_f5_compact_dynamic",
+          "name": "F5 Compact Dynamic",
+          "window": "kaiser",
+          "beta": 13.5,
+          "span_fraction": 0.03,
+          "fc_fs_ratio": 0.475,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -98.0
+        }
+      ]
+    },
+    {
+      "persona_id": 6,
+      "key": "merason_montana",
+      "name": "Merason Montana",
+      "execution_class": "both",
+      "shaper": {
+        "voicing_en": true,
+        "k2_float": 0.00039905,
+        "k3_float": -0.000063396,
+        "k2_q25": 13390,
+        "k3_q25": -2127,
+        "h2_dbc_0dbfs": -74.0,
+        "h3_dbc_0dbfs": -96.0
+      },
+      "base_contour": {
+        "lf_shelf_db": 0.15,
+        "lf_corner_hz": 100.0,
+        "hf_tilt_db_20k": -0.25,
+        "hf_corner_hz": 9000.0
+      },
+      "filters": [
+        {
+          "filter_idx": 0,
+          "key": "mer_f1_natural_smooth",
+          "name": "F1 Natural Smooth",
+          "window": "gaussian_spline",
+          "sigma": 0.28,
+          "span_fraction": 0.02,
+          "fc_fs_ratio": 0.445,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.15,
+          "max_image_dbc": -74.0
+        },
+        {
+          "filter_idx": 1,
+          "key": "mer_f2_classic_relaxed",
+          "name": "F2 Classic Oversampled",
+          "window": "kaiser",
+          "beta": 13.5,
+          "span_fraction": 0.125,
+          "fc_fs_ratio": 0.452,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -108.0
+        },
+        {
+          "filter_idx": 2,
+          "key": "mer_f3_warm_apodizing",
+          "name": "F3 Warm Apodizing",
+          "window": "apodizing_cos",
+          "cos_power": 2.5,
+          "span_fraction": 0.0625,
+          "fc_fs_ratio": 0.444,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": -0.10,
+          "max_image_dbc": -102.0
+        },
+        {
+          "filter_idx": 3,
+          "key": "mer_f4_extended_studio",
+          "name": "F4 Extended Studio",
+          "window": "kaiser",
+          "beta": 16.5,
+          "span_fraction": 0.5,
+          "fc_fs_ratio": 0.485,
+          "hf_roll_hz": null,
+          "extra_hf_db_20k": 0.0,
+          "max_image_dbc": -120.0
+        }
+      ]
+    }
+  ]
+}

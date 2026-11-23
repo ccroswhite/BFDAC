@@ -61,6 +61,9 @@ module tb_e2e_sine;
         .coef_we(coef_we), .coef_waddr(coef_waddr), .coef_wdata(coef_wdata),
         .coef_wmac(coef_wmac), .bank_select(1'b0), .bank_load_target(1'b0),
         .sys_volume(sys_volume), .boot_envelope_gain(boot_envelope_gain),
+        .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0),
+        .cell_test_cfg('0), .cell_test_req(2'd0), .cell_test_safe(1'b0),
+        .bench_cmd(11'd0),
         .dpd_enable(1'b0), .dpd_cal_addr(), .dpd_cal_data('0),
         .sample_768k_tick(sample_768k_tick),
         .cascode_l(cascode_l), .cascode_r(cascode_r)

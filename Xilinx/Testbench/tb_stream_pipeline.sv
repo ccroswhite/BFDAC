@@ -12,7 +12,8 @@ module tb_stream_pipeline;
     always #(dp/2) dsp_clk=~dsp_clk;
     i2s_master_ingress ingress (
         .dsp_clk(dsp_clk), .cell_clk(cell_clk), .rst_n(rst_n), .enable(enable),
-        .source_valid(1'b1), .rate_shift(shift), .rx_trim(5'd0), .i2s_data(1'b0),
+        .source_valid(1'b1), .rate_shift(shift), .rx_trim(5'd0),
+        .src_sel(1'b0), .i2s_data(1'b0), .i2s_data2(1'b0),
         .i2s_bclk(bclk), .i2s_lrclk(lrclk), .audio_l(audio_l), .audio_r(audio_r),
         .new_sample(sample_valid), .i2s_err(serial_error), .transport_fault(serial_fault)
     );
@@ -23,6 +24,7 @@ module tb_stream_pipeline;
         .fir_frame_done(fir_frame_done),
         .coef_we(1'b0), .coef_waddr(8'd0), .coef_wdata(18'd0), .coef_wmac(2'd0),
         .bank_select(1'b0), .bank_load_target(1'b0), .sys_volume(32'h001c0000),
+        .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0),
         .boot_envelope_gain(16'hffff), .dpd_enable(1'b0), .dpd_cal_data('0),
         .cell_test_cfg('0), .cell_test_req(2'd0), .cell_test_safe(1'b0),
         .bench_req(1'b0), .bench_cmd(11'd0), .cascode_l(cascode_l), .cascode_r(cascode_r)
@@ -79,7 +81,8 @@ module tb_stream_pipeline;
                         run_length=0;
                     end
                     if(stream_fault || serial_fault || $isunknown(cascode_l))
-                        $fatal(1,"FIFO/serial/X fault in rate matrix");
+                        $fatal(1,"FIFO/serial/X fault f=%0d r=%0d sf=%0b serf=%0b x=%0b cas=0x%h",
+                               f,r,stream_fault,serial_fault,$isunknown(cascode_l),cascode_l);
                 end
                 if(captures<510 || captures>514) $fatal(1,"wrong converter cadence %0d",captures);
                 cases++;

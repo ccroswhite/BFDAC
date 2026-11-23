@@ -134,11 +134,17 @@ module dac_voicing_shaper #(
     // synthesis translate_off
     // Products need ~4 clks to settle after each strobe; in_valid spacing
     // must be >= 5 clks (HW: >>8).  Catch back-to-back strobes in unit TBs.
-    int last_strobe = -100;
-    always @(posedge clk) if (rst_n && in_valid) begin
-        if (last_strobe >= 0 && ($time - last_strobe) < 50)
-            $error("[voicing_shaper] in_valid spacing < 5 clk at %0t", $time);
-        last_strobe = $time;
+    // Counted in clk cycles — an absolute-time threshold breaks whenever
+    // the testbench clock period differs from 10 ns (TB: 2.8-3.3 ns).
+    int clks_since = 32;
+    always @(posedge clk) if (rst_n) begin
+        if (in_valid) begin
+            if (clks_since < 5)
+                $error("[voicing_shaper] in_valid spacing < 5 clk (%0d) at %0t",
+                       clks_since, $time);
+            clks_since <= 0;
+        end else if (clks_since < 32)
+            clks_since <= clks_since + 1;
     end
     // synthesis translate_on
 

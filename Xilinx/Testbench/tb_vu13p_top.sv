@@ -114,6 +114,7 @@ module tb_vu13p_top;
         .i2s_bclk       (i2s_bclk),
         .i2s_lrclk      (i2s_lrclk),
         .i2s_data       (i2s_data),
+        .i2s_data2      (1'b0),
         // AP bus: VOLUME/LEVEL are AP-only (2026-11-14 ruling);
         // XMOS bus: RATE/STREAM_RATE are XMOS-only (2026-11-15 ruling).
         .spi_xmos_sclk          (xmos_sclk),
@@ -383,7 +384,7 @@ module tb_vu13p_top;
         if (!u_dut.force_zero || u_dut.stream_source_valid)
             $fatal(1, "rate change automatically resumed playback");
         force u_dut.bank_valid = 1'b1;
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'd5);          // arm, echo=1 == declared rate (0x03=1 above)
         wdog = 0;
         while (relay_line_mute !== 1'b1 && wdog < 400000) begin
             @(posedge clk_49m); wdog++;
@@ -394,6 +395,51 @@ module tb_vu13p_top;
         end else begin
             $display("[%0t] FAIL: post-switch recovery: locked=%b relay=%b",
                      $time, led_debug[3], relay_line_mute);
+            fail_count++;
+        end
+
+        // --- TEST 7: dual-source select via I2S_SRC (0x1C, AP-only) ---------
+        // AP selects itself at the SAME declared rate as the XMOS stream
+        // (rate 1 = 48k family, already applied) -> no re-rate, src_sel flips.
+        // Then the per-source valid mux is checked: with src2 disarmed the
+        // muxed stream live flag drops even though XMOS svalid stays set.
+        spi_write(7'h1C, 24'h080807);            // sel=1, svalid2=1, rate2=1(48k), trims=8/8
+        wdog = 0;
+        while (u_dut.i2s_src_sel !== 1'b1 && wdog < 20000) begin
+            @(posedge clk_200m); wdog++;
+        end
+        if (u_dut.i2s_src_sel === 1'b1 && u_dut.stream_valid_sel === 1'b1 &&
+            u_dut.stream_rate_request === 3'd1) begin
+            $display("[%0t] PASS: AP select src2 same-rate: sel=1, stream stays armed", $time);
+            pass_count++;
+        end else begin
+            $display("[%0t] FAIL: src2 select: sel=%b vsel=%b req=%0d",
+                     $time, u_dut.i2s_src_sel, u_dut.stream_valid_sel, u_dut.stream_rate_request);
+            fail_count++;
+        end
+        // disarm AP flag only: muxed valid must drop while XMOS svalid holds
+        spi_write(7'h1C, 24'h080805);            // sel=1, svalid2=0, rate2=1
+        repeat (20) @(posedge clk_200m);
+        if (u_dut.stream_valid_sel === 1'b0 && u_dut.stream_source_valid === 1'b1) begin
+            $display("[%0t] PASS: per-source valid mux: src2 disarm drops stream", $time);
+            pass_count++;
+        end else begin
+            $display("[%0t] FAIL: valid mux: vsel=%b svalid1=%b",
+                     $time, u_dut.stream_valid_sel, u_dut.stream_source_valid);
+            fail_count++;
+        end
+        // back to XMOS at its declared rate -> stream re-arms on svalid1
+        spi_write(7'h1C, 24'h080804);            // sel=0, svalid2=0, trims=8/8
+        wdog = 0;
+        while (u_dut.i2s_src_sel !== 1'b0 && wdog < 20000) begin
+            @(posedge clk_200m); wdog++;
+        end
+        if (u_dut.i2s_src_sel === 1'b0 && u_dut.stream_valid_sel === 1'b1) begin
+            $display("[%0t] PASS: reselect src1: stream re-arms on XMOS svalid", $time);
+            pass_count++;
+        end else begin
+            $display("[%0t] FAIL: reselect src1: sel=%b vsel=%b",
+                     $time, u_dut.i2s_src_sel, u_dut.stream_valid_sel);
             fail_count++;
         end
 

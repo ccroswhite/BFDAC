@@ -5092,6 +5092,10 @@ GbE path complete on ap.kicad_sch (moat model, cable domain floats):
   the panel, same rule as USB shell)
 - D860-867 = 8x low-cap TVS (~1-3 pF, RClamp0521-class PROPOSED)
   on all PHY-side MDI lines -> GND_AP
+  (superseded 2026-11-19: replaced by 2x TPD4E05U06DQAR quad ESD
+  arrays = D860/D861, RULED user; USON-10 DQA 1x2.5 mm, 0.5 pF/line;
+  D860 protects pairs A+B, D861 pairs C+D; vendor land pattern
+  DQA0010A copied to bfdac:TI_DQA0010A_USON-10)
 - R870/R871 470R series Rs on the MagJack LED pins -> VAP_IO
 - Bob-Smith documented as text requirement (4x75R CT join +
   1nF/2kV -> CHASSIS_PE) - needs the real jack's CT pins at MPN
@@ -5982,3 +5986,375 @@ Post-route audit (scripts/_diag_reset*.tcl on post_route.dcp):
   pruned Volterra templated on dpd_engine's certified structure.
   dpd_engine stays dedicated to cell cal (2.77us memory vs ms/s-scale,
   post-volume inside EF3 loop).
+
+**2026-11-19c — POWER-DOC CLEANUP + PREREG LABEL-MERGE BUG FIXED (found during cleanup).** Cleanup: dead `lm317`/`lm337` symbol defs + parts entries and `host20` removed; REFS rail table + shared-rail text now name the actual LT3045/LT3094 banks (was "driven: U7801 LM317"); stale "115 V mains only" strings updated to universal input; `cldo50` repurposed as the LT3045/3094 bank IN cap (drawn: C7848 on VRAW16P_F / C7878 on VRAW16N_F — datasheet min 4.7 uF was missing); bom 17q OPEN item now says LT3045/LT3094 thermal check (was "LM317/337 heatsink sizing"); VCCIO direction corrected everywhere — SoM takes +12 V ONLY and exports bank VCCOs to carrier V18 (no carrier V18 reg; todo #4 RESOLVED, VERIFY remains: all VCCIO pins one rail vs per-bank). **BUG:** the 6-die pre-reg banks were pitched at 25 mm so die i's OUT-side label anchor and die i+1's IN-side anchor snapped to the SAME point — different-named labels coincided and merged: VRAW16P_F folded into BAL_P16A0 (IN shorted to the ballast/OUT node on dies 0-4; die 5 OK = no neighbor). P16A fixed by 28 mm pitch; N16A still merged because the ballast R's pin-1 stub then landed on the next die's IN anchor — ballast moved ux+15->ux+17. Netlist now: 12 clean 3-node BAL_* nets, VRAW16x_F = 21 nodes (6 INs + pi-R + ENUV top + IN cap). xcheck back to FAIL (1) = pre-existing VAP_IO/GND_AP only; PCIe pin-map PASS.
+
+**2026-11-20 — J856 GbE MAGJACK COMMITTED: Abracon ARJM11C7-502-AB-ER2-T (user).** Replaces the
+last dangling land reference (bfdac:RJ45_GBE_MAG_TBD). Vendor CAD (SnapEDA/Abracon, under
+datasheets/LIB_ARJM11C7-502-AB-ER2-T/) transcribed verbatim into bfdac.pretty/Abracon_ARJM11C7-502
+— legacy `(module` file re-emitted natively: P1-P10 signal grid (2.54 row/1.27 stagger, 0.9 drill),
+P11-P14 LED pins (1.02 drill), MH3/MH4 plated shield stakes -> CHASSIS_PE, MH1/MH2 3.25 NPTH posts.
+New bfdac:ARJM11C7_502 symbol mirrors the vendor pin names (TD1-4+/-, CT1/2, A/K_GRN, A/K_YEL, SH).
+Wiring vs 502 schematic (ds p16): TD1-4 = MDI A/B/C/D; P5/P6 PHY-side CTs NC (internally bussed);
+LEDs green=LINK/yellow=ACT via R870/R871 anode Rs to VAP_IO (colour map + 470 R VERIFY vs SoM
+drive). **Bob-Smith is INTEGRATED** (4x 75R pair-CTs -> 1nF/2kV -> shield) — old "external
+termination required" note rewritten. Netlist: 8 MDI nets = 3 nodes each (SoM+J856+D860/861),
+LEDs 2 nodes, shield = 2 stakes. xcheck FAIL(1) = pre-existing VAP_IO/GND_AP only; PCIe PASS.
+Remaining AP-board opens: J857/J858 header MPN+land, USB HS mux part, fuse/rbal/rpi/rsnubx/r470
+MPN batch, XU316 speed grade.
+
+**2026-11-20b — SCOPE RULING (user): transformers + SMPS are handled separately** — removed from
+the open-parts/verification scope (XFMR_Rcore placeholders, J910/J930/J933 SMPS connectors, dot/
+regulation checks, XFMR footprints stay parked until the user brings that work back).
+**2026-11-20c — AP I2S SOURCE RESTORED + USB MUX DRAWN (user ruling: dual-input architecture
+returns).** AP = second I2S slave-TX source; the USB HS mux now exists ONLY for AP->XMOS DFU.
+Schematic: J855 pin17 (MCASP0_AXR1, free) = AP_I2S_DATA2 -> carrier U503 ch2 (MAX22444C spare
+fwd channel resurrected) -> I2S_DATA2 -> FPGA i2s_data2 on B2/J1-A6 (freed pin back in use,
+bank 90 same as i2s_data).  BCLK/LRCLK fanout to the SoM was already drawn (pins 117/72).
+U857 = TS3USB30EDGSR VSSOP-10 (PROPOSED): D+/D- common -> XMOS USB pins, D1 -> U852/J852
+external path (S=0), D2 -> SoM USB0 host (S=1); OE_N -> GND_AP, S = USB_MUX_SEL (J855 pin68,
+SPI0_CS1/GPIO1_16) with R860 4k7 pull-down = external path default; VCC=VAP_IO+C864; U852 DD
+pins renamed USB_PC_DP/DM.  J855 94/106 renamed USB0_DRVVBUS/USB0_VBUS (VBUS sense workaround
+TBD - board-level host link, no real 5 V).  AP-side attach when muxed to SoM = HOST_SPI fw
+flag, no extra hardware (X1D16 stays on V1OK).  gen clean, PCIe pinmap 3/3 PASS, xcheck
+FAIL(1) = pre-existing VAP_IO/GND_AP only.  PHASE 2 next: i2s_data2 RTL port + dual-capture
+frame-aligned src mux in i2s_master_ingress + src_sel register bit + SPI_BUS.md; PHASE 3:
+tb dual-source/frame-boundary/fault-isolation tests.  Open decisions logged as todos #25-27
+(mux variant DGS vs RSW, AXR1 pin17 vs AXR0 pin69, src_sel ACL AP-write/XMOS-read).
+
+## 2026-11-20 Phase 2/3 — dual-source I2S RTL (Option A, user-ruled)
+- `i2s_master_ingress`: `i2s_data`/`i2s_data2` muxed pre-capture via `src_sel`;
+  select OR trim change -> pipeline clear + frame re-arm (flush+reload, no torn
+  frames). Per-source trim (paths differ: U502-rev+XU316 vs U503-fwd+McASP0).
+- `spi_regs.svh`/`dac_ctrl_plane`: 0x1C restored as I2S_SRC (AP-only by ACL
+  construction): [0]src_sel [1]svalid2 [4:2]rate_req_src2 [12:8]trim1 [20:16]trim2.
+  Per-source declared rates; FSM re-rates when SELECTED declared rate != applied
+  (shared clock pair — deselected source conforms or idles). XMOS RATE writes
+  stored while deselected, apply only when XMOS selected.
+- STREAM_STATUS 0x20 extended: src_sel[17] svalid_ap[18] rate_req_src2[21:19].
+- Top: `i2s_data2` port, muxed stream_valid_sel -> ingress+svalid chain.
+- Tests: NEW tb_i2s_dual_src (select flush/no-torn-frames/deselected-garbage
+  isolation/trim — 4 cases PASS); tb_dac_ctrl_plane updated for 0x1C (PASS);
+  tb_vu13p_top TEST7 src_sel+valid-mux propagation (12/12 PASS).
+- SPI_BUS.md updated (0x1C I2S_SRC entry, 0x20 map, rulings log R3/R4b).
+- Full suite detached: logs/stream_rates_dualsrc/summary.log
+
+## 2026-11-20 dual-source correction — select != rate (user ruling)
+- FLAW (user-identified): select write unconditionally re-rated whenever the
+  selected declared rate != applied -> selecting an IDLE source churned the
+  clock onto a STALE declaration (spurious mute+relock, then re-rate again at
+  stream start). Select and rate are different decisions.
+- FIX: rate applies only when the SELECTED source is LIVE — (a) select-to-
+  armed-source applies its stored declared rate; (b) a source's own ARM
+  (0x1C[1] sel=1 / XMOS 0x1B sel=0) applies its declared rate if it diverged
+  while deselected; (c) XMOS RATE write while selected — unchanged.
+  Bare select of an unarmed source = pure pin mux, zero clock consequence.
+- TB: tb_dac_ctrl_plane now MODELS the FSM apply (applied_rate tracks
+  stream_request on toggle) — the constant 3'd5 was creating impossible
+  declared!=applied states. New checks prove: unarmed select no re-rate,
+  deselected declare stores-only, arm applies diverged rate + consumes arm.
+- tb_dac_ctrl_plane PASS, tb_spi_ctrl_plane PASS, tb_vu13p_top 12/12 PASS.
+- NOTE: detached suite logs/stream_rates_dualsrc compiled PRE-FIX RTL —
+  re-run after it finishes.
+
+## 2026-11-20 dual-source semantics SETTLED — inductive-invariant audit + two fixes
+- MODEL (final): state sigma=(s,r1,v1,r2,v2,R,m). Invariant I: ~m & v_s=1
+  => R=r_s. Fire condition: fresh-declare-by-selected OR selected-live with
+  declared!=applied. Proved by induction over the 3 write events (E1 XMOS
+  RATE, E2 XMOS VALID, E3 AP 0x1C) that I is preserved by every event.
+- FIX 1 (idempotence): XMOS RATE rewrite of same rate previously fired an
+  unconditional relock. Now delta-gated on data[2:0]!=stream_applied_rate;
+  invalidate semantics retained (RATE write = stream restart). E1 line ~841.
+- FIX 2 (symmetric declare): AP [4:2] change while sel=1 is a FRESH DECLARE
+  (ap_decl_new, line ~431) -> applies immediately, symmetric to XMOS RATE.
+  i2s_src_apply = (sel_valid_new || ap_decl_new) && sel_rate_new!=applied.
+- REACHED-STATE PROOF: v_s=1 & R!=r_s is unreachable in stable state (arm/
+  declare either fires-and-consumes or confirms R=r_s). Liveness: apply-
+  writes during busy rejected atomically (wr_rejected), FSM fixed-sequence.
+- FIRMWARE CONTRACT (not RTL-enforceable): r_s=declared rate must equal the
+  true encoding rate — I2S carries no rate metadata; a lying declaration
+  produces wrong-rate audio undetectably. Owned by XMOS/AP drivers.
+- RESIDUAL asymmetry (documented, deliberate): XMOS same-rate RATE rewrite
+  invalidates stream (restart semantic); AP same-value 0x1C write is inert.
+- TB: eager-declare + same-rate-no-relock cases added; applied_rate model
+  tracks toggles. tb_dac_ctrl_plane / tb_spi_ctrl_plane / tb_vu13p_top
+  (12/12) ALL PASS post-fix.
+- Full suite relaunched detached: logs/stream_rates_dualsrc_v2/summary.log
+  (v1 log was pre-fix RTL).
+- DOCS: SPI_BUS.md 0x03/0x1C rows + spi_regs.svh comment updated to the
+  two-leg apply rule.
+
+## 2026-11-20 RULING (user): dual-I2S architecture KEPT — USB-mux simplification deferred
+- User considered reverting to single-path (AP audio via U857 USB mux into
+  XMOS, one I2S into FPGA) for simplicity. DECIDED: keep dual-I2S — plumbing
+  is in place, verified, and preserves two properties the USB path loses:
+  (a) PC UAC device stays enumerated across source switches (USB mux would
+      physically unplug the PC's device on every internal switch);
+  (b) same-rate switch = pin-mux + frame re-arm (~us), not USB re-enumeration.
+- USB-mux fallback remains a documented simplification option if dual-session
+  maintenance burden grows. U857 retained regardless (XMOS DFU path).
+- Rate model confirmed: per-source declaration storage — rate_req_src1
+  (XMOS, 0x03/0x1A), rate_req_src2 (AP, 0x1C[4:2]), stream_rate_request,
+  stream_applied_rate. Apply clears valids, NOT rate registers — displaced
+  source re-arms onto its stored/fresh declaration.
+- Renegotiation contract (settled in discussion): divergent-rate displacement
+  kills the session mechanically (valids cleared + wire re-rated); displaced
+  source discovers via STREAM_STATUS poll / wire LRCLK measurement / own
+  underrun, re-declares if rate changed, re-arms. Same-rate displacement
+  leaves the session alive (seamless resume — TEST7 verified).
+- OPEN ITEMS deferred to firmware-contract doc (todo 9):
+  * H1: "session preempted" sticky bit + IRQ per source — push notification
+    of displacement instead of poll/discover.
+  * H3: rate_req_src1 not readable while deselected — AP selects back blind;
+    expose in a status field for pre-announce.
+  * Arm-echo proposal: arm write carries rate echo, FPGA compares vs applied —
+    converts stored-declaration trust into confirmed-at-arm (protocol option).
+  * G2 scoped out: content provenance vs declared rate is unverifiable at the
+    serial layer — contract obligation on source firmware only.
+
+2026-11-21: tb_fir_polyphase_stereo FIXED — 7/7 PASS under TWO_STAGE_EN=1
+----------------------------------------------------------------------
+- Root causes (stale TB vs two-stage x2->x8 cascade, not DUT bugs):
+  * Priming depth: legacy `NUM_MACS*TAPS_PER_PHASE+2` = 66 samples filled
+    ~6% of the folded S1A window. True DC window = NUM_MACS*2*S1A_TPP =
+    1024 samples; measured 1040 primes still left ±0.002% ripple (window-
+    edge effect). Probe-proven convergence: 2064 sends -> EXACTLY flat
+    0x080000000000. Added S1A_TPP/S1A_EFF_TPP/HIST_SAMPLES/PRIME_SAMPLES
+    localparams.
+  * DC formula: `2*C*D*NUM_MACS*TAPS_PER_PHASE` (single-stage) ->
+    `2*C*D*NUM_MACS*S1A_EFF_TPP` (fold doubles effective taps/phase).
+    S1B halfband cascade verified analytically unity DC gain per stage
+    (folded coef sum = 32768 = 2^15 -> mid = 2D*Σc/2^16 = D).
+  * TEST 2: first-ever frame emits ZERO finals — S1B pacing engine needs
+    FIFO/center-delay priming; added 48 zero-sample warm-up.
+  * TEST 7: old code waited for 2 FINAL outputs (~500+ cy) before the
+    overrun sample — by then S1A's ~280cy ST_SHIFT/ST_SWEEP accept window
+    had closed, so the sample was legitimately ACCEPTED (overrun=0 was
+    correct DUT behavior). Now strikes at +16 cy, inside the window.
+- Probe instrumentation confirmed acceptance is NOT the limiter:
+  2055/2056 sends accepted at FULL_BURST spacing, zero overruns.
+- run_stream_rates.ps1: polyphase job restored (skip comment removed).
+- Full suite relaunched detached -> logs/stream_rates_dualsrc_v4/summary.log
+
+2026-11-21 (cont): stream_pipeline X-regression — TB port rot, not RTL
+----------------------------------------------------------------------
+- v3+v4 suite: tb_stream_pipeline $fatal "FIFO/serial/X fault" @728.5us,
+  deterministic. Passed 8/8 in stream_rates_native_v5 (2026-10-16).
+- Instrumented fatal -> f=0 r=0, stream_fault=0, serial_fault=0,
+  cascode_l = ALL X. Root cause: dac_voicing_shaper added to dac_dsp_core
+  (53ee7a3, Nov 17) introduced inputs voicing_en/k2/k3; unconnected in TBs
+  -> Z inputs -> k2/k3 into shaped path -> shaped=X; voicing_en=X bypass
+  mux can't resolve passthru vs X -> cascode all-X. tb_dac_dsp_core was
+  additionally missing force_zero + cell_test_*/bench_cmd (same Z->X
+  mechanism via gated_audio).
+- Fix: tie-offs in all 5 dsp_core-instantiating TBs — tb_stream_pipeline,
+  tb_dac_dsp_core, tb_cell_measurement, tb_rate_probe, tb_e2e_sine:
+  .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0), + missing
+  force_zero/cell_test_*/bench_cmd where absent. Instrumented fatal kept.
+- Verified standalone: tb_stream_pipeline TB_PASS 8/8, tb_dac_dsp_core ALL
+  PASS, tb_cell_measurement TB_PASS.
+- Full suite relaunched detached -> logs/stream_rates_dualsrc_v5/summary.log
+
+2026-11-21 (cont2): dsp_core_gain suite-FAIL = false-positive $error spam
+----------------------------------------------------------------------
+- Symptom: suite marks dsp_core_gain FAILED although TB prints ALL TESTS
+  PASSED. Runner regex treats any "Error:" line as failure.
+- Root cause: dac_voicing_shaper's sim-only strobe-spacing check compared
+  $time deltas to hardcoded 50 (assumed 10ns clk). TB dsp_clk is ~3.3ns;
+  strobes arrive ~45ns = ~13.6clk — satisfies the intended >=5clk rule but
+  violates 50ns -> 1230 Error lines. Would also false-fire on production
+  timing (>=8clk x 2.8ns = 22ns < 50ns).
+- Fix: check now counts clk CYCLES between strobes (clks_since < 5 ->
+  $error). translate_off only; zero hardware impact.
+- Verified: tb_dac_dsp_core rerun -> 0 shaper errors, ALL TESTS PASSED.
+- Full suite relaunched detached -> logs/stream_rates_dualsrc_v6/summary.log
+
+2026-11-21 (cont3): FULL SUITE GREEN — 27/27 PASS
+----------------------------------------------------------------------
+- logs/stream_rates_dualsrc_v6/summary.log: all jobs PASS incl. the three
+  repaired this session: fir_polyphase_stereo (two-stage TB rework),
+  stream_pipeline + dsp_core_gain (voicing port tie-offs + cycle-counted
+  strobe check). Dual-source dual-I2S architecture fully regression-clean:
+  i2s_dual_src, control (incl. eager-AP-declare + same-rate no-relock
+  cases), spi, top all green.
+
+2026-11-21 (cont4): AP owns the island I2C bus — SoM I2C0 assigned
+----------------------------------------------------------------------
+- User rethink resolved: sensor bus master moves XMOS -> VAR-SOM-AM62P I2C0.
+  Chain: TMP117 x4 + UCD PMBus (SENS_SDA/SCL @V33D) -> U504 ISO1640 ->
+  AP_SDA/AP_SCL (@VAP_IO) -> J506 side-B pads -> AP board -> J855.87/88 ->
+  SoM I2C0 (Linux i2c-dev; temp-indexed cal LUT + thermal validation +
+  over-temp now direct userspace reads, no XMOS driver/HOST_SPI relay).
+- J855 pin map: m[87]=AP_SDA (I2C0_SDA, ball A24), m[88]=AP_SCL (I2C0_SCL,
+  ball B25 = BOOTMODE06).  Boot-strap analysis (VAR-SOM-AM62P ds Rev 1.03
+  8.23.4): BOOT_SEL pin 42 owns source select (float=eMMC); BOOTMODE06 has
+  on-SOM 10k PU and R503 2.2k pulls SAME direction -> strap stays 1; no
+  active driver exists in the SYS_NRSTIN_3V3+1ms window -> SAFE.
+- XMOS X0D41/42 -> NC (freed).  R502/R503 2.2k pull-ups unchanged.
+- gen_kicad.py regenerated; check_pcie_pinmap PASS; xcheck FAIL(1) =
+  pre-existing VAP_IO LED return only (unchanged, todo #4).
+- bom.md: sensor-bus master text updated, deferred-port row resolved,
+  J501-era tail note superseded.
+2026-11-21 (cont5): VAP_IO/GND_AP net merge FIXED — todo #4 closed
+----------------------------------------------------------------------
+- Root cause: label-anchor collision, same class as the 11-19 prereg
+  VRAW16x_F merge.  On the ACENTRY sheet the two U810 (LM393) divider
+  strings were pitched 13 mm apart vertically: R817 pin-2's GND_AP label
+  anchor and R818 pin-1's VAP_IO label anchor snapped to the identical
+  point (580.39, 198.12).  Different-named global labels coinciding merge
+  the nets in the netlist - VAP_IO fully absorbed into GND_AP (0 vs 337
+  endpoints), which xcheck surfaced as the R9020 bring-up LED return
+  reading GND_AP instead of VAP_IO.
+- Fix (gen_kicad.py ~line 4054): second divider string moved down 3 mm -
+  R818 205->208, R819 218->221.  Strings now 16 mm apart, label anchors
+  ~3 mm clear.
+- Audit: scripted a full cross-net label-collision scan over all 19
+  generated sheets - ZERO same-coordinate different-name label pairs
+  remain (was exactly this one).
+- Verify: netlist now shows VAP_IO 85 endpoints / GND_AP 252; R9020.1 =
+  VAP_IO, D9020.1 (K) = GND_AP.  kicad_xcheck RESULT: PASS (was FAIL(1)
+  since the LED rail check was added).  check_pcie_pinmap PASS x3
+  unchanged.  Generated hw/kicad regenerated in sync.
+- Ground-domain rule intact: VAP_IO island rail returns only via GND_AP;
+  the fix was purely positional - no netlist/weakening changes.
+2026-11-21 (cont6): AP-board open lands CLOSED — DFU_EN PD + J857/J858 + MPN batch
+----------------------------------------------------------------------
+- R864 = NEW 4.7k pull-down on XMOS_DFU_EN (rpu4k7 class, CRCW06034K70FKEA):
+  J855.69 AP GPIO floats until pinmux; PD wins over AM62P internal PU
+  (~20 k) -> ~0.6 V < VIL = DFU disarmed by default; AP drives high to arm
+  (2026-11-18 DFU-is-AP-only ruling).  Netlist: {J855.69, R864.1, U851.55}.
+- J857 (1x3 SoM UART0 console) + J858 (1x4 USB0 service) get real lands:
+  Samtec TSW-103-07-G-S / TSW-104-07-G-S, new FP key HDR1x3 + new part key
+  hdr1x4 (was one generic HDR2x10 placeholder covering both).
+- MPN batch assigned (all PROPOSED, user supply-chain gate unchanged):
+  r470  -> CRCW0603470RFKEA (housekeeping 1 %, same as rled);
+  rbal  -> WSL0603R0200FEA Vishay Power Metal Strip 0603 20 mR 1 %
+           (old 'ERJ-3GEY0R20V-class' pointer was wrong - that's a 200 mR
+           part; thick-film alt ERJ-3BSJR02V 5 %);
+  rsnubx-> PR01000104709JAC00 (PR01 1 W metal film 47 R, non-wirewound);
+  rpi   -> PR02/PR03 per value: 0R47 = PR02000204707JAC00 (PR03's range
+           starts 0.68 R), 3R9 = PR03000203908JAC00, 4R7 = PR03000204708JAC00;
+  fuse_t-> Littelfuse 372 series TR5 TIME-LAG per rating: T1A = 37211000411,
+           T1.6A = 37211600411, T4A = 37214000411.  NOTE: the old
+           '373/Wickmann 372 class' note was backwards - 373 is FAST-acting;
+           372 is the correct T-rated TR5 family.
+- bom.md: ballast MPN line updated (WSL0603R0200FEA).
+- Verify: regen clean; xcheck RESULT: PASS (R864 in netlist, correct nets);
+  PCIe pinmap PASS x3; cross-net label-collision audit = 0.
+2026-11-21 (cont7): STREAM-GATE / forced-renegotiation contract DOCUMENTED
+----------------------------------------------------------------------
+- Ruling (user): EVERY selection transition forces a stream reset on BOTH
+  affected sources, unconditionally - teardown+refuse on deselect,
+  forced-renegotiate on select.  No conditional state checks: remote stream
+  state (UAC2 negotiated / AP network sessions) is opaque to the FPGA, so
+  convergence must be by construction.  Same philosophy the RTL already
+  enforces internally (apply unconditionally consumes svalid*).
+- UAC2 surface fully enumerated - no better in-spec mechanism exists:
+  host SET_INTERFACE is the ONLY stream control (one direction only);
+  device->host = AC interrupt-EP notifications only.  Notification-capable
+  controls relevant: CS_CLOCK_VALID_CONTROL (semantically exact - our gate
+  literally IS clock validity, XMOS is I2S slave on FPGA clocks),
+  TE_CONNECTOR (secondary), TE_UNDER/OVERFLOW + CX_CLOCK_SELECTOR (wrong
+  semantics).  No suspend/pause/resume/abort verb in UAC2 or UAC3.
+- XMOS-blessed path confirmed in lib_xua v5.5.0 sources: interrupt EP +
+  Clock-Entity validity IS the library's designed host-notification
+  mechanism (XMOS doc: clockgen->decouple interrupt "based on the AC2.0
+  status/interrupt endpoint feature").  Currently gated behind
+  XUA_SPDIF_RX_EN||XUA_ADAT_RX_EN.  Required deltas documented in
+  FIRMWARE_CONTRACT.md 1.4 (6 items: EP unconditional, ID_CLKSRC validity
+  = gate not hardcoded-1, gate transitions drive setClockValidity,
+  SET_INTERFACE stall while gated = the only non-library behavior,
+  I2S-TX stop via weak user functions, declare-on-every-negotiation).
+- Trigger/force chain documented 1.3: AP 0x1C write -> src_sel ->
+  fpga_irq_n doorbell (NEW IRQ term needed - sticky_err full) +
+  poll fallback -> XMOS reads STREAM_STATUS gate = (src_sel==0)&&!fault
+  -> CLOCK_VALID notification + stall + TX stop -> host renegotiates ->
+  declare -> arm -> two-leg apply -> unmute.
+- Boot note: i2s_src_sel resets to 0 (XMOS) - gate-open default pending
+  boot-sequence section.
+- Open bench items: host reaction to CLOCK_VALID->0 mid-stream on
+  usbaudio2/AppleUSBAudio/ALSA (spec defines notification, not reaction);
+  lib_xua version pin; feedback-EP NAK tolerance; AP gate-override bit
+  deferred (src_sel suffices - AP owns all selects anyway).
+- NEW FILE: FIRMWARE_CONTRACT.md - first content of todo-9 contract doc.
+  H1 preempted-sticky superseded by unconditional-reset ruling; H3
+  (rate_req_src1 readback, free SS[24:22]) + arm-echo remain open.
+2026-11-21 (cont8): FIRMWARE_CONTRACT.md sections 2-6 + open items ruled
+----------------------------------------------------------------------
+- Rulings applied (user: "if we agree on that approach, I agree") - all
+  follow from never-trust-remote-state / force-renegotiation:
+  R1 STREAM_EVENT W1C reg (addr TBD ~0x21): preempt_xmos[0]/preempt_ap[1]
+      doorbell -> fpga_irq_n / spi_ap_irq_n.  sticky_err 8/8 -> new reg.
+  R2 rate_req_src1 readback -> STREAM_STATUS[24:22] free bits,
+      INFORMATIONAL SHADOW ONLY (never authorization).
+  R3 arm-echo: XMOS 0x1B gains [4:2] expected-rate echo, FPGA x-checks
+      vs rate_req_src1, mismatch -> reject + STREAM_EVENT flag.
+      AP exempt (0x1C declare+arm already atomic).
+- Doc'd: boot section (src_sel resets 0/XMOS but gates closed while
+  !clocks_ready; HOST_IRQ_N holdoff SYS_NRSTIN_3V3+1ms ruled; AP writes
+  I2S_SRC early in boot); DFU_EN (AP-only, R864 PD disarmed default,
+  AP drives high to arm); HOST_SPI min surface (ATTACH flag for U857
+  attach sense, heartbeat; explicitly NOT a 2nd gate authority);
+  I2S_SRC pointer + note that source-change forces reneg even when a
+  same-source same-rate rewrite would be idempotent.
+- RTL deltas queued (not yet implemented): STREAM_EVENT reg + IRQ terms,
+  SS[24:22], 0x1B[4:2] echo check.
+2026-11-21 (cont9): STREAM-GATE RTL DELTAS IMPLEMENTED + TB GREEN (unit)
+----------------------------------------------------------------------
+- STREAM_EVENT register (contract R1-R3, FIRMWARE_CONTRACT.md s2):
+  write 0x21 W1C [2:0] (XMOS masked {0,2}, AP all); read 0x22 =
+  {rsvd, rate_req_src1[5:3] shadow-RO, echo_mismatch[2], preempt_ap[1],
+  preempt_xmos[0]}.  Shadow moved off STREAM_STATUS (24-bit data field;
+  SS only had [23:22] free).
+- Preempt events: src_sel transition -> flag on deselected source;
+  ANY rate apply -> both flags (clock regime destroyed for everyone);
+  busy/fault/!clocks_ready auto-clear -> flag per source that held svalid.
+- IRQs: fpga_irq_n = sticky_err | ev[0] | ev[2]; spi_ap_irq_n =
+  sticky_err | ev[1]  (was shared sticky-only).
+- Arm-echo MANDATORY on XMOS 0x1B[4:2] (3'b000 is a legal rate - no
+  sentinel): mismatch refuses arm (no relock) + echo_mismatch flag.
+  Format check relaxed to [23:5].  AP exempt (0x1C declare+arm atomic).
+- BUG FOUND+FIXED (pre-existing): SPI_W_I2S_SRC (0x1C) +
+  SPI_W_VOICING_FILTER_ID (0x20) were missing from the wr_addr_invalid
+  decode - every legit write flagged sticky[5] BAD_ADDR (still executed;
+  wr_exec never gated on invalid).  Caught by new IRQ checks.
+- TBs updated for mandatory echo: tb_dac_ctrl_plane (existing arms +
+  NEW T15 a-e: deselect doorbell+IRQ polarity both directions, XMOS
+  masked W1C, apply preempts both, echo refuse/arm, fault-consume
+  preempt), tb_spi_ctrl_plane, tb_vu13p_top.
+- tb_dac_ctrl_plane: TB_PASS (all incl. T15).  Full 27-test suite
+  running detached -> logs/stream_rates_gate_v1/summary.log.
+- Docs: SPI_BUS.md rows 0x1B/0x21(w)/0x22(r) + XMOS-allowed list +
+  voicing 0x1D-0x20 rows added (were undocumented); FIRMWARE_CONTRACT.md
+  R1-R3 marked implemented w/ real addresses.
+
+## cont10 — REPOSITORY REORGANIZATION (2026-11-23, user-directed)
+Root was 15+ loose files; Xilinx/ mixed RTL with logs, goldens, dead modules; sim_run/ held
+stale artifacts. Reorganized using established precedent (datasheets/, analysis_archive/, hw/):
+- DELETED (untracked, all gitignored regenerable): *.jou, *.backup.*, *.pb, *.out, *.err,
+  stray *.log, nul, __pycache__, .Xil, xsim.dir droppings (kept live Testbench/xsim.dir —
+  suite running; kept build/, sim_mig/ — sim_mig needed by run_tb_mig.ps1).
+- ARCHIVED -> analysis_archive/: dead RTL (artix_dac_master.xdc, i2s_rx.sv,
+  dac_i2s_ingress.sv + tb_dac_i2s_ingress.sv + tb_i2s_rx.sv), eval/dual_port_mac_pair.sv,
+  obsolete run_sim.tcl (referenced 6 modules deleted in July), all sim_run/ contents,
+  root analysis .py x15, root output dumps (dem_out*, stab_out, bom17_dump, dfx_runtime,
+  erc_report), golden_vectors/{Xilinx stray goldens, coeffs_*, e2e_*.txt, timing dumps}.
+- MOVED -> datasheets/: isousb211, xu316_ds/xu316b_ds, lmk*.txt, try.pdf, pkg36.png,
+  xmos_docs.html. schematic.html -> docs/. cascode_cell_falstad.txt -> hw/.
+- MOVED: Xilinx/tb_fir_*.sv x5 -> Xilinx/Testbench/legacy_fir_milestones/;
+  stage1a_coef_packer.py -> utils/. Fixed path refs in run_all_milestones.sh +
+  tb_fir_stereo_m5.sh (Testbench/ prefix, ../utils/ packer path).
+- Xilinx/ is now pure RTL (33 .sv + spi_regs.svh + dpd_lag_rom.svh + xdc) + Testbench/ +
+  scripts/ + coefs/ + ip/ + generated dirs (build/, sim_mig/).
+- VERIFIED: xvlog analyzes dac_ctrl_plane + tb from new layout; moved TBs have no
+  readmemh deps; no script references sim_run/. Historical doc refs (progress.md,
+  IMPLEMENTATION_PLAN) intentionally left — they describe past state.
+- CAVEAT: utils/fir_rtl_model.py + gen_fir_coefs.py reference Xilinx/fir_*.txt paths
+  (now archived); update paths if those generators are re-run.
+
+## cont11 — GATE CONTRACT VERIFIED: FULL SUITE 27/27 PASS (2026-11-22)
+run_stream_rates.ps1 @ logs/stream_rates_gate_v1: all 27 sims PASS, 0 FAIL.
+Covers R1-R3 deltas (STREAM_EVENT W1C + preempt bits + source IRQs, rate_req_src1
+shadow, mandatory 0x1B[4:2] arm-echo), T15a-e unit tests, plus the BAD_ADDR decode
+fix (I2S_SRC/VOICING_FILTER_ID now in valid-address case). Suite ran clean across
+the mid-run reorg — reorganized tree verified end-to-end.

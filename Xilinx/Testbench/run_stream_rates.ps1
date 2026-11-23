@@ -38,7 +38,7 @@ try {
     $sources = Get-ChildItem "$rtlDir\*.sv" |
         Where-Object Name -ne "dac_ddr4_if_mig.sv" |
         ForEach-Object { '"' + $_.FullName + '"' }
-    $tests = @("tb_stream_rate_controller", "tb_i2s_master_rates", "tb_stream_pipeline",
+    $tests = @("tb_stream_rate_controller", "tb_i2s_master_rates", "tb_i2s_dual_src", "tb_stream_pipeline",
                "tb_fir_window", "tb_coef_bank_loader", "tb_dac_ctrl_plane", "tb_spi_ctrl_plane",
                "tb_bench_controller", "tb_bench_stimulus", "tb_cell_measurement", "tb_cal_coef_store",
                "tb_fir_polyphase_stereo", "tb_dac_dsp_core", "tb_vu13p_top", "tb_dpd_engine", "tb_dpd_deadline_monitor",
@@ -52,6 +52,7 @@ try {
     $jobs = @(
         @{Top="tb_stream_rate_controller"; Name="rate_control"; Generic=@()},
         @{Top="tb_i2s_master_rates"; Name="i2s_rates"; Generic=@()},
+        @{Top="tb_i2s_dual_src"; Name="i2s_dual_src"; Generic=@()},
         @{Top="tb_fir_window"; Name="fir_x16"; Generic=@("-generic_top",'"RATE_SHIFT=0"')},
         @{Top="tb_fir_window"; Name="fir_x8"; Generic=@("-generic_top",'"RATE_SHIFT=1"')},
         @{Top="tb_fir_window"; Name="fir_x4"; Generic=@("-generic_top",'"RATE_SHIFT=2"')},

@@ -22,8 +22,11 @@
 //  STREAM_VALID (0x1B); user mute is VOLUME (0x01).
 //  Ruled 2026-11-15: RATE/STREAM_RATE are XMOS-ONLY (the XMOS is the sole
 //  audio source to the FPGA — USB or AP-network relay — so the rate always
-//  originates there; AP writes are denied). DAC_MODE/video_mode removed —
-//  video-sync streaming is not supported.
+//  originates there; AP writes are denied). SUPERSEDED 2026-11-20: AP is a
+//  second direct I2S source — XMOS still owns RATE/STREAM_RATE/STREAM_VALID
+//  for ITS stream; the AP declares its rate/valid via I2S_SRC (0x1C, AP-only).
+//  The rate machine follows the SELECTED source's declared rate.
+//  DAC_MODE/video_mode removed — video-sync streaming is not supported.
 //  DRAFT partition pending the SPI access-review TODO.
 //
 //  Keep this file in sync with progress.md "SPI Register Map" and
@@ -69,8 +72,26 @@
 `define SPI_W_CELL_TEST_R      7'h19
 `define SPI_W_STREAM_RATE      7'h1A  // [2:0]={rate_shift[1:0],family48}; 24-bit PCM/32-bit slots
 `define SPI_W_STREAM_VALID     7'h1B  // [0]=XMOS stream-live flag; zero on underrun/stop (XMOS-only 11-15)
-// 7'h1C RESERVED (was I2S_RX_TRIM — retired 2026-11-15: trim fixed at 8,
-//          src_sel dead — XMOS is the sole audio source)
+`define SPI_W_I2S_SRC          7'h1C  // DUAL-SOURCE restore 2026-11-20 (AP-only): the AP owns input
+                                      // select and its own stream declaration; XMOS writes denied.
+                                      //   [0]    src_sel: 0 = XMOS (i2s_data), 1 = AP (i2s_data2)
+                                      //   [1]    src2_valid: AP stream-live flag (same semantics as
+                                      //          STREAM_VALID[0] but for the AP McASP0 source)
+                                      //   [4:2]  rate_req_src2: AP declared rate, same {shift,fam48}
+                                      //          encoding as STREAM_RATE[2:0].
+                                      //   [12:8] rx_trim_src1: XMOS-path capture trim (reset 8)
+                                      //   [20:16] rx_trim_src2: AP-path capture trim (reset 8);
+                                      //          differs: U503 fwd ch + McASP0 vs U502 rev + XU316
+                                      // SELECT vs RATE are separate decisions: a bare src_sel
+                                      // change on an UNARMED source never touches the clock.
+                                      // Apply fires on exactly two events: (a) the selected
+                                      // source live with declared!=applied — select-to-armed,
+                                      // or its own arm (this reg's [1] while sel=1, XMOS 0x1B
+                                      // while sel=0); (b) a FRESH declare while selected — a
+                                      // CHANGED [4:2] field while sel=1, symmetric to an XMOS
+                                      // RATE write. Same-rate writes never relock (idempotent);
+                                      // an apply consumes the arm — re-arm post clocks_ready.
+                                      // Deselected source conforms to the wire rate or goes idle.
 // ---- Voicing shaper (Layer 2, Step-2 commit contract 2026-11-17) -----------
 // Shadow + atomic commit: host writes K2, K3, then VOICING_CTRL with [8]=1.
 // All fields latch in dsp_clk at ONE fir_frame_done — no k2/k3 tearing.
@@ -89,6 +110,10 @@
                                       //     [8]=commit (1 = apply at fir_frame_done)
 `define SPI_W_VOICING_FILTER_ID 7'h20  // [15:0] raw directory ID; 16'hFFFF =
                                       //   don't-touch-bank sentinel (fields only)
+`define SPI_W_STREAM_EVENT     7'h21  // W1C [2:0]: [0]=preempt_xmos [1]=preempt_ap
+                                      //   [2]=echo_mismatch.  XMOS masked to {0,2}
+                                      //   (its own domain); AP clears all.
+                                      //   (stream-gate contract 2026-11-21)
 
 // ---- Read registers ----------------------------------------------------------
 `define SPI_R_MAGIC            7'h10  // 0xDAC02026
@@ -116,6 +141,9 @@
 //        commit_pending[5], swap_busy[4], load_err_seen[3],
 //        applied_en[2], fid_is_sentinel[1], sh_en[0]}
 `define SPI_R_VOICING_STATUS   7'h21
+// 0x22: Stream event flags {rsvd[23:6], rate_req_src1[5:3] (RO shadow,
+//        informational only), echo_mismatch[2], preempt_ap[1], preempt_xmos[0]}
+`define SPI_R_STREAM_EVENT     7'h22
 
 // ---- Constants ----------------------------------------------------------------
 `define SPI_MAGIC_ID           32'hDAC02026

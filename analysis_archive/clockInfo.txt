@@ -1,0 +1,99 @@
+-------------------------------------
+| Tool Version : Vivado v.2026.1
+| Date         : Sat Nov 14 23:22:10 2026
+| Host         : csc3
+| Design       : checkpoint_post_synth
+| Device       : xcku15p-ffve1517-2-I-
+-------------------------------------
+
+For more information on clockInfo.txt clock routing debug file see https://support.xilinx.com/s/article/000035660?language=en_US
+
+***********************
+Running Pre-CRP Checker
+***********************
+Number of global clocks: 11
+	Number of BUFGCE: 9
+	Number of BUFGCE_HDIO: 2
+	Number of BUFG_CTRL: 0
+	Number of BUFGCE_DIV: 0
+	Number of BUFG_GT: 0
+	Number of BUFG_PS: 0
+	Number of BUFG_FABRIC: 0
+	Running suboptimal placement checker for 7 clocks (and their loads) which do not have the CLOCK_LOW_FANOUT property but have a fanout less than 2000...
+Pre-CRP Checker took 0 secs
+
+**************************************
+Clock Nets/Source Overview (CRP Input)
+**************************************
+Clock 1: u_clk_gen/dsp_clk
+	Clock source type: BUFGCE
+	Clock source region: X2Y4
+	initial rect X0Y0:X3Y10
+
+Clock 2: dsp_rst_tree_n_BUFG
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	Clock regions with locked loads: X3Y6 
+	initial rect X0Y0:X3Y10
+
+Clock 3: u_ddr4_if/u_ddr4_0/inst/u_ddr4_infrastructure/u_bufg_divClk_0
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	Clock regions with locked loads: X2Y2 X2Y3 X2Y4 
+	initial rect X2Y1:X2Y4
+
+Clock 4: clk_200m_BUFG
+	Clock source type: BUFGCE_HDIO
+	Clock source region: X3Y10
+	Clock regions with locked loads: X2Y1 
+	initial rect X1Y1:X3Y10
+
+Clock 5: u_ddr4_if/u_ddr4_0/inst/u_ddr4_infrastructure/c0_riu_clk
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	Clock regions with locked loads: X2Y2 X2Y3 X2Y4 
+	initial rect X2Y2:X2Y4
+
+Clock 6: u_ddr4_if/u_ddr4_0/inst/u_ddr4_infrastructure/dbg_clk
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	initial rect X2Y3:X2Y5
+
+Clock 7: dbg_hub/inst/BSCANID.u_xsdbm_id/itck_i
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	initial rect X2Y3:X3Y5
+
+Clock 8: u_clk_gen/cell_clk
+	Clock source type: BUFGCE
+	Clock source region: X2Y4
+	Clock regions with locked loads: X2Y5 X2Y6 X2Y7 X3Y6 
+	initial rect X1Y2:X3Y7
+
+Clock 9: u_ddr4_if/u_ddr4_0/inst/u_ddr4_infrastructure/sys_clk_in_bufg
+	Clock source type: BUFGCE
+	Clock source region: X2Y3
+	initial rect X2Y2:X2Y3
+
+Clock 10: mclk
+	Clock source type: BUFGCE_HDIO
+	Clock source region: X3Y10
+	Clock regions with locked loads: X2Y4 
+	initial rect X2Y4:X3Y10
+
+Clock 11: u_clk_gen/mmcm_fb_in
+	Clock source type: BUFGCE
+	Clock source region: X2Y4
+	Clock regions with locked loads: X2Y4 
+	initial rect X2Y4:X2Y4
+
+
+
+*****************************
+Clocks With User Constraints:
+*****************************
+No clocks with user constraints found
+
+
+
+

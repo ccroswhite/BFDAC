@@ -102,9 +102,13 @@ module dac_ctrl_plane (
     output logic          bench_available,
     output logic [2:0]    stream_rate_request,
     output logic          stream_rate_toggle,
-    output logic          stream_source_valid,
-    output logic [4:0]    i2s_rx_trim,   // fixed at reset value — SPI trim reg
-                                          // retired 11-15 (calculable/negligible)
+    output logic          stream_source_valid,   // XMOS stream-live flag (0x1B[0])
+    output logic          stream_source_valid2,  // AP stream-live flag (0x1C[1])
+    output logic          i2s_src_sel,           // 0 = XMOS, 1 = AP (0x1C[0], AP-only)
+    output logic          stream_valid_sel,      // muxed: sel ? svalid2 : svalid1
+    output logic [4:0]    i2s_rx_trim,   // selected-source capture trim (0x1C fields;
+                                          // per-path because U502-rev+XU316 and
+                                          // U503-fwd+McASP0 delays differ)
     input  tri0           stream_busy,
     input  tri1           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
@@ -277,8 +281,10 @@ module dac_ctrl_plane (
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
             `SPI_W_FILTER_SELECT_ID,
             `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R,
-            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID,
-            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_CTRL:
+            `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID, `SPI_W_STREAM_EVENT,
+            `SPI_W_I2S_SRC,
+            `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_CTRL,
+            `SPI_W_VOICING_FILTER_ID:
                                                             wr_addr_invalid = 1'b0;
             default:                                    wr_addr_invalid = 1'b1;
         endcase
@@ -298,13 +304,15 @@ module dac_ctrl_plane (
                 `SPI_W_NOP,
                 `SPI_W_RATE,
                 `SPI_W_STICKY_W1C,
+                `SPI_W_STREAM_EVENT,
                 `SPI_W_STREAM_RATE,   `SPI_W_STREAM_VALID:
                     wr_denied = 1'b0;
                 default: wr_denied = 1'b1;
             endcase
         end else begin // SRC_AP: RATE/STREAM_RATE/STREAM_VALID are XMOS-only
-            // (ruled 2026-11-15 — the XMOS is the sole audio source to the FPGA,
-            // so the whole stream lifecycle originates there; AP writes denied).
+            // (the XMOS owns ITS stream lifecycle; the AP declares its own
+            //  stream + owns input select via SPI_W_I2S_SRC, denied to XMOS
+            //  by the default arm above — dual-source rule 2026-11-20).
             case (wr_addr)
                 `SPI_W_RATE, `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID:
                     wr_denied = 1'b1;
@@ -407,7 +415,30 @@ module dac_ctrl_plane (
     end
     wire cell_test_enabled = cell_test_cfg[0][7] || cell_test_cfg[1][7];
     wire cell_test_channel = (wr_addr == `SPI_W_CELL_TEST_R);
-    assign i2s_rx_trim = 5'd8;   // fixed round-trip trim (0x1C retired 11-15)
+    // Dual-source I2S (2026-11-20): declared rate + per-path capture trim per
+    // source; the applied rate follows the SELECTED source's declared rate.
+    logic [2:0] rate_req_src1, rate_req_src2;
+    logic [4:0] i2s_rx_trim_src1, i2s_rx_trim_src2;
+    // Stream-gate event doorbells (2026-11-21 contract): [0]preempt_xmos —
+    // XMOS gate closed or its session consumed; [1]preempt_ap — same for the
+    // AP source; [2]echo_mismatch — XMOS 0x1B arm whose expected-rate echo
+    // disagreed with the stored declaration (arm refused). W1C via 0x21,
+    // XMOS masked to {0,2}; drives fpga_irq_n / spi_ap_irq_n doorbells.
+    logic [2:0] stream_event;
+    assign i2s_rx_trim = i2s_src_sel ? i2s_rx_trim_src2 : i2s_rx_trim_src1;
+    assign stream_valid_sel = i2s_src_sel ? stream_source_valid2 : stream_source_valid;
+    // rate a pending 0x1C write would leave as the selected declared rate,
+    // and the newly-SELECTED source's live flag — a select write applies the
+    // rate only when the source it selects is ARMED (ruled 2026-11-20:
+    // input select and rate select are separate decisions; a bare select
+    // never churns the clock onto a stale declaration)
+    wire [2:0] sel_rate_new = ctrl_bus_data[0] ? ctrl_bus_data[4:2] : rate_req_src1;
+    wire       sel_valid_new = ctrl_bus_data[0] ? ctrl_bus_data[1] : stream_source_valid;
+    // fresh-declare leg: a CHANGED rate_req_src2 field while the AP is being
+    // selected is a declaration — symmetric to an XMOS RATE write (fire only
+    // needs the live leg or this leg; rewriting the same r2 is inert)
+    wire       ap_decl_new = ctrl_bus_data[0] && (ctrl_bus_data[4:2] != rate_req_src2);
+    wire       i2s_src_apply = (sel_valid_new || ap_decl_new) && (sel_rate_new != stream_applied_rate);
     assign bench_available = !cell_test_enabled && !(|cell_test_busy) && !stream_busy;
 
     always_ff @(posedge clk) begin
@@ -463,13 +494,29 @@ module dac_ctrl_plane (
                 end
             end
             `SPI_W_STREAM_VALID: begin
-                if (ctrl_bus_data[23:1] != 0) begin
+                if (ctrl_bus_data[23:5] != 0) begin   // [4:2] = arm-rate echo
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_FORMAT;
                 end else if (ctrl_bus_data[0] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault ||
                                                 cell_test_enabled || |cell_test_busy)) begin
                     wr_rejected = 1;
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
+                end
+            end
+            `SPI_W_I2S_SRC: begin
+                // [23:21] unused.  src2_valid=1 gated like STREAM_VALID=1;
+                // a write that would trigger a re-rate is gated like RATE.
+                if (ctrl_bus_data[23:21] != 0) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_FORMAT;
+                end else if (ctrl_bus_data[1] && (stream_busy || !stream_clocks_ready || bench_busy || stream_fault ||
+                                                cell_test_enabled || |cell_test_busy)) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
+                end else if (i2s_src_apply &&
+                             (bench_busy || stream_busy || cell_test_enabled || |cell_test_busy || (mgr_busy_r && boot_ok))) begin
+                    wr_rejected = 1;
+                    wr_rej_reason = `SPI_ERR_TEST_BUSY;
                 end
             end
             `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_FILTER_ID: begin
@@ -667,8 +714,12 @@ module dac_ctrl_plane (
         end
     end
 
-    assign fpga_irq_n   = (sticky_err != 8'b0) ? 1'b0 : 1'b1;
-    assign spi_ap_irq_n = fpga_irq_n;   // AP sees the same sticky-error IRQ
+    // Doorbell IRQs (2026-11-21 contract): sticky errors are shared; each port
+    // additionally sees its own stream-gate events — XMOS: preempt_xmos[0] +
+    // echo_mismatch[2]; AP: preempt_ap[1]. The flags live in STREAM_EVENT
+    // (read 0x22 / W1C 0x21) because sticky_err is fully allocated.
+    assign fpga_irq_n   = (sticky_err != 8'b0 || stream_event[0] || stream_event[2]) ? 1'b0 : 1'b1;
+    assign spi_ap_irq_n = (sticky_err != 8'b0 || stream_event[1]) ? 1'b0 : 1'b1;
 
     // Level / output-select relays: pulse the automute controller on change.
     // The actual relays are driven by the sequencer in the dsp_clk domain.
@@ -727,6 +778,13 @@ module dac_ctrl_plane (
             stream_rate_request <= 0;
             stream_rate_toggle <= 0;
             stream_source_valid <= 0;
+            stream_source_valid2 <= 0;
+            i2s_src_sel     <= 1'b0;
+            rate_req_src1   <= 3'd0;
+            rate_req_src2   <= 3'd0;
+            stream_event    <= 3'd0;
+            i2s_rx_trim_src1 <= 5'd8;
+            i2s_rx_trim_src2 <= 5'd8;
             coef_bank_id    <= 4'h0;
             coef_load_start <= 1'b0;
             read_addr_reg   <= `SPI_W_NOP;
@@ -766,7 +824,13 @@ module dac_ctrl_plane (
             flash_cmd_trigger <= 1'b0;
             flash_buf_we      <= 1'b0;
             if (bench_busy || stream_busy || !stream_clocks_ready || stream_fault) begin
+                // A session that existed is being consumed -> preempt doorbell
+                // for that source (stream-gate contract: it must re-check its
+                // gate, then re-declare/re-arm to come back).
+                if (stream_source_valid)  stream_event[0] <= 1'b1;
+                if (stream_source_valid2) stream_event[1] <= 1'b1;
                 stream_source_valid <= 0;
+                stream_source_valid2 <= 0;
             end
             if (stream_busy || !stream_clocks_ready) dpd_enable <= 0;
             if (flash_buf_we) flash_buf_waddr <= flash_buf_waddr + 8'd1;
@@ -782,12 +846,85 @@ module dac_ctrl_plane (
                         `SPI_W_LEVEL:  cmd_level     <= ctrl_bus_data[2:0]; // digital level cap, applied by the sequencer while muted
                         `SPI_W_RATE, `SPI_W_STREAM_RATE: if (!wr_rejected) begin
                             base_rate_sel <= ctrl_bus_data[0];
-                            stream_rate_request <= ctrl_bus_data[2:0];
-                            stream_rate_toggle <= ~stream_rate_toggle;
-                            stream_source_valid <= 0;
-                            dpd_enable <= 0;
+                            rate_req_src1 <= ctrl_bus_data[2:0];
+                            // 2026-11-20 dual-source: the declared rate is stored even while the
+                            // XMOS is deselected, but it only APPLIES while XMOS is selected —
+                            // an XMOS rate change must not tear the AP stream's clock regime.
+                            // Delta-gated (idempotent): a same-rate rewrite still invalidates
+                            // the stream (RATE write = restart) but must not burn a
+                            // mute+relock cycle that changes nothing.
+                            if (!i2s_src_sel) begin
+                                stream_source_valid <= 0;
+                                stream_source_valid2 <= 0;
+                                dpd_enable <= 0;
+                                if (ctrl_bus_data[2:0] != stream_applied_rate) begin
+                                    stream_rate_request <= ctrl_bus_data[2:0];
+                                    stream_rate_toggle <= ~stream_rate_toggle;
+                                    // Any apply destroys the clock regime for
+                                    // BOTH sources -> both must re-check gate.
+                                    stream_event[1:0] <= 2'b11;
+                                end
+                            end
                         end
-                        `SPI_W_STREAM_VALID: if (!wr_rejected) stream_source_valid <= ctrl_bus_data[0];
+                        // 0x1B arm while XMOS is selected applies its declared rate if it
+                        // diverged while deselected — the arm, not the input select, is the
+                        // event that owns the clock decision (2026-11-20 ruling).
+                        `SPI_W_STREAM_VALID: if (!wr_rejected) begin
+                            // Arm-echo (2026-11-21 ruling): an arm write must echo
+                            // the rate the source believes is stored in
+                            // rate_req_src1 at [4:2]. A mismatch means the
+                            // source's view of its own declaration is stale —
+                            // refuse the arm and flag it; no relock is burned.
+                            if (ctrl_bus_data[0] && ctrl_bus_data[4:2] != rate_req_src1) begin
+                                stream_source_valid <= 1'b0;
+                                stream_event[2] <= 1'b1;
+                            end else begin
+                                stream_source_valid <= ctrl_bus_data[0];
+                                if (ctrl_bus_data[0] && !i2s_src_sel && rate_req_src1 != stream_applied_rate) begin
+                                    stream_rate_request <= rate_req_src1;
+                                    stream_rate_toggle <= ~stream_rate_toggle;
+                                    base_rate_sel <= rate_req_src1[0];
+                                    stream_source_valid <= 0;   // arm consumed — re-arm post-relock
+                                    stream_source_valid2 <= 0;
+                                    dpd_enable <= 0;
+                                    stream_event[1:0] <= 2'b11;
+                                end
+                            end
+                        end
+                        // 0x21 STREAM_EVENT W1C: XMOS clears only its own
+                        // domain {preempt_xmos[0], echo_mismatch[2]}; AP clears all.
+                        `SPI_W_STREAM_EVENT: begin
+                            if (ctrl_bus_src == SRC_XMOS)
+                                stream_event <= stream_event & ~(ctrl_bus_data[2:0] & 3'b101);
+                            else
+                                stream_event <= stream_event & ~ctrl_bus_data[2:0];
+                        end
+                        // 0x1C I2S_SRC (AP-only): input select + AP stream declaration.  The
+                        // rate machine follows the SELECTED source's declared rate: after a
+                        // write, if the newly-selected declared rate differs from applied_rate
+                        // the FSM is toggled (shared single clock pair — Option A ruling:
+                        // deselected sources conform to the live interface rate or go idle).
+                        `SPI_W_I2S_SRC: if (!wr_rejected) begin
+                            // Gate transition: the source being deselected gets
+                            // a preempt doorbell (its gate is closing — teardown
+                            // + refuse new streams until reselected + renegotiated).
+                            if (ctrl_bus_data[0] != i2s_src_sel)
+                                stream_event[ctrl_bus_data[0] ? 0 : 1] <= 1'b1;
+                            i2s_src_sel <= ctrl_bus_data[0];
+                            stream_source_valid2 <= ctrl_bus_data[1];
+                            rate_req_src2 <= ctrl_bus_data[4:2];
+                            i2s_rx_trim_src1 <= ctrl_bus_data[12:8];
+                            i2s_rx_trim_src2 <= ctrl_bus_data[20:16];
+                            if (i2s_src_apply) begin
+                                stream_rate_request <= sel_rate_new;
+                                stream_rate_toggle <= ~stream_rate_toggle;
+                                base_rate_sel <= sel_rate_new[0];
+                                stream_source_valid <= 0;
+                                stream_source_valid2 <= 0;
+                                dpd_enable <= 0;
+                                stream_event[1:0] <= 2'b11;
+                            end
+                        end
                         `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R: if (!wr_rejected) begin
                             cell_test_cfg[cell_test_channel] <= ctrl_bus_data[7:0];
                             cell_test_req[cell_test_channel] <= ~cell_test_req[cell_test_channel];
@@ -960,7 +1097,11 @@ module dac_ctrl_plane (
             `SPI_R_CMD_ERR_INFO: reg_read = {20'd0, err_info_filter_axi,
                                                    err_info_addr, err_info_reason};
             `SPI_R_BENCH_STATUS: reg_read = bench_status;
-            `SPI_R_STREAM_STATUS: reg_read = {15'd0, stream_audio_ready, i2s_rx_trim, stream_rate_request,
+            // 0x20 STREAM_STATUS: [0]busy [1]clocks_ready [2]svalid_xmos [3]bank_valid
+            //   [4]fault [7:5]applied_rate [10:8]req_rate [15:11]rx_trim(sel)
+            //   [16]audio_ready [17]src_sel [18]svalid_ap [21:19]rate_req_src2
+            `SPI_R_STREAM_STATUS: reg_read = {11'd0, rate_req_src2, stream_source_valid2, i2s_src_sel,
+                stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
                 stream_clocks_ready, stream_busy};
             // 0x21: Voicing status — APPLIED set is the dsp_clk truth; the
@@ -969,6 +1110,11 @@ module dac_ctrl_plane (
                 vo_afid_r, 10'd0, voicing_commit_pending,
                 vo_busy_sync[1], vo_err_flag, vo_aen_r,
                 (voicing_sh_fid == 16'hFFFF), voicing_sh_en};
+            // 0x22 STREAM_EVENT: [0]preempt_xmos [1]preempt_ap [2]echo_mismatch
+            //   (W1C via write 0x21), [5:3] rate_req_src1 — informational
+            //   shadow only; it never authorizes a stream (renegotiate->declare
+            //   ->arm is always required after a select).
+            `SPI_R_STREAM_EVENT: reg_read = {18'd0, rate_req_src1, stream_event};
             `SPI_R_CELL_TEST_L: reg_read = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
             `SPI_R_CELL_TEST_R: reg_read = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
             default: reg_read = `SPI_READ_UNMAPPED;

@@ -20,18 +20,17 @@
 //    6. Bank switch         : write coefs to Bank B, switch, verify new gain
 //    7. Re-trigger guard    : second new_sample_valid during sweep → no double-trigger
 //
-//  Pipeline math (NUM_MACS=4, TAPS_PER_PHASE=4):
-//    TREE_LEVELS   = $clog2(4) = 2
-//    SHADOW_DELAY  = 8 + 2 = 10
-//    Preload time  = NUM_MACS+1 = 5 cycles  (after new_sample_valid)
-//    First output  = preload(5) + sweep_start(1) + phase_sync_d1(1)
-//                  + SHADOW_DELAY(8) + valid_reg(1) = ~16 cycles after new_sample_valid
+//  TWO-STAGE cascade math (TWO_STAGE_EN=1, production config — fixed 2026-11-21):
+//    Stage 1A: NUM_PHASES=2, S1A_TPP = 8*TAPS_PER_PHASE = 128 stored taps/phase,
+//              symmetric fold → effective taps/phase = 2*S1A_TPP, DC history
+//              window = NUM_MACS * 2 * S1A_TPP = 1024 input samples.
+//    Stage 1B: 63t→63t→31t halfband cascade, DC gain exactly 1.0 per stage
+//              (folded coef sums = 32768 = 2^15 → mid = 2D*Σc/2^16 = D).
+//    DC known-answer: y = 2 * C * D * NUM_MACS * (2*S1A_TPP)  — measured
+//              converged+flat at 0x080000000000 for C=0x1000, D=0x100000.
 //
-//  DC gain (polyphase_mac_engine doubles the audio via pre-adder):
-//    y[p] = 2 * SUM_{m=0}^{NUM_MACS-1} h[p + m*NUM_PHASES] * x[n-m]
-//    Each MAC accumulates TAPS_PER_PHASE products per phase (coef sweep).
-//    For uniform coef C, DC input D (all history = D):
-//    y = 2 * C * D * NUM_MACS * TAPS_PER_PHASE  (all phases identical)
+//  Legacy single-stage math (TWO_STAGE_EN=0): NUM_PHASES=16, TPP=16 taps,
+//    y = 2*C*D*NUM_MACS*TAPS_PER_PHASE, history = NUM_MACS*TAPS_PER_PHASE.
 // =============================================================================
 module tb_fir_polyphase_stereo;
 
@@ -40,8 +39,12 @@ module tb_fir_polyphase_stereo;
     // -------------------------------------------------------------------------
     localparam int NUM_MACS       = 4;
     localparam int TAPS_PER_PHASE = 16;
-    localparam int NUM_PHASES     = 16;
-    localparam int COEF_DEPTH     = NUM_PHASES * TAPS_PER_PHASE;  // 256
+    localparam int NUM_PHASES     = 16;   // final interpolated outputs/sample (x16 total)
+    localparam int S1A_TPP        = 8 * TAPS_PER_PHASE;          // 128 stored taps/phase
+    localparam int S1A_EFF_TPP    = 2 * S1A_TPP;                 // 256 effective (fold)
+    localparam int HIST_SAMPLES   = NUM_MACS * S1A_EFF_TPP;      // 1024-sample DC window
+    localparam int PRIME_SAMPLES  = 2 * HIST_SAMPLES + 16;       // 2064 — probe-proven convergence
+    localparam int COEF_DEPTH     = NUM_PHASES * TAPS_PER_PHASE; // 256
     localparam int DATA_WIDTH     = 24;
     localparam int COEF_WIDTH     = 18;
     localparam int ACC_WIDTH      = 48;
@@ -248,6 +251,13 @@ module tb_fir_polyphase_stereo;
         $display("--- TEST 2: Zero coefs + zero input → zero output ---");
         do_reset;
         // coefs are already 0 from reset (initial block zeros uram_mem)
+        // Two-stage note: S1B's pacing engine needs its input FIFO/halfband
+        // center delays populated before the first frame emits — prime ~48
+        // zero samples (all-zero coefs → all outputs zero regardless).
+        repeat(48) begin
+            send_sample(24'h000000, 24'h000000);
+            repeat(FULL_BURST_CYCLES) @(posedge clk);
+        end
         send_sample(24'h000000, 24'h000000);
 
         collect_outputs(NUM_PHASES, n_got);
@@ -267,22 +277,20 @@ module tb_fir_polyphase_stereo;
         end
 
         // =====================================================================
-        // TEST 3: DC known-answer
-        //   Load Bank A with uniform coef C = 18'sh01000 (4096 in Q1.17 ≈ 0.03125)
-        //   Drive DC input D = 24'sh100000 (1048576)
-        //   Pre-adder doubles: effective audio = 2*D
-        //   y = 2 * C * D * NUM_MACS  (all NUM_PHASES phases identical)
-        //   Expected = 2 * 4096 * 1048576 * 4 * 16 = 549755813888 = 0x8000000000
+        // TEST 3: DC known-answer (two-stage cascade)
+        //   Bank A uniform coef C = 18'sh01000, DC input D = 24'sh100000.
+        //   S1A: y = 2*C*D*NUM_MACS*S1A_EFF_TPP  (fold doubles effective taps)
+        //   S1B: DC gain = 1.0 per halfband stage → output = S1A value.
+        //   Expected = 2 * 4096 * 1048576 * 4 * 256 = 0x080000000000
         // =====================================================================
         $display("--- TEST 3: DC known-answer ---");
         do_reset;
 
         write_all_coefs(18'sh01000, 1'b0);  // Bank A
 
-        // Prime the FULL history (K = NUM_MACS*TAPS_PER_PHASE samples since the
-        // 2026-08-01 audio-window redesign) with identical DC samples.
-        // Inter-sample gap must exceed full burst: shift+sweep+shadow+margin
-        repeat(NUM_MACS*TAPS_PER_PHASE + 2) begin
+        // Prime past the folded window edge: measured 1040 samples leaves a
+        // ±0.002% residual ripple; 2056 converges EXACTLY flat (probe-verified).
+        repeat(PRIME_SAMPLES) begin
             send_sample(24'sh100000, 24'sh100000);
             repeat(FULL_BURST_CYCLES) @(posedge clk);
         end
@@ -291,10 +299,10 @@ module tb_fir_polyphase_stereo;
         send_sample(24'sh100000, 24'sh100000);
         collect_outputs(NUM_PHASES, n_got);
 
-        // y = 2 * C * D * NUM_MACS * TAPS_PER_PHASE
+        // y = 2 * C * D * NUM_MACS * S1A_EFF_TPP
         exp_coef  = ACC_WIDTH'(signed'(18'sh01000));
         exp_audio = ACC_WIDTH'(signed'(24'sh100000));
-        exp_val   = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(TAPS_PER_PHASE);
+        exp_val   = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(S1A_EFF_TPP);
 
         test3_fail = 0;
         if (n_got !== NUM_PHASES) begin
@@ -327,8 +335,8 @@ module tb_fir_polyphase_stereo;
         do_reset;
         write_all_coefs(18'sh00800, 1'b0);  // Bank A, coef = 0x800
 
-        // Warm up history for both channels
-        repeat(NUM_MACS*TAPS_PER_PHASE + 2) begin
+        // Warm up history for both channels (past folded window edge)
+        repeat(PRIME_SAMPLES) begin
             send_sample(24'sh200000, 24'sh100000);   // L differs from R
             repeat(FULL_BURST_CYCLES) @(posedge clk);
         end
@@ -402,8 +410,8 @@ module tb_fir_polyphase_stereo;
         // Drain any in-flight valids
         repeat(FULL_BURST_CYCLES) @(posedge clk);
 
-        // Warm up with Bank A active (full K-deep history)
-        repeat(NUM_MACS*TAPS_PER_PHASE + 2) begin
+        // Warm up with Bank A active (past folded window edge)
+        repeat(PRIME_SAMPLES) begin
             send_sample(24'sh300000, 24'sh300000);
             repeat(FULL_BURST_CYCLES) @(posedge clk);
         end
@@ -411,7 +419,7 @@ module tb_fir_polyphase_stereo;
         collect_outputs(NUM_PHASES, n_got);
         exp_coef  = ACC_WIDTH'(signed'(18'sh00200));
         exp_audio = ACC_WIDTH'(signed'(24'sh300000));
-        exp_val   = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(TAPS_PER_PHASE);
+        exp_val   = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(S1A_EFF_TPP);
 
         if (n_got < 1 || captured_l[0] !== exp_val) begin
             $display("  FAIL (Bank A pre-check): L=0x%0h exp=0x%0h",
@@ -426,15 +434,15 @@ module tb_fir_polyphase_stereo;
         @(negedge clk); bank_select = 1'b1;  // switch to Bank B
         @(posedge clk);
 
-        // Warm up with Bank B (full K-deep history)
-        repeat(NUM_MACS*TAPS_PER_PHASE + 2) begin
+        // Warm up with Bank B (past folded window edge)
+        repeat(PRIME_SAMPLES) begin
             send_sample(24'sh300000, 24'sh300000);
             repeat(FULL_BURST_CYCLES) @(posedge clk);
         end
         send_sample(24'sh300000, 24'sh300000);
         collect_outputs(NUM_PHASES, n_got);
         exp_coef  = ACC_WIDTH'(signed'(18'sh00400));
-        exp_val_r = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(TAPS_PER_PHASE);
+        exp_val_r = 2 * exp_coef * exp_audio * ACC_WIDTH'(NUM_MACS) * ACC_WIDTH'(S1A_EFF_TPP);
 
         if (n_got < 1) begin
             $display("  FAIL (Bank B): no outputs");
@@ -450,29 +458,29 @@ module tb_fir_polyphase_stereo;
         end
 
         // =====================================================================
-        // TEST 7: Overrun guard - a sample during an active sweep is rejected,
-        //         but the current frame must finish intact before recovery.
+        // TEST 7: Overrun guard - a sample during the ACTIVE S1A sweep window
+        //         is rejected and flagged; the in-flight frame must still
+        //         complete all 16 paced outputs intact.
+        //   Two-stage note: the reject window is S1A's ST_SHIFT/ST_SWEEP
+        //   (~280 cy after accept). Waiting for FINAL outputs first (the old
+        //   single-stage test) lands the second sample in ST_IDLE — it is
+        //   legitimately ACCEPTED and overrun does not fire. Strike at +16 cy.
         // =====================================================================
         $display("--- TEST 7: Sweep-overrun guard ---");
         do_reset;
         write_all_coefs(18'sh00100, 1'b0);
         bank_select = 1'b0;
 
-        // Send first sample, then overrun it after two phases have arrived.
+        // Send first sample; strike the second inside the S1A sweep window.
         send_sample(24'sh100000, 24'sh100000);
-
-        n_got = 0;
-        wdog = 0;
-        frame_count = 0;
-        while (n_got < 2 && wdog < MAX_WAIT_CYCLES) begin
-            @(posedge clk); #0.1;
-            wdog = wdog + 1;
-            if (interpolated_l_valid) n_got = n_got + 1;
-        end
+        repeat(16) @(posedge clk);
         send_sample(24'sh100000, 24'sh100000);
 
         // Count through the original frame boundary. The rejected input must
-        // not reset phase accounting or truncate the active sweep.
+        // not reset phase accounting or truncate the active frame.
+        n_got = 0;
+        wdog = 0;
+        frame_count = 0;
         while (frame_count == 0 && wdog < MAX_WAIT_CYCLES) begin
             @(posedge clk); #0.1;
             wdog = wdog + 1;

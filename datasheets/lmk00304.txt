@@ -1,0 +1,2443 @@
+=== PAGE 0
+ 
+ 
+MUX
+SYNC
+CLKoutA0
+CLKoutA0*
+CLKoutA1
+CLKoutA1*
+CLKin0
+CLKin0*
+CLKin1
+CLKin1*
+OSCin
+OSCout
+REFout_EN
+CLKout_TYPE[1:0]
+CLKin_SEL[1:0]
+GND
+ 
+CLKoutB0
+CLKoutB0*
+CLKoutB1
+CLKoutB1*CLKout_TYPE[1:0]
+VCC VCCOA VCCOB VCCOC
+Output Bank B
+(LVPECL, LVDS, 
+HCSL, or Hi-Z)
+Output Bank A
+(LVPECL, LVDS, 
+HCSL, or Hi-Z)
+2
+2
+Universal Inputs
+(Differential/
+Single-Ended)
+Crystal
+VCCOA
+VCCOB
+VCCOC
+REFout (LVCMOS)
+100 1000 10000
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+OUTPUT SWING (V)
+FREQUENCY (MHz)
+Vcco=2.5 V, Rterm=91 
+Vcco=3.3 V, Rterm=160 
+Product
+Folder
+Order
+Now
+T echnical
+Documents
+Tools &
+Software
+Support &
+Community
+An IMPORTANT NOTICE at the end of this data sheet addresses availability, warranty, changes, use in safety-critical applications,
+intellectual property matters and other important disclaimers. PRODUCTION DATA.
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+LMK003043-GHz4-OutputUltra-LowAdditiveJitter
+DifferentialClockBuffer/LevelTranslator
+1
+1 Features
+1• 3:1 Input Multiplexer
+– Two Universal Inputs Operate up to 3.1 GHz
+and Accept LVPECL, LVDS, CML, SSTL,
+HSTL, HCSL, or Single-Ended Clocks
+– One Crystal Input Accepts a 10-MHz to 40-
+MHz Crystal or Single-Ended Clock
+• Two Banks With 2 Differential Outputs Each
+– LVPECL, LVDS, HCSL, or Hi-Z (Selectable)
+– LVPECL Additive Jitter with LMK03806 Clock
+Source at 156.25 MHz:
+– 20 fs RMS (10 kHz to 1 MHz)
+– 51 fs RMS (12 kHz to 20 MHz)
+• High PSRR: –65 / –76 dBc (LVPECL/LVDS) at
+156.25 MHz
+• LVCMOS Output with Synchronous Enable Input
+• Pin-Controlled Configuration
+• VCC Core Supply: 3.3 V ± 5%
+• 3 Independent VCCO Output Supplies: 3.3 V/2.5 V
+± 5%
+• Industrial Temperature Range: –40°C to +85°C
+• 32-lead WQFN (5 mm × 5 mm)
+2 Applications
+• Clock Distribution and Level Translation for ADCs,
+DACs, Multi-Gigabit Ethernet, XAUI, Fibre
+Channel, SATA/SAS, SONET/SDH, CPRI, High-
+Frequency Backplanes
+• Switches, Routers, Line Cards, Timing Cards
+• Servers, Computing, PCI Express (PCIe 3.0)
+• Remote Radio Units and Baseband Units
+3 Description
+The LMK00304 is a 3-GHz 4-output differential fanout
+buffer intended for high-frequency, low-jitter
+clock/data distribution and level translation. The input
+clock can be selected from two universal inputs or
+one crystal input. The selected input clock is
+distributed to two banks of 2 differential outputs and
+one LVCMOS output. The differential output banks
+can be mutually configured as LVPECL, LVDS, or
+HCSL drivers, or disabled. The LVCMOS output has
+a synchronous enable input for runt-pulse-free
+operation when enabled or disabled. The LMK00304
+operates from a 3.3 V core supply and 3 independent
+3.3 V/2.5 V output supplies.
+The LMK00304 provides high performance,
+versatility, and power efficiency, making it ideal for
+replacing fixed-output buffer devices while increasing
+timing margin in the system.
+Device Information(1)
+PART NUMBER PACKAGE BODY SIZE (NOM)
+LMK00304 WQFN (32) 5.00 mm × 5.00 mm
+(1) For all available packages, see the orderable addendum at
+the end of the data sheet.
+Functional Block Diagram
+LVPECL Output Swing (VOD) vs. Frequency
+=== PAGE 1
+2
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Table of Contents
+1 Features .................................................................. 1
+2 Applications ........................................................... 1
+3 Description ............................................................. 1
+4 Revision History..................................................... 2
+5 Pin Configuration and Functions ......................... 4
+6 Specifications......................................................... 6
+6.1 Absolute Maximum Ratings ...................................... 6
+6.2 ESD Ratings.............................................................. 6
+6.3 Recommended Operating Conditions ...................... 6
+6.4 Thermal Information .................................................. 6
+6.5 Electrical Characteristics........................................... 7
+6.6 Typical Characteristics ............................................ 14
+7 Parameter Measurement Information ................ 18
+7.1 Differential Voltage Measurement Terminology...... 18
+8 Detailed Description ............................................ 19
+8.1 Overview ................................................................. 19
+8.2 Functional Block Diagram ....................................... 19
+8.3 Feature Description................................................. 20
+9 Application and Implementation ........................ 22
+9.1 Driving the Clock Inputs .......................................... 22
+9.2 Crystal Interface ...................................................... 23
+9.3 Termination and Use of Clock Drivers .................... 24
+10 Power Supply Recommendations ..................... 29
+10.1 Power Supply Sequencing .................................... 29
+10.2 Current Consumption and Power Dissipation
+Calculations.............................................................. 29
+10.3 Power Supply Bypassing ...................................... 30
+10.4 Thermal Management ........................................... 31
+11 Device and Documentation Support ................. 33
+11.1 Documentation Support ........................................ 33
+11.2 Receiving Notification of Documentation Updates 33
+11.3 Community Resources.......................................... 33
+11.4 Trademarks ........................................................... 33
+11.5 Electrostatic Discharge Caution ............................ 33
+11.6 Glossary ................................................................ 33
+12 Mechanical, Packaging, and Orderable
+Information ........................................................... 33
+4 Revision History
+NOTE: Page numbers for previous revisions may differ from page numbers in the current version.
+Changes from Revision F (March 2016) to Revision G Page
+• Added new rows to the Thermal Information table................................................................................................................. 6
+• Added the Support for PCB Temperature up to 105°C section .......................................................................................... 32
+Changes from Revision E (May 2013) to Revision F Page
+• Added "Ultra-Low Additive Jitter" to document title ................................................................................................................ 1
+• Added, updated, or renamed the following sections: Specifications; Detailed Description; Application and
+Implementation; Power Supply Recommendations; Device and Documentation Support; Mechanical, Packaging,
+and Ordering Information ....................................................................................................................................................... 1
+• Changed Cin (typ) from 1 pF to 4 pF (based on updated test method) in Electrical Characteristics: Crystal Interface ....... 8
+• Added footnote for VI_SE parameter in the Electrical Characteristics table. .......................................................................... 8
+• Added "Additive RMS Jitter, Integration Bandwidth 10 kHz to 20 MHz”parameter with 100 MHz and 156.25 MHz
+Test conditions, Typical values, Max values, and footnotes in Electrical Characteristics: LVPECL Outputs ....................... 9
+• Added "Additive RMS Jitter, Integration Bandwidth 10 kHz to 20 MHz”parameter with 100 MHz and 156.25 MHz
+Test conditions, Typical values, Max values, and footnotes in Electrical Characteristics: LVDS Outputs .......................... 10
+• Added new paragraph at end of Driving the Clock Inputs ................................................................................................... 22
+• Changed "LMK00301" to "LMK00304" in Figure 27 and Figure 28 .................................................................................... 23
+• Changed Cin = 4 pF (typ, based on updated test method) in Crystal Interface................................................................... 23
+• Added POWER SUPPLY SEQUENCING ........................................................................................................................... 29
+Changes from Revision D (February 2013) to Revision E Page
+• Changed VCM text to condition for VIH to VCM parameter group. ............................................................................................ 8
+• Deleted VIH min value from Electrical Characteristics table. .................................................................................................. 8
+• Deleted VIL max value from Electrical Characteristics table................................................................................................... 8
+• Added VI_SE parameter and spec limits with corresponding table note to Electrical Characteristics Table. .......................... 8
+=== PAGE 2
+3
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+• Changed third paragraph in Driving the Clock Inputs section to include CLKin* and LVCMOS text. Revised to better
+correspond with information in Electrical Characteristics Table. .......................................................................................... 22
+• Changed bypass cap text to signal attenuation text of the fourth paragraph in Driving the Clock Inputs section. .............. 22
+• Changed Single-Ended LVCMOS Input, DC Coupling with Common Mode Biasing image with revised graphic............... 23
+• Added text to second paragraph of Termination for AC Coupled Differential Operation to explain graphic update to
+Differential LVDS Operation with AC Coupling to Receivers. .............................................................................................. 26
+• Changed graphic for Differential LVDS Operation, AC Coupling, No Biasing by the Receiver and updated caption. ........ 26
+=== PAGE 3
+GND
+VCCOA
+OSCin
+CLKin_SEL0
+CLKin_SEL1
+CLKoutB0*
+CLKoutB0
+CLKin1*
+REFout_EN
+VCCOA
+CLKoutA0
+CLKoutA0*
+CLKoutA1
+CLKoutA1*
+VCC
+OSCout
+CLKin0
+CLKin0*
+CLKoutB1*
+CLKoutB1
+VCCOB
+VCCOB
+CLKin1
+VCC
+REFout
+VCCOC
+3132 30 29 28 27 26 25
+8
+7
+6
+5
+4
+3
+2
+1
+109 11 12 13 14 15 16
+17
+18
+19
+20
+21
+22
+23
+24
+DAP
+Top Down View
+CLKout_TYPE1
+GND
+CLKout_TYPE0
+GND
+GND
+NC
+4
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+5 Pin Configuration and Functions
+32-Pin WQFN
+Package RTV0032A
+Top View
+=== PAGE 4
+5
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+(1) Any unused output pins should be left floating with minimum copper length (see note in Clock Outputs), or properly terminated if
+connected to a transmission line, or disabled/Hi-Z if possible. See Clock Outputs for output configuration and Termination and Use of
+Clock Drivers for output interface and termination techniques.
+(2) The output supply voltages or pins (VCCOA, VCCOB, and VCCOC) will be called VCCO in general when no distinction is needed, or when the
+output supply can be inferred from the output bank/type.
+(3) CMOS control input with internal pull-down resistor.
+Pin Functions (1)
+PIN
+TYPE DESCRIPTION
+NO. NAME
+DAP DAP GND Die Attach Pad. Connect to the PCB ground plane for heat dissipation.
+1, 8 17, 24 GND GND Ground
+2, 5 VCCOA PWR
+Power supply for Bank A Output buffers. VCCOA operates from 3.3 V or 2.5
+V. The VCCOA pins are internally tied together. Bypass with a 0.1 uF low-
+ESR capacitor placed very close to each Vcco pin. (2)
+3, 4 CLKoutA0, CLKoutA0* O Differential clock output A0. Output type set by CLKout_TYPE pins.
+6, 7 CLKoutA1, CLKoutA1* O Differential clock output A1. Output type set by CLKout_TYPE pins.
+9, 32 CLKout_TYPE0, CLKout_TYPE1 I Bank A and Bank B output buffer type selection pins (3)
+10, 28 Vcc PWR
+Power supply for Core and Input Buffer blocks. The Vcc supply operates
+from 3.3 V. Bypass with a 0.1 uF low-ESR capacitor placed very close to
+each Vcc pin.
+11 OSCin I Input for crystal. Can also be driven by a XO, TCXO, or other external
+single-ended clock.
+12 OSCout O Output for crystal. Leave OSCout floating if OSCin is driven by a single-
+ended clock.
+13, 16 CLKin_SEL0, CLKin_SEL1 I Clock input selection pins (3)
+14, 15 CLKin0, CLKin0* I Universal clock input 0 (differential/single-ended)
+18, 19 CLKoutB1*, CLKoutB1 O Differential clock output B1. Output type set by CLKout_TYPE pins.
+20, 23 VCCOB PWR
+Power supply for Bank B Output buffers. VCCOB operates from 3.3 V or 2.5
+V. The VCCOB pins are internally tied together. Bypass with a 0.1 uF low-
+ESR capacitor placed very close to each Vcco pin. See Absolute Maximum
+Ratings
+21, 22 CLKoutB0*, CLKoutB0 O Differential clock output B0. Output type set by CLKout_TYPE pins.
+25 NC —
+Not connected internally. Pin may be floated, grounded, or otherwise tied to
+any potential within the Supply Voltage range stated in the Absolute
+Maximum Ratings .
+26, 27 CLKin1*, CLKin1 I Universal clock input 1 (differential/single-ended)
+29 REFout O LVCMOS reference output. Enable output by pulling REFout_EN pin high.
+30 VCCOC PWR
+Power supply for REFout buffer. VCCOC operates from 3.3 V or 2.5 V.
+Bypass with a 0.1 uF low-ESR capacitor placed very close to each Vcco
+pin. (2)
+31 REFout_EN I REFout enable input. Enable signal is internally synchronized to selected
+clock input. (3)
+=== PAGE 5
+6
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+(1) Stresses beyond those listed under Absolute Maximum Ratings may cause permanent damage to the device. These are stress ratings
+only, which do not imply functional operation of the device at these or any other conditions beyond those indicated under Recommended
+Operating Conditions. Exposure to absolute-maximum-rated conditions for extended periods may affect device reliability.
+6 Specifications
+6.1 Absolute Maximum Ratings
+over operating free-air temperature range (unless otherwise noted) (1)
+MIN MAX UNIT
+VCC, VCCO Supply Voltages -0.3 3.6 V
+VIN Input Voltage -0.3 (VCC + 0.3) V
+TSTG Storage Temperature Range -65 +150 °C
+TL Lead Temperature (solder 4 s) +260 °C
+TJ Junction Temperature +150 °C
+(1) JEDEC document JEP155 states that 500-V HBM allows safe manufacturing with a standard ESD control process. Manufacturing with
+less than 500-V HBM is possible with the necessary precautions. Pins listed as ±2000 V may actually have higher performance.
+(2) JEDEC document JEP157 states that 250-V CDM allows safe manufacturing with a standard ESD control process. Manufacturing with
+less than 250-V CDM is possible with the necessary precautions. Pins listed as ±750 V may actually have higher performance.
+6.2 ESD Ratings
+VALUE UNIT
+V(ESD) Electrostatic discharge
+Human-body model (HBM), per ANSI/ESDA/JEDEC JS-001 (1) ±2000
+VMachine model (MM) ±150
+Charged-device model (CDM), per JEDEC specification JESD22-
+C101 (2) ±750
+(1) The output supply voltages or pins (VCCOA, VCCOB, and VCCOC) will be called VCCO in general when no distinction is needed, or when the
+output supply can be inferred from the output bank/type.
+(2) Vcco for any output bank should be less than or equal to Vcc (Vcco ≤ Vcc).
+6.3 Recommended Operating Conditions
+MIN TYP MAX UNIT
+TA Ambient Temperature Range -40 25 85 °C
+TJ Junction Temperature 125 °C
+VCC Core Supply Voltage Range 3.15 3.3 3.45 V
+VCCO Output Supply Voltage Range (1) (2) 3.3 – 5%
+2.5 – 5%
+3.3
+2.5
+3.3 + 5%
+2.5 + 5% V
+(1) For more information about traditional and new thermal metrics, see the Semiconductor and IC Package Thermal Metrics application
+report.
+6.4 Thermal Information
+THERMAL METRIC (1)
+LMK00304
+UNITRTV0032A
+(WQFN)
+32 PINS
+RθJA Junction-to-ambient thermal resistance 38.1 °C/W
+RθJC(top) Junction-to-case (top) thermal resistance 7.2 °C/W
+RθJB Junction-to-board thermal resistance 12 °C/W
+ψJT Junction-to-top characterization parameter 0.4 °C/W
+ψJB Junction-to-board characterization parameter 11.9 °C/W
+RθJC(bot) Junction-to-case (bottom) thermal resistance 4.5 °C/W
+=== PAGE 6
+7
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+(1) The output supply voltages or pins (VCCOA, VCCOB, and VCCOC) will be called VCCO in general when no distinction is needed, or when the
+output supply can be inferred from the output bank/type.
+(2) The Electrical Characteristics tables list ensured specifications under the listed Recommended Operating Conditions except as
+otherwise modified or specified by the Electrical Characteristics Conditions and/or Notes. Typical specifications are estimations only and
+are not ensured.
+(3) See Power Supply Recommendations for more information on current consumption and power dissipation calculations.
+(4) Power supply ripple rejection, or PSRR, is defined as the single-sideband phase spur level (in dBc) modulated onto the clock output
+when a single-tone sinusoidal signal (ripple) is injected onto the Vcco supply. Assuming no amplitude modulation effects and small index
+modulation, the peak-to-peak deterministic jitter (DJ) can be calculated using the measured single-sideband phase spur level (PSRR) as
+follows: DJ (ps pk-pk) = [ (2 × 10(PSRR / 20)) / (π × fCLK) ] × 1E12
+6.5 Electrical Characteristics
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+CURRENT CONSUMPTION (3)
+ICC_CORE
+Core Supply Current, All
+Outputs Disabled
+CLKinX selected 8.5 10.5 mA
+OSCin selected 10 13.5 mA
+ICC_PECL
+Additive Core Supply
+Current, LVPECL Banks
+Enabled
+38 48 mA
+ICC_LVDS
+Additive Core Supply
+Current, LVDS Banks
+Enabled
+43 52 mA
+ICC_HCSL
+Additive Core Supply
+Current, HCSL Banks
+Enabled
+50 58.5 mA
+ICC_CMOS
+Additive Core Supply
+Current, LVCMOS
+Output Enabled
+3.5 5.5 mA
+ICCO_PECL
+Additive Output Supply
+Current, LVPECL Banks
+Enabled
+Includes Output Bank Bias and Load Currents for
+both banks, RT = 50 Ω to Vcco – 2 V on all outputs 135 163 mA
+ICCO_LVDS
+Additive Output Supply
+Current, LVDS Banks
+Enabled
+25 34.5 mA
+ICCO_HCSL
+Additive Output Supply
+Current, HCSL Banks
+Enabled
+Includes Output Bank Bias and Load Currents for
+both banks, RT = 50 Ω on all outputs 65 81.5 mA
+ICCO_CMOS
+Additive Output Supply
+Current, LVCMOS
+Output Enabled
+200 MHz, CL = 5 pF
+Vcco = 3.3 V ± 5% 9 10 mA
+Vcco = 2.5 V ± 5% 7 8 mA
+POWER SUPPLY RIPPLE REJECTION (PSRR)
+PSRRPECL
+Ripple-Induced
+Phase Spur Level
+Differential LVPECL
+Output (4)
+100 kHz, 100 mVpp
+Ripple Injected on Vcco,
+Vcco = 2.5 V
+156.25 MHz –65
+dBc
+312.5 MHz –63
+PSRRLVDS
+Ripple-Induced Phase
+Spur Level Differential
+LVDS Output (4)
+156.25 MHz –76
+dBc
+312.5 MHz –74
+PSRRHCSL
+Ripple-Induced Phase
+Spur Level Differential
+HCSL Output (4)
+156.25 MHz –72
+dBc
+312.5 MHz –63
+CMOS CONTROL INPUTS (CLKin_SELn, CLKout_TYPEn, REFout_EN)
+VIH High-Level Input Voltage 1.6 Vcc V
+VIL Low-Level Input Voltage GND 0.4 V
+IIH High-Level Input Current VIH = Vcc, Internal pulldown resistor 50 µA
+IIL Low-Level Input Current VIL = 0 V, Internal pulldown resistor -5 0.1 µA
+=== PAGE 7
+8
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+(5) Specification is ensured by characterization and is not tested in production.
+(6) See Differential Voltage Measurement Terminology for definition of VID and VOD voltages.
+(7) Parameter is specified by design, not tested in production.
+(8) For clock input frequency ≥ 100 MHz, CLKinX can be driven with single-ended (LVCMOS) input swing up to 3.3 Vpp. For clock input
+frequency < 100 MHz, the single-ended input swing should be limited to 2 Vpp max to prevent input saturation (refer to Driving the Clock
+Inputs for interfacing 2.5 V/3.3 V LVCMOS clock input < 100 MHz to CLKinX).
+(9) The ESR requirements stated must be met to ensure that the oscillator circuitry has no startup issues. However, lower ESR values for
+the crystal may be necessary to stay below the maximum power dissipation (drive level) specification of the crystal. Refer to Crystal
+Interface for crystal drive level considerations.
+CLOCK INPUTS (CLKin0/CLKin0*, CLKin1/CLKin1*)
+fCLKin
+Input Frequency
+Range (5)
+Functional up to 3.1 GHz
+Output frequency range and timing specified per
+output type (refer to LVPECL, LVDS, HCSL,
+LVCMOS output specifications)
+DC 3.1 GHz
+VIHD
+Differential Input High
+Voltage
+CLKin driven differentially
+Vcc V
+VILD
+Differential Input Low
+Voltage GND V
+VID
+Differential Input Voltage
+Swing (6) 0.15 1.3 V
+VCMD
+Differential Input
+Common Mode Voltage
+VID = 150 mV 0.25 Vcc – 1.2
+VVID = 350 mV 0.25 Vcc – 1.1
+VID = 800 mV 0.25 Vcc – 0.9
+VIH
+Single-Ended Input High
+Voltage
+CLKinX driven single-ended (AC or DC coupled),
+CLKinX* AC coupled to GND or externally biased
+within VCM range
+Vcc V
+VIL
+Single-Ended Input Low
+Voltage GND V
+VI_SE
+Single-Ended Input
+Voltage Swing (7) (8) 0.3 2 Vpp
+VCM
+Single-Ended Input
+Common Mode Voltage 0.25 Vcc – 1.2 V
+ISOMUX
+Mux Isolation, CLKin0 to
+CLKin1
+fOFFSET > 50 kHz,
+PCLKinX = 0 dBm
+fCLKin0 = 100 MHz –84
+dBc
+fCLKin0 = 200 MHz –82
+fCLKin0 = 500 MHz –71
+fCLKin0 = 1000 MHz –65
+CRYSTAL INTERFACE (OSCin, OSCout)
+FCLK
+External Clock
+Frequency Range (5) OSCin driven single-ended, OSCout floating 250 MHz
+FXTAL
+Crystal Frequency
+Range
+Fundamental mode crystal
+ESR ≤ 200 Ω (10 to 30 MHz)
+ESR ≤ 125 Ω (30 to 40 MHz) (9)
+10 40 MHz
+CIN
+OSCin Input
+Capacitance 4 pF
+=== PAGE 8
+9
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+(10) See Typical Characteristics for output operation over frequency.
+(11) For the 100 MHz and 156.25 MHz clock input conditions, Additive RMS Jitter (JADD) is calculated using Method #1: JADD =
+SQRT(JOUT
+2 – JSOURCE
+2), where JOUT is the total RMS jitter measured at the output driver and JSOURCE is the RMS jitter of the clock
+source applied to CLKin. For the 625 MHz clock input condition, Additive RMS Jitter is approximated using Method #2: JADD = SQRT(2
+× 10dBc/10) / (2 × π × fCLK), where dBc is the phase noise power of the Output Noise Floor integrated from 1 to 20 MHz bandwidth. The
+phase noise power can be calculated as: dBc = Noise Floor + 10 × log10(20 MHz – 1 MHz). The additive RMS jitter was approximated
+for 625 MHz using Method #2 because the RMS jitter of the clock source was not sufficiently low enough to allow practical use of
+Method #1. Refer to the “Noise Floor vs. CLKin Slew Rate”and “RMS Jitter vs. CLKin Slew Rate” plots in Typical Characteristics.
+(12) 100-MHz and 156.25-MHz input source from Rohde & Schwarz SMA100A Low-Noise Signal Generator and Sine-to-Square-wave
+Conversion block.
+(13) 156.25-MHz LVPECL clock source from LMK03806 with 20-MHz crystal reference (crystal part number: ECS-200-20-30BU-DU).
+JSOURCE = 190 fs RMS (10 kHz to 1 MHz) and 195 fs RMS (12 kHz to 20 MHz). Refer to the LMK03806 datasheet for more information.
+(14) The noise floor of the output buffer is measured as the far-out phase noise of the buffer. Typically this offset is ≥ 10 MHz, but for lower
+frequencies this measurement offset can be as low as 5 MHz due to measurement equipment limitations.
+(15) Phase noise floor will degrade as the clock input slew rate is reduced. Compared to a single-ended clock, a differential clock input
+(LVPECL, LVDS) will be less susceptible to degradation in noise floor at lower slew rates due to its common mode noise rejection.
+However, TI recommends using the highest possible input slew rate for differential clocks to achieve optimal noise floor performance at
+the device outputs.
+LVPECL OUTPUTS (CLKoutAn/CLKoutAn*, CLKoutBn/CLKoutBn*)
+fCLKout_FS
+Maximum Output
+Frequency Full VOD
+Swing (5) (10)
+VOD ≥ 600 mV,
+RL = 100=Ω differential
+Vcco = 3.3 V ± 5%,
+RT = 160 Ω to GND 1.0 1.2
+GHz
+Vcco = 2.5 V ± 5%,
+RT = 91 Ω to GND 0.75 1
+fCLKout_RS
+Maximum Output
+Frequency
+Reduced VOD
+Swing (5) (10)
+VOD ≥ 400 mV,
+RL = 100-Ω differential
+Vcco = 3.3 V ± 5%,
+RT = 160 Ω to GND 1.5 3.1
+GHz
+Vcco = 2.5 V ± 5%,
+RT = 91 Ω to GND 1.5 2.3
+JitterADD
+Additive RMS Jitter,
+Integration Bandwidth
+10 kHz to 20
+MHz (5) (11) (12)
+Vcco = 2.5 V ± 5%:
+RT = 91 Ω to GND,
+Vcco = 3.3 V ± 5%:
+RT = 160 to GND,
+RL = 100-Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns 77 98
+fs
+CLKin: 156.25 MHz,
+Slew rate ≥ 3 V/ns 54 78
+JitterADD
+Additive RMS Jitter
+Integration Bandwidth
+1 MHz to 20 MHz (11)
+Vcco = 3.3 V,
+RT = 160 Ω to GND,
+RL = 100-Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns 59
+fsCLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns 64
+CLKin: 625 MHz,
+Slew rate ≥ 3 V/ns 30
+JitterADD
+Additive RMS Jitter with
+LVPECL clock source
+from LMK03806 (11) (13)
+Vcco = 3.3 V,
+RT = 160 Ω to GND,
+RL = 100-Ω differential
+CLKin: 156.25 MHz,
+JSOURCE = 190 fs RMS
+(10 kHz to 1 MHz)
+20
+fs
+CLKin: 156.25 MHz,
+JSOURCE = 195 fs RMS
+(12 kHz to 20 MHz)
+51
+Noise Floor Noise Floor
+fOFFSET ≥ 10 MHz (14) (15)
+Vcco = 3.3 V,
+RT = 160 Ω to GND,
+RL = 100 Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns –162.5
+dBc/HzCLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns –158.1
+CLKin: 625 MHz,
+Slew rate ≥ 3 V/ns –154.4
+DUTY Duty Cycle (5) 50% input clock duty cycle 45% 55%
+VOH Output High Voltage
+TA = 25°C, DC Measurement,
+RT = 50 Ω to Vcco - 2 V
+Vcco –
+1.2
+Vcco –
+0.9
+Vcco –
+0.7 V
+VOL Output Low Voltage Vcco – 2 Vcco –
+1.75
+Vcco –
+1.5 V
+VOD Output Voltage Swing (6) 600 830 1000 mV
+=== PAGE 9
+10
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+tR
+Output Rise Time
+20% to 80% (7) RT = 160 Ω to GND, Uniform transmission line up
+to 10 in. with 50-Ω characteristic impedance, RL =
+100-Ω differential CL ≤ 5 pF
+175 300 ps
+tF
+Output Fall Time 80% to
+20% (7) 175 300 ps
+LVDS OUTPUTS (CLKoutAn/CLKoutAn*, CLKoutBn/CLKoutBn*)
+fCLKout_FS
+Maximum Output
+Frequency Full VOD
+Swing (5) (10)
+VOD ≥ 250 mV, RL = 100-Ω differential 1.0 1.6 GHz
+fCLKout_RS
+Maximum Output
+Frequency
+Reduced VOD
+Swing (5) (10)
+VOD ≥ 200 mV, RL = 100-Ω differential 1.5 2.1 GHz
+JitterADD
+Additive RMS Jitter,
+Integration Bandwidth
+10 kHz to 20 MHz
+(5) (11) (12)
+RL = 100-Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns 94 115
+fs
+CLKin: 156.25 MHz,
+Slew rate ≥ 3 V/ns 70 90
+JitterADD
+Additive RMS Jitter
+Integration Bandwidth
+1 MHz to 20 MHz (11)
+Vcco = 3.3 V,
+RL = 100-Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns 89
+fsCLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns 77
+CLKin: 625 MHz,
+Slew rate ≥ 3 V/ns 37
+Noise Floor Noise Floor
+fOFFSET ≥ 10 MHz (14) (15)
+Vcco = 3.3 V,
+RL = 100-Ω differential
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns –159.5
+dBc/HzCLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns –157
+CLKin: 625 MHz,
+Slew rate ≥ 3 V/ns –152.7
+DUTY Duty Cycle (5) 50% input clock duty cycle 45% 55%
+VOD Output Voltage Swing (6)
+TA = 25°C, DC Measurement, RL = 100-Ω
+differential
+250 400 450 mV
+ΔVOD
+Change in Magnitude of
+VOD for Complementary
+Output States
+–50 50 mV
+VOS Output Offset Voltage 1.125 1.25 1.375 V
+ΔVOS
+Change in Magnitude of
+VOS for Complementary
+Output States
+–35 35 mV
+ISA
+ISB
+Output Short Circuit
+Current Single Ended TA = 25°C, Single-ended outputs shorted to GND –24 24 mA
+ISAB
+Output Short Circuit
+Current Differential Complementary outputs tied together –12 12 mA
+tR
+Output Rise Time
+20% to 80% (7) Uniform transmission line up to 10 inches with 50-
+Ω characteristic impedance,
+RL = 100 Ω differential, CL ≤ 5 pF
+175 300 ps
+tF
+Output Fall Time
+80% to 20% (7) 175 300 ps
+=== PAGE 10
+11
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+(16) AC timing parameters for HCSL or CMOS are dependent on output capacitive loading.
+HCSL OUTPUTS (CLKoutAn/CLKoutAn*, CLKoutBn/CLKoutBn*)
+fCLKout
+Output Frequency
+Range (5) RL = 50 Ω to GND, CL ≤ 5 pF DC 400 MHz
+JitterADD_PCIe
+Additive RMS Phase
+Jitter for PCIe 3.0 (5)
+PCIe Gen 3,
+PLL BW = 2–5 MHz,
+CDR = 10 MHz
+CLKin: 100 MHz,
+Slew rate ≥ 0.6 V/ns 0.03 0.15 ps
+JitterADD
+Additive RMS Jitter
+Integration Bandwidth
+1 MHz to 20 MHz (11)
+Vcco = 3.3 V,
+RT = 50 Ω to GND
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns 77
+fs
+CLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns 86
+Noise Floor Noise Floor
+fOFFSET ≥ 10 MHz (14) (15)
+Vcco = 3.3 V,
+RT = 50 Ω to GND
+CLKin: 100 MHz,
+Slew rate ≥ 3 V/ns –161.3
+dBc/Hz
+CLKin: 156.25 MHz,
+Slew rate ≥ 2.7 V/ns –156.3
+DUTY Duty Cycle (5) 50% input clock duty cycle 45% 55%
+VOH Output High Voltage
+TA = 25°C, DC Measurement, RT = 50 Ω to GND
+520 810 920 mV
+VOL Output Low Voltage –150 0.5 150 mV
+VCROSS
+Absolute Crossing
+Voltage (5) (16)
+RL = 50 Ω to GND, CL ≤ 5 pF
+250 350 460 mV
+ΔVCROSS
+Total Variation of
+VCROSS
+(5) (16) 140 mV
+tR
+Output Rise Time
+20% to 80% (7) (16) 250 MHz, Unifrom transmission line up to 10
+inches with 50-Ω characteristic impedance, RL = 50
+Ω to GND, CL ≤ 5 pF
+300 500 ps
+tF
+Output Fall Time
+80% to 20% (7) (16) 300 500 ps
+=== PAGE 11
+12
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+(17) Output Enable Time is the number of input clock cycles it takes for the output to be enabled after REFout_EN is pulled high. Similarly,
+Output Disable Time is the number of input clock cycles it takes for the output to be disabled after REFout_EN is pulled low. The
+REFout_EN signal should have an edge transition much faster than that of the input clock period for accurate measurement.
+LVCMOS OUTPUT (REFout)
+fCLKout
+Output Frequency
+Range (5) CL ≤ 5 pF DC 250 MHz
+JitterADD
+Additive RMS Jitter
+Integration Bandwidth
+1 MHz to 20 MHz (11)
+Vcco = 3.3 V, CL ≤ 5 pF 100 MHz, Input Slew
+rate ≥ 3 V/ns 95 fs
+Noise Floor Noise Floor
+fOFFSET ≥ 10 MHz (14) (15) Vcco = 3.3 V, CL ≤ 5 pF 100 MHz, Input Slew
+rate ≥ 3 V/ns –159.3 dBc/Hz
+DUTY Duty Cycle (5) 50% input clock duty cycle 45% 55%
+VOH Output High Voltage
+1-mA load
+Vcco –
+0.1 V
+VOL Output Low Voltage 0.1 V
+IOH
+Output High Current
+(Source)
+Vo = Vcco / 2
+Vcco = 3.3 V 28
+mA
+Vcco = 2.5 V 20
+IOL
+Output Low Current
+(Sink)
+Vcco = 3.3 V 28
+mA
+Vcco = 2.5 V 20
+tR
+Output Rise Time
+20% to 80% (7) (16) 250 MHz, Uniform transmission line up to 10
+inches with 50-Ω characteristic impedance, RL = 50
+Ω to GND, CL ≤ 5 pF
+225 400 ps
+tF
+Output Fall Time
+80% to 20% (7) (16) 225 400 ps
+tEN Output Enable Time (17)
+CL ≤ 5 pF
+3 cycles
+tDIS Output Disable Time (17) 3 cycles
+=== PAGE 12
+13
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Electrical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V ± 5%, Vcco = 3.3 V ± 5%, 2.5 V ± 5%, -40 °C ≤ TA ≤ 85 °C, CLKin driven
+differentially, input slew rate ≥ 3 V/ns. Typical values represent most likely parametric norms at Vcc = 3.3 V, Vcco = 3.3 V, TA
+= 25 °C, and at the Recommended Operation Conditions at the time of product characterization and are not ensured. (1) (2)
+TEST CONDITIONS MIN TYP MAX UNIT
+(18) Output skew is the propagation delay difference between any two outputs with identical output buffer type and equal loading while
+operating at the same supply voltage and temperature conditions.
+PROPAGATION DELAY and OUTPUT SKEW
+tPD_PECL
+Propagation Delay
+CLKin-to-LVPECL (7)
+RT = 160 Ω to GND, RL = 100-Ω differential,
+CL ≤ 5 pF 180 360 540 ps
+tPD_LVDS
+Propagation Delay
+CLKin-to-LVDS (7) RL = 100-Ω differential, CL ≤ 5 pF 200 400 600 ps
+tPD_HCSL
+Propagation Delay
+CLKin-to-HCSL (7) (16) RT = 50 Ω to GND, CL ≤ 5 pF 295 590 885 ps
+tPD_CMOS
+Propagation Delay
+CLKin-to-LVCMOS (7) (16) CL ≤ 5 pF
+Vcco = 3.3 V 900 1475 2300
+ps
+Vcco = 2.5 V 1000 1550 2700
+tSK(O)
+Output Skew
+LVPECL/LVDS/HCSL
+(5) (16) (18)
+Skew specified between any two CLKouts with the
+same buffer type. Load conditions per output type
+are the same as propagation delay specifications.
+30 50 ps
+tSK(PP)
+Part-to-Part Output
+Skew
+LVPECL/LVDS/HCSL
+(7) (16) (18)
+80 120 ps
+=== PAGE 13
+0.00 0.25 0.50 0.75 1.00
+-0.4
+-0.3
+-0.2
+-0.1
+0.0
+0.1
+0.2
+0.3
+0.4
+OUTPUT SWING (V)
+TIME (ns)
+0.00 0.25 0.50 0.75 1.00
+-0.4
+-0.3
+-0.2
+-0.1
+0
+0.1
+0.2
+0.3
+0.4OUTPUT SWING (V)
+TIME (ns)
+0.0 2.5 5.0 7.5 10.0
+-0.8
+-0.6
+-0.4
+-0.2
+0.0
+0.2
+0.4
+0.6
+0.8
+OUTPUT SWING (V)
+TIME (ns)
+0.0 2.5 5.0 7.5 10.0
+-0.4
+-0.3
+-0.2
+-0.1
+0.0
+0.1
+0.2
+0.3
+0.4
+OUTPUT SWING (V)
+TIME (ns)
+100 1000 10000
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+OUTPUT SWING (V)
+FREQUENCY (MHz)
+Vcco=2.5 V, Rterm=91 
+Vcco=3.3 V, Rterm=160 
+100 1000 10000
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+0.45OUTPUT SWING (V)
+FREQUENCY (MHz)
+14
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+6.6 Typical Characteristics
+Unless otherwise specified: Vcc = 3.3 V, Vcco = 3.3 V, TA = 25 °C, CLKin driven differentially, input slew rate ≥ 3 V/ns.
+Consult Table 1 at the end of the Typical Characteristics section for graph notes.
+Figure 1. LVPECL Output Swing (VOD) vs. Frequency Figure 2. LVDS Output Swing (VOD) vs. Frequency
+Figure 3. LVPECL Output Swing at 156.25 MHz Figure 4. LVDS Output Swing at 156.25 MHz
+Figure 5. LVPECL Output Swing at 1.5 GHz Figure 6. LVDS Output Swing at 1.5 GHz
+=== PAGE 14
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+0
+50
+100
+150
+200
+250
+300
+350
+400
+RMS JITTER (fs)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=100 MHz
+Int. BW=1-20 MHz
+LVPECL
+LVDS
+HCSL
+LVCMOS
+CLKin Source
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+-165
+-160
+-155
+-150
+-145
+-140
+-135NOISE FLOOR (dBc/Hz)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=625 MHz
+Foffset=20 MHz
+LVPECL
+LVDS
+CLKin Source
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+-170
+-165
+-160
+-155
+-150
+-145
+-140NOISE FLOOR (dBc/Hz)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=100 MHz
+Foffset=20 MHz
+LVPECL
+LVDS
+HCSL
+LVCMOS
+CLKin Source
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+-165
+-160
+-155
+-150
+-145
+-140
+-135NOISE FLOOR (dBc/Hz)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=156.25 MHz
+Foffset=20 MHz
+LVPECL
+LVDS
+HCSL
+CLKin Source
+0 1 2 3 4 5
+-0.2
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+OUTPUT SWING (V)
+TIME (ns)
+0 1 2 3 4 5 6
+-1.00
+-0.75
+-0.50
+-0.25
+0.00
+0.25
+0.50
+0.75
+1.00OUTPUT SWING (V)
+TIME (ns)
+Vcco=3.3 V, AC coupled, 50load
+Vcco=2.5 V, AC coupled, 50load
+15
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Typical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V, Vcco = 3.3 V, TA = 25 °C, CLKin driven differentially, input slew rate ≥ 3 V/ns.
+Consult Table 1 at the end of the Typical Characteristics section for graph notes.
+Figure 7. HCSL Output Swing at 250 MHz Figure 8. LVCMOS Output Swing at 250 MHz
+Figure 9. Noise Floor vs. CLKin Slew Rate at 100 MHz Figure 10. Noise Floor vs. CLKin Slew Rate at 156.25 MHz
+Figure 11. Noise Floor vs. CLKin Slew Rate at 625 MHz
+See Note 1 in Graph Notes table
+Figure 12. RMS Jitter vs. CLKin Slew Rate at 100 MHz
+=== PAGE 15
+-50 -25 0 25 50 75 100
+250
+350
+450
+550
+650
+750
+850
+1350
+1450
+1550
+1650
+1750
+1850
+1950
+CLKout PROPAGATION DELAY (ps)
+TEMPERATURE (° C)
+REFout PROPAGATION DELAY (ps)
+Right Y-axis plot
+LVPECL (0.35 ps/° C)
+LVDS (0.35 ps/° C)
+HCSL (0.35 ps/° C)
+LVCMOS (2.2 ps/° C)
+.1 1 10
+-90
+-85
+-80
+-75
+-70
+-65
+-60
+-55
+-50
+RIPPLE INDUCED SPUR LEVEL (dBc)
+RIPPLE FREQUENCY (MHz)
+Fclk=312.5 MHz
+Vcco Ripple=100 mVpp
+LVPECL
+LVDS
+HCSL
+.1 1 10
+-90
+-85
+-80
+-75
+-70
+-65
+-60
+-55
+-50
+RIPPLE INDUCED SPUR LEVEL (dBc)
+RIPPLE FREQUENCY (MHz)
+Fclk=156.25 MHz
+Vcco Ripple=100 mVpp
+LVPECL
+LVDS
+HCSL
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+0
+50
+100
+150
+200
+250
+300
+350
+400
+450
+500
+RMS JITTER (fs)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=156.25 MHz
+Int. BW=1-20 MHz
+LVPECL
+LVDS
+HCSL
+CLKin Source
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+0
+25
+50
+75
+100
+125
+150
+175
+200
+RMS JITTER (fs)
+DIFFERENTIAL INPUT SLEW RATE (V/ns)
+Fclk=625 MHz
+Int. BW=1-20 MHz
+LVPECL
+LVDS
+CLKin Source
+16
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Typical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V, Vcco = 3.3 V, TA = 25 °C, CLKin driven differentially, input slew rate ≥ 3 V/ns.
+Consult Table 1 at the end of the Typical Characteristics section for graph notes.
+See Note 1 in Graph Notes table
+Figure 13. RMS Jitter vs. CLKin Slew Rate at 156.25 MHz Figure 14. RMS Jitter vs. CLKin Slew Rate at 625 MHz
+Figure 15. PSRR vs. Ripple Frequency at 156.25 MHz Figure 16. PSRR vs. Ripple Frequency at 312.5 MHz
+Figure 17. Propagation Delay vs. Temperature
+See Note 1 in Graph Notes table
+Figure 18. LVPECL Phase Noise at 100 MHz
+=== PAGE 16
+0 500 1k 1.5k 2k 2.5k 3k 3.5k 4k
+0
+25
+50
+75
+100
+125
+150
+175
+200
+CRYSTAL POWER DISSIPATION (W)
+RLIM()
+20 MHz Crystal
+40 MHz Crystal
+10 100 1k 10k 100k 1M 10M
+-180
+-160
+-140
+-120
+-100
+-80
+-60
+PHASE NOISE (dBc/Hz)
+OFFSET FREQUENCY (Hz)
+20 MHz Crystal, Rlim = 1.5 k
+40 MHz Crystal, Rlim = 1.0 k
+17
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Typical Characteristics (continued)
+Unless otherwise specified: Vcc = 3.3 V, Vcco = 3.3 V, TA = 25 °C, CLKin driven differentially, input slew rate ≥ 3 V/ns.
+Consult Table 1 at the end of the Typical Characteristics section for graph notes.
+See Note 1 in Graph Notes table
+Figure 19. LVDS Phase Noise at 100 MHz
+See Note 1 in Graph Notes table
+Figure 20. HCSL Phase Noise at 100 MHz
+See Notes 2 and 3 in Graph Notes table
+Figure 21. Crystal Power Dissipation vs. RLIM
+See Notes 2 and 3 in Graph Notes table
+Figure 22. LVDS Phase Noise in Crystal Mode
+Table 1. Graph Notes
+NOTE
+(1) The typical RMS jitter values in the plots show the total output RMS jitter (JOUT) for each output buffer type and the source clock
+RMS jitter (JSOURCE). From these values, the Additive RMS Jitter can be calculated as: JADD = SQRT(JOUT
+2 - JSOURCE
+2).
+(2) 20 MHz crystal characteristics: Abracon ABL series, AT cut, CL = 18 pF , C0 = 4.4 pF measured (7 pF max), ESR = 8.5 Ω
+measured (40 Ω max), and Drive Level = 1 mW max (100 µW typical).
+(3) 40 MHz crystal characteristics: Abracon ABLS2 series, AT cut, CL = 18 pF , C0 = 5 pF measured (7 pF max), ESR = 5 Ω
+measured (40 Ω max), and Drive Level = 1 mW max (100 µW typical).
+=== PAGE 17
+VOH
+VOL
+GND
+VOD = | VOH - VOL | VSS = 2·VOD
+VOD Definition V SS Definition for Output
+Non-Inverting Clock
+Inverting Clock
+VOD VSSVOS
+VIH
+VIL
+GND
+VID = | VIH – VIL | VSS = 2·VID
+VID Definition V SS Definition for Input
+Non-Inverting Clock
+Inverting Clock
+VID VSSVCM
+18
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+7 Parameter Measurement Information
+7.1 Differential Voltage Measurement Terminology
+The differential voltage of a differential signal can be described by two different definitions causing confusion
+when reading datasheets or communicating with other engineers. This section will address the measurement and
+description of a differential signal so that the reader will be able to understand and discern between the two
+different definitions when used.
+The first definition used to describe a differential signal is the absolute value of the voltage potential between the
+inverting and non-inverting signal. The symbol for this first measurement is typically VID or VOD depending on if
+an input or output voltage is being described.
+The second definition used to describe a differential signal is to measure the potential of the non-inverting signal
+with respect to the inverting signal. The symbol for this second measurement is VSS and is a calculated
+parameter. Nowhere in the IC does this signal exist with respect to ground, it only exists in reference to its
+differential pair. VSS can be measured directly by oscilloscopes with floating references, otherwise this value can
+be calculated as twice the value of VOD as described in the first description.
+Figure 23 illustrates the two different definitions side-by-side for inputs and Figure 24 illustrates the two different
+definitions side-by-side for outputs. The VID (or VOD) definition show the DC levels, VIH and VOL (or VOH and VOL),
+that the non-inverting and inverting signals toggle between with respect to ground. VSS input and output
+definitions show that if the inverting signal is considered the voltage potential reference, the non-inverting signal
+voltage potential is now increasing and decreasing above and below the non-inverting reference. Thus the peak-
+to-peak voltage of the differential signal can be measured.
+VID and VOD are often defined as volts (V) and VSS is often defined as volts peak-to-peak (VPP).
+Figure 23. Two Different Definitions for Differential Input Signals
+Figure 24. Two Different Definitions for Differential Output Signals
+Refer to Application Note AN-912 Common Data Transmission Parameters and their Definitions (SNLA036) for
+more information.
+=== PAGE 18
+ 
+ 
+MUX
+SYNC
+CLKoutA0
+CLKoutA0*
+CLKoutA1
+CLKoutA1*
+CLKin0
+CLKin0*
+CLKin1
+CLKin1*
+OSCin
+OSCout
+REFout_EN
+CLKout_TYPE[1:0]
+CLKin_SEL[1:0]
+GND
+ 
+CLKoutB0
+CLKoutB0*
+CLKoutB1
+CLKoutB1*CLKout_TYPE[1:0]
+VCC VCCOA VCCOB VCCOC
+Output Bank B
+(LVPECL, LVDS, 
+HCSL, or Hi-Z)
+Output Bank A
+(LVPECL, LVDS, 
+HCSL, or Hi-Z)
+2
+2
+Universal Inputs
+(Differential/
+Single-Ended)
+Crystal
+VCCOA
+VCCOB
+VCCOC
+REFout (LVCMOS)
+19
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+8 Detailed Description
+8.1 Overview
+The LMK00304 is a 4-output differential clock fanout buffer with low additive jitter that can operate up to 3.1 GHz.
+It features a 3:1 input multiplexer with an optional crystal oscillator input, two banks of 2 differential outputs with
+multi-mode buffers (LVPECL, LVDS, HCSL, or Hi-Z), one LVCMOS output, and 3 independent output buffer
+supplies. The input selection and output buffer modes are controlled via pin strapping. The device is offered in a
+32-pin WQFN package and leverages much of the high-speed, low-noise circuit design employed in the
+LMK04800 family of clock conditioners.
+8.2 Functional Block Diagram
+=== PAGE 19
+20
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+8.3 Feature Description
+8.3.1 VCC and VCCO Power Supplies
+The LMK00304 has separate 3.3 V core supply (VCC) and 3 independent 3.3 V/2.5 V output power supplies
+(VCCOA, VCCOB, VCCOC). Output supply operation at 2.5 V enables lower power consumption and output-level
+compatibility with 2.5 V receiver devices. The output levels for LVPECL (VOH, VOL) and LVCMOS (VOH) are
+referenced to its respective Vcco supply, while the output levels for LVDS and HCSL are relatively constant over
+the specified Vcco range. Refer to Power Supply Recommendations for additional supply related considerations,
+such as power dissipation, power supply bypassing, and power supply ripple rejection (PSRR).
+NOTE
+Care should be taken to ensure the Vcco voltages do not exceed the Vcc voltage to
+prevent turning-on the internal ESD protection circuitry.
+8.3.2 Clock Inputs
+The input clock can be selected from CLKin0/CLKin0*, CLKin1/CLKin1*, or OSCin. Clock input selection is
+controlled using the CLKin_SEL[1:0] inputs as shown in Table 2. Refer to Driving the Clock Inputs for clock input
+requirements. When CLKin0 or CLKin1 is selected, the crystal circuit is powered down. When OSCin is selected,
+the crystal oscillator circuit will start-up and its clock will be distributed to all outputs. Refer to Crystal Interface for
+more information. Alternatively, OSCin may be driven by a single-ended clock (up to 250 MHz) instead of a
+crystal.
+Table 2. Input Selection
+CLKin_SEL1 CLKin_SEL0 SELECTED INPUT
+0 0 CLKin0, CLKin0*
+0 1 CLKin1, CLKin1*
+1 X OSCin
+Table 3 shows the output logic state vs. input state when either CLKin0/CLKin0* or CLKin1/CLKin1* is selected.
+When OSCin is selected, the output state will be an inverted copy of the OSCin input state.
+Table 3. CLKin Input vs. Output States
+STATE of
+SELECTED CLKin
+STATE of
+ENABLED OUTPUTS
+CLKinX and CLKinX*
+inputs floating Logic low
+CLKinX and CLKinX*
+inputs shorted together Logic low
+CLKin logic low Logic low
+CLKin logic high Logic high
+=== PAGE 20
+21
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+8.3.3 Clock Outputs
+The differential output buffer type for both Bank A and B outputs are configured using the CLKout_TYPE[1:0] as
+shown in Table 4. For applications where all differential outputs are not needed, any unused output pin should be
+left floating with a minimum copper length (see note below) to minimize capacitance and potential coupling and
+reduce power consumption. If all differential outputs are not used, it is recommended to disable (Hi-Z) the banks
+to reduce power. Refer to Termination and Use of Clock Drivers for more information on output interface and
+termination techniques.
+NOTE
+For best soldering practices, the minimum trace length for any unused pin should extend
+to include the pin solder mask. This way during reflow, the solder has the same copper
+area as connected pins. This allows for good, uniform fillet solder joints helping to keep
+the IC level during reflow.
+Table 4. Differential Output Buffer Type Selection
+CLKout_
+TYPE1
+CLKout_
+TYPE0
+CLKoutX BUFFER TYPE
+(BANK A and B)
+0 0 LVPECL
+0 1 LVDS
+1 0 HCSL
+1 1 Disabled (Hi-Z)
+8.3.3.1 Reference Output
+The reference output (REFout) provides a LVCMOS copy of the selected input clock. The LVCMOS output high
+level is referenced to the Vcco voltage. REFout can be enabled or disabled using the enable input pin,
+REFout_EN, as shown in Table 5.
+Table 5. Reference Output Enable
+REFout_EN REFout STATE
+0 Disabled (Hi-Z)
+1 Enabled
+The REFout_EN input is internally synchronized with the selected input clock by the SYNC block. This
+synchronizing function prevents glitches and runt pulses from occurring on the REFout clock when enabled or
+disabled. REFout will be enabled within 3 cycles (tEN) of the input clock after REFout_EN is toggled high. REFout
+will be disabled within 3 cycles (tDIS) of the input clock after REFout_EN is toggled low.
+When REFout is disabled, the use of a resistive loading can be used to set the output to a predetermined level.
+For example, if REFout is configured with a 1 kΩ load to ground, then the output will be pulled to low when
+disabled.
+=== PAGE 21
+0.1 PF
+0.1 PF
+50:Trace
+50: LMK
+Input
+0.1 PFRSCMOS
+Driver
+22
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+9 Application and Implementation
+NOTE
+Information in the following applications sections is not part of the TI component
+specification, and TI does not warrant its accuracy or completeness. TI’s customers are
+responsible for determining suitability of components for their purposes. Customers should
+validate and test their design implementation to confirm system functionality.
+9.1 Driving the Clock Inputs
+The LMK00304 has two universal inputs (CLKin0/CLKin0* and CLKin1/CLKin1*) that can accept DC-coupled
+3.3V/2.5V LVPECL, LVDS, CML, SSTL, and other differential and single-ended signals that meet the input
+requirements specified in Electrical Characteristics. The device can accept a wide range of signals due to its
+wide input common mode voltage range (VCM ) and input voltage swing (VID) / dynamic range. For 50% duty
+cycle and DC-balanced signals, AC coupling may also be employed to shift the input signal to within the VCM
+range. Refer to Termination and Use of Clock Drivers for signal interfacing and termination techniques.
+To achieve the best possible phase noise and jitter performance, it is mandatory for the input to have high slew
+rate of 3 V/ns (differential) or higher. Driving the input with a lower slew rate will degrade the noise floor and jitter.
+For this reason, a differential signal input is recommended over single-ended because it typically provides higher
+slew rate and common-mode-rejection. Refer to the “Noise Floor vs. CLKin Slew Rate”and “RMS Jitter vs. CLKin
+Slew Rate” plots in Typical Characteristics.
+While it is recommended to drive the CLKin/CLKin* pair with a differential signal input, it is possible to drive it
+with a single-ended clock provided it conforms to the Single-Ended Input specifications for CLKin pins listed in
+the Electrical Characteristics. For large single-ended input signals, such as 3.3V or 2.5V LVCMOS, a 50 Ω load
+resistor should be placed near the input for signal attenuation to prevent input overdrive as well as for line
+termination to minimize reflections. Again, the single-ended input slew rate should be as high as possible to
+minimize performance degradation. The CLKin input has an internal bias voltage of about 1.4 V, so the input can
+be AC coupled as shown in Figure 25. The output impedance of the LVCMOS driver plus Rs should be close to
+50 Ω to match the characteristic impedance of the transmission line and load termination.
+Figure 25. Single-Ended LVCMOS Input, AC Coupling
+A single-ended clock may also be DC coupled to CLKinX as shown in Figure 26. A 50-Ω load resistor should be
+placed near the CLKin input for signal attenuation and line termination. Because half of the single-ended swing of
+the driver (VO,PP / 2) drives CLKinX, CLKinX* should be externally biased to the midpoint voltage of the
+attenuated input swing ((VO,PP / 2) × 0.5). The external bias voltage should be within the specified input common
+voltage (VCM) range. This can be achieved using external biasing resistors in the kΩ range (RB1 and RB2) or
+another low-noise voltage reference. This will ensure the input swing crosses the threshold voltage at a point
+where the input slew rate is the highest.
+If the LVCMOS driver cannot achieve sufficient swing with a DC-terminated 50Ω load at the CLKinX input as
+shown in Figure 26, then consider connecting the 50Ω load termination to ground through a capacitor (CAC). This
+AC termination blocks the DC load current on the driver, so the voltage swing at the input is determined by the
+voltage divider formed by the source (Ro+Rs) and 50Ω load resistors. The value for CAC depends on the trace
+delay, Td, of the 50Ω transmission line, where CAC >= 3*Td/50Ω.
+=== PAGE 22
+LMK00304
+OSCin
+OSCout
+C1
+C2
+XTAL
+RLIM
+0.1 PF50:Trace
+50:
+CMOS
+Driver
+0.1 PFRS
+LMK00304
+OSCin
+OSCout
+0.1 PF
+50:Trace   CMOS
+   Driver
+Rs
+VCC
+RB1
+RB2
+VCC
+LMK
+Input
+50:
+VO,PP VO,PP/2
+VBB ~ (VO,PP/2) x 0.5
+23
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Driving the Clock Inputs (continued)
+Figure 26. Single-Ended LVCMOS Input, DC Coupling
+with Common Mode Biasing
+If the crystal oscillator circuit is not used, it is possible to drive the OSCin input with an single-ended external
+clock as shown in Figure 27. The input clock should be AC coupled to the OSCin pin, which has an internally-
+generated input bias voltage, and the OSCout pin should be left floating. While OSCin provides an alternative
+input to multiplex an external clock, it is recommended to use either universal input (CLKinX) since it offers
+higher operating frequency, better common mode and power supply noise rejection, and greater performance
+over supply voltage and temperature variations.
+Figure 27. Driving OSCin with a Single-Ended Input
+9.2 Crystal Interface
+The LMK00304 has an integrated crystal oscillator circuit that supports a fundamental mode, AT-cut crystal. The
+crystal interface is shown in Figure 28.
+Figure 28. Crystal Interface
+The load capacitance (CL) is specific to the crystal, but usually on the order of 18 - 20 pF. While CL is specified
+for the crystal, the OSCin input capacitance (CIN = 4 pF typical) of the device and PCB stray capacitance (CSTRAY
+~ 1~3 pF) can affect the discrete load capacitor values, C1 and C2.
+For the parallel resonant circuit, the discrete capacitor values can be calculated as follows:
+CL = (C1 * C2) / (C1 + C2) + CIN + CSTRAY (1)
+Typically, C1 = C2 for optimum symmetry, so Equation 1 can be rewritten in terms of C1 only:
+CL = C1
+2 / (2 * C1) + CIN + CSTRAY (2)
+Finally, solve for C1:
+C1 = (CL - CIN - CSTRAY)*2 (3)
+=== PAGE 23
+CLKoutX
+CLKoutX*
+LVDS 
+Receiver
+100:100:Trace
+(Differential)
+LVDS
+Driver
+24
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Crystal Interface (continued)
+Electrical Characteristics provides crystal interface specifications with conditions that ensure start-up of the
+crystal, but it does not specify crystal power dissipation. The designer will need to ensure the crystal power
+dissipation does not exceed the maximum drive level specified by the crystal manufacturer. Overdriving the
+crystal can cause premature aging, frequency shift, and eventual failure. Drive level should be held at a sufficient
+level necessary to start-up and maintain steady-state operation.
+The power dissipated in the crystal, PXTAL, can be computed by:
+PXTAL = IRMS
+2 * RESR*(1 + C0/CL)2
+where
+• IRMS is the RMS current through the crystal.
+• RESR is the max. equivalent series resistance specified for the crystal
+• CL is the load capacitance specified for the crystal
+• C0 is the min. shunt capacitance specified for the crystal (4)
+IRMS can be measured using a current probe (e.g. Tektronix CT-6 or equivalent) placed on the leg of the crystal
+connected to OSCout with the oscillation circuit active.
+As shown in Figure 28, an external resistor, RLIM, can be used to limit the crystal drive level, if necessary. If the
+power dissipated in the selected crystal is higher than the drive level specified for the crystal with RLIM shorted,
+then a larger resistor value is mandatory to avoid overdriving the crystal. However, if the power dissipated in the
+crystal is less than the drive level with RLIM shorted, then a zero value for RLIM can be used. As a starting point, a
+suggested value for RLIM is 1.5 kΩ.
+9.3 Termination and Use of Clock Drivers
+When terminating clock drivers keep in mind these guidelines for optimum phase noise and jitter performance:
+• Transmission line theory should be followed for good impedance matching to prevent reflections.
+• Clock drivers should be presented with the proper loads.
+– LVDS outputs are current drivers and require a closed current loop.
+– HCSL drivers are switched current outputs and require a DC path to ground via 50 Ω termination.
+– LVPECL outputs are open emitter and require a DC path to ground.
+• Receivers should be presented with a signal biased to their specified DC bias level (common mode voltage)
+for proper operation. Some receivers have self-biasing inputs that automatically bias to the proper voltage
+level; in this case, the signal should normally be AC coupled.
+It is possible to drive a non-LVPECL or non-LVDS receiver with a LVDS or LVPECL driver as long as the above
+guidelines are followed. Check the data sheet of the receiver or input being driven to determine the best
+termination and coupling method to be sure the receiver is biased at the optimum DC voltage (common mode
+voltage).
+9.3.1 Termination for DC-Coupled Differential Operation
+For DC-coupled operation of an LVDS driver, terminate with 100 Ω as close as possible to the LVDS receiver as
+shown in Figure 29.
+Figure 29. Differential LVDS Operation, DC Coupling,
+No Biasing by the Receiver
+=== PAGE 24
+CLKoutX
+CLKoutX*
+LVPECL 
+Receiver
+RPU
+100:Trace
+(Differential)
+RPU
+Vcco
+Vcco
+LVPECL 
+Driver
+RPDRPDRPU RPDVcco VTT
+3.3V
+2.5V
+120:
+250:
+82:
+62.5:
+~1.3V
+0.5V
+CLKoutX
+CLKoutX*
+LVPECL 
+Receiver
+50:
+100:Trace
+(Differential)
+50:
+Vcco - 2V
+Vcco - 2V
+LVPECL 
+Driver
+CLKoutX
+CLKoutX*
+HCSL 
+Receiver
+50:
+50:Traces
+50:
+HCSL 
+Driver
+Rs
+Rs
+25
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Termination and Use of Clock Drivers (continued)
+For DC-coupled operation of an HCSL driver, terminate with 50 Ω to ground near the driver output as shown in
+Figure 30. Series resistors, Rs, may be used to limit overshoot due to the fast transient current. Because HCSL
+drivers require a DC path to ground, AC coupling is not allowed between the output drivers and the 50-Ω
+termination resistors.
+Figure 30. HCSL Operation, DC Coupling
+For DC-coupled operation of an LVPECL driver, terminate with 50 Ω to Vcco - 2 V as shown in Figure 31.
+Alternatively terminate with a Thevenin equivalent circuit as shown in Figure 32 for Vcco (output driver supply
+voltage) = 3.3 V and 2.5 V. In the Thevenin equivalent circuit, the resistor dividers set the output termination
+voltage (VTT) to Vcco – 2 V.
+Figure 31. Differential LVPECL Operation, DC Coupling
+Figure 32. Differential LVPECL Operation, DC Coupling, Thevenin Equivalent
+=== PAGE 25
+   LVDS
+   Driver
+CLKoutX
+CLKoutX*
+0.1 PF
+0.1 PF
+100:Trace
+(Differential)100:
+Receiver with internal 
+termination and biasing 
+through 50: resistors
+50:
+50:
+Vbias
+(b) LVDS DC termination with AC coupling at source and internal termination at load. 
+Double termination at source and load will reduce swing by half.
+Source termination for 
+proper DC bias of the driver
+    LVDS
+   Driver
+CLKoutX
+CLKoutX*
+0.1 PF
+0.1 PF
+100:Trace
+(Differential) 100:
+Receiver biasing can be 
+internal or external through 
+resistors in K: range
+(a) LVDS DC termination with AC coupling at load
+K:
+K:
+Vbias
+26
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Termination and Use of Clock Drivers (continued)
+9.3.2 Termination for AC-Coupled Differential Operation
+AC coupling allows for shifting the DC bias level (common mode voltage) when driving different receiver
+standards. Because AC coupling prevents the driver from providing a DC bias voltage at the receiver, it is
+important to ensure the receiver is biased to its ideal DC level.
+When driving differential receivers with an LVDS driver, the signal may be AC coupled by adding DC-blocking
+capacitors; however the proper DC bias point needs to be established at both the driver side and the receiver
+side. The recommended termination scheme depends on whether the differential receiver has integrated
+termination resistors or not.
+When driving a differential receiver without internal 100-Ω differential termination, the AC-coupling capacitors
+should be placed between the load termination resistor and the receiver to allow a DC path for proper biasing of
+the LVDS driver. This is shown in Figure 33. The load termination resistor and AC-coupling capacitors should be
+placed as close as possible to the receiver inputs to minimize stub length. The receiver can be biased internally
+or externally to a reference voltage within the receiver’s common mode input range through resistors in the kilo-
+ohm range.
+When driving a differential receiver with internal 100-Ω differential termination, a source termination resistor
+should be placed before the AC-coupling capacitors for proper DC biasing of the driver as shown in Figure 34.
+However, with a 100-Ω resistor at the source and the load (that is, double terminated), the equivalent resistance
+seen by the LVDS driver is 50 Ω which causes the effective signal swing at the input to be reduced by half. If a
+self-terminated receiver requires input swing greater than 250 mVpp (differential) as well as AC coupling to its
+inputs, then the LVDS driver with the double-terminated arrangement in Figure 34 may not meet the minimum
+input swing requirement; alternatively, the LVPECL or HCSL output driver format with AC coupling is
+recommended to meet the minimum input swing required by the self-terminated receiver.
+When using AC coupling with LVDS outputs, there may be a startup delay observed in the clock output due to
+capacitor charging. The examples in Figure 33 and Figure 34 use 0.1-μF capacitors, but this value may be
+adjusted to meet the startup requirements for the particular application.
+Figure 33. Differential LVDS Operation With AC Coupling
+to Receivers
+(a) Without Internal 100-Ω Termination
+Figure 34. Differential LVDS Operation With AC Coupling
+to Receivers
+(b) With Internal 100-Ω Termination
+LVPECL drivers require a DC path to ground. When AC coupling an LVPECL signal use 160-Ω emitter resistors
+(or 91 Ω for Vcco = 2.5 V) close to the LVPECL driver to provide a DC path to ground as shown in Figure 38. For
+proper receiver operation, the signal should be biased to the DC bias level (common mode voltage) specified by
+the receiver. The typical DC bias voltage (common mode voltage) for LVPECL receivers is 2 V. Alternatively, a
+Thevenin equivalent circuit forms a valid termination as shown in Figure 35 for Vcco = 3.3 V and 2.5 V. Note: this
+Thevenin circuit is different from the DC coupled example in Figure 32, since the voltage divider is setting the
+input common mode voltage of the receiver.
+=== PAGE 26
+CLKoutX
+CLKoutX*
+(unused)
+RPD
+50:Trace
+RPU
+Load
+Vcco
+RPD
+RPU
+Vcco
+LVPECL
+Driver
+RPU RPDVcco VTT
+3.3V
+2.5V
+120:
+250:
+82:
+62.5:
+~1.3V
+0.5V
+CLKoutX
+CLKoutX* 50:
+50:Trace
+50:
+Load
+Vcco - 2V
+Vcco - 2V
+LVPECL
+Driver
+CLKoutX
+CLKoutX*
+RTRT
+0.1 PF
+0.1 PF
+LVPECL 
+Reciever
+100:Trace
+(Differential)
+RPU
+RPD
+Vcco RPU
+RPD
+Vcco
+LVPECL
+Driver
+RPU RPDVcco VBB
+3.3V
+2.5V
+82:
+62.5:
+120:
+250:
+2V
+2V
+RT
+160:
+91:
+27
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Termination and Use of Clock Drivers (continued)
+Figure 35. Differential LVPECL Operation, AC Coupling,
+Thevenin Equivalent
+9.3.3 Termination for Single-Ended Operation
+A balun can be used with either LVDS or LVPECL drivers to convert the balanced, differential signal into an
+unbalanced, single-ended signal.
+It is possible to use an LVPECL driver as one or two separate 800 mV p-p signals. When DC coupling one of the
+LMK00304 LVPECL driver of a CLKoutX/CLKoutX* pair, be sure to properly terminate the unused driver. When
+DC coupling on of the LMK00304 LVPECL drivers, the termination should be 50 Ω to Vcco – 2 V as shown in
+Figure 36. The Thevenin equivalent circuit is also a valid termination as shown in Figure 37 for Vcco = 3.3 V.
+Figure 36. Single-Ended LVPECL Operation, DC Coupling
+Figure 37. Single-Ended LVPECL Operation, DC Coupling, Thevenin Equivalent
+=== PAGE 27
+CLKoutX
+CLKoutX*
+RTRT
+0.1 PF
+0.1 PF
+50:Trace
+50:
+Load
+50:
+LVPECL
+Driver
+Vcco
+3.3V
+2.5V
+RT
+160:
+91:
+28
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Termination and Use of Clock Drivers (continued)
+When AC coupling an LVPECL driver use a 160-Ω emitter resistor (or 91 Ω for Vcco = 2.5 V) to provide a DC
+path to ground and ensure a 50-Ω termination with the proper DC bias level for the receiver. The typical DC bias
+voltage for LVPECL receivers is 2 V. If the companion driver is not used, it should be terminated with either a
+proper AC or DC termination. This latter example of AC coupling a single-ended LVPECL signal can be used to
+measure single-ended LVPECL performance using a spectrum analyzer or phase noise analyzer. When using
+most RF test equipment no DC bias point (0 VDC) is required for safe and proper operation. The internal 50 Ω
+termination the test equipment correctly terminates the LVPECL driver being measured as shown in Figure 38.
+When using only one LVPECL driver of a CLKoutX/CLKoutX* pair, be sure to properly terminated the unused
+driver.
+Figure 38. Single-Ended LVPECL Operation, AC Coupling
+=== PAGE 28
+29
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+10 Power Supply Recommendations
+10.1 Power Supply Sequencing
+When powering the Vcc and Vcco pins from separate supply rails, TI recommends that the supplies to reach
+their regulation point at approximately the same time while ramping up, or reach ground potential at the same
+time while ramping down. Using simultaneous or ratiometric power supply sequencing prevents internal current
+flow from Vcc to Vcco pins that could occur when Vcc is powered before Vcco.
+10.2 Current Consumption and Power Dissipation Calculations
+The current consumption values specified in Electrical Characteristics can be used to calculate the total power
+dissipation and IC power dissipation for any device configuration. The total VCC core supply current (ICC_TOTAL)
+can be calculated using Equation 5:
+ICC_TOTAL = ICC_CORE + ICC_BANKS + ICC_CMOS
+where
+• ICC_CORE is the VCC current for core logic and input blocks and depends on selected input (CLKinX or OSCin).
+• ICC_BANKS is the VCC current for Banks A & B and depends on the selected output type (ICC_PECL, ICC_LVDS,
+ICC_HCSL, or 0 mA if disabled).
+• ICC_CMOS is the VCC current for the LVCMOS output (or 0 mA if REFout is disabled). (5)
+Because the output supplies (VCCOA, VCCOB, VCCOC) can be powered from 3 independent voltages, the respective
+output supply currents (ICCO_BANK_A, ICCO_BANK_B, and ICCO_CMOS) should be calculated separately.
+ICCO_BANK for either Bank A or B may be taken as 50% of the corresponding output supply current specified for
+two banks (ICCO_PECL, ICCO_LVDS, or ICCO_HCSL) provided the output loading matches the specified conditions.
+Otherwise, ICCO_BANK should be calculated per bank using Equation 6:
+ICCO_BANK = IBANK_BIAS + (N × IOUT_LOAD)
+where
+• IBANK_BIAS is the output bank bias current (fixed value).
+• IOUT_LOAD is the DC load current per loaded output pair.
+• N is the number of loaded output pairs (N = 0 to 2). (6)
+Table 6 shows the typical IBANK_BIAS values and IOUT_LOAD expressions for LVPECL, LVDS, and HCSL.
+For LVPECL, it is possible to use a larger termination resistor (RT) to ground instead of terminating with 50 Ω to
+VTT = Vcco - 2 V; this technique is commonly used to eliminate the extra termination voltage supply (VTT) and
+potentially reduce device power dissipation at the expense of lower output swing. For example, when Vcco is 3.3
+V, a RT value of 160 Ω to ground will eliminate the 1.3 V termination supply without sacrificing much output
+swing. In this case, the typical IOUT_LOAD is 25 mA, so ICCO_BANK for one LVPECL bank reduces to 63 mA (vs. 67.5
+mA with 50 Ω resistors to Vcco - 2 V).
+Table 6. Typical Output Bank Bias and Load Currents
+CURRENT PARAMETER LVPECL LVDS HCSL
+IBANK_BIAS 13 mA 11.6 mA 2.4 mA
+IOUT_LOAD (VOH - VTT)/RT + (VOL - VTT)/RT
+0 mA
+(No DC load current) VOH/RT
+Once the current consumption is known for each supply, the total power dissipation (PTOTAL) can be calculated:
+PTOTAL = (VCC × ICC_TOTAL) + (VCCOA × ICCO_BANK) + (VCCOB × ICCO_BANK) + (VCCOC × ICCO_CMOS) (7)
+If the device is configured with LVPECL and/or HCSL outputs, then it is also necessary to calculate the power
+dissipated in any termination resistors (PRT_ PECL and PRT_HCSL) and in any LVPECL termination voltages
+(PVTT_PECL). The external power dissipation values can be calculated as follows:
+PRT_PECL (per LVPECL pair) = (VOH – VTT)2/RT + (VOL – VTT)2/RT (8)
+PVTT_PECL (per LVPECL pair) = VTT × [(VOH - VTT)/RT + (VOL – VTT)/RT] (9)
+PRT_HCSL (per HCSL pair) = VOH
+2 / RT (10)
+=== PAGE 29
+30
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Finally, the IC power dissipation (PDEVICE) can be computed by subtracting the external power dissipation values
+from PTOTAL as follows:
+PDEVICE = PTOTAL – N1 × (PRT_PECL + PVTT_PECL) – N2 × PRT_HCSL
+where
+• N1 is the number of LVPECL output pairs with termination resistors to VTT (usually Vcco - 2 V or GND).
+• N2 is the number of HCSL output pairs with termination resistors to GND. (11)
+10.2.1 Power Dissipation Example: Worst-Case Dissipation
+This example shows how to calculate IC power dissipation for a configuration to estimate worst-case power
+dissipation. In this case, the maximum supply voltage and supply current values specified in Electrical
+Characteristics are used.
+• Max VCC = VCCO = 3.465 V. Max ICC and ICCO values.
+• CLKin0/CLKin0* input is selected.
+• Banks A and B are configured for LVPECL: all outputs terminated with 50 Ω to VT = Vcco – 2 V.
+• REFout is enabled with 5-pF load.
+• TA = 85°C
+Using the power calculations from the previous section and maximum supply current specifications, we can
+compute PTOTAL and PDEVICE.
+• From Equation 5: ICC_TOTAL = 10.5 mA + 48 mA + 5.5 mA = 64 mA
+• From ICCO_PECL max spec: ICCO_BANK = 50% of ICCO_PECL = 81.5 mA
+• From Equation 7: PTOTAL = (3.465 V × 64 mA) + (3.465 V × 81.5 mA)+ (3.465 V × 81.5 mA) + (3.465 V × 10
+mA) = 821 mW
+• From Equation 8: PRT_PECL = ((2.57 V – 1.47 V)2/50 Ω) + ((1.72 V – 1.47 V)2/50 Ω) = 25.5 mW (per output
+pair)
+• From Equation 9: PVTT_PECL = 1.47 V × [ ((2.57 V – 1.47 V) / 50 Ω) + ((1.72 V – 1.47 V) / 50 Ω) ] = 39.5 mW
+(per output pair)
+• From Equation 10: PRT_HCSL = 0 mW (no HCSL outputs)
+• From Equation 11: PDEVICE = 821 mW – (4 × (25.5 mW + 39.5 mW)) – 0 mW = 561 mW
+In this worst-case example, the IC device will dissipate about 561 mW or 68% of the total power (821 mW), while
+the remaining 32% will be dissipated in the emitter resistors (102 mW for 4 pairs) and termination voltage (158
+mW into Vcco – 2 V). Based on θJA of 38.1°C/W, the estimate die junction temperature would be about 21.4°C
+above ambient, or 106.4°C when TA = 85°C.
+10.3 Power Supply Bypassing
+The Vcc and Vcco power supplies should have a high-frequency bypass capacitor, such as 0.1 µF or 0.01 µF,
+placed very close to each supply pin. 1-µF to 10-µF decoupling capacitors should also be placed nearby the
+device between the supply and ground planes. All bypass and decoupling capacitors should have short
+connections to the supply and ground plane through a short trace or via to minimize series inductance.
+10.3.1 Power Supply Ripple Rejection
+In practical system applications, power supply noise (ripple) can be generated from switching power supplies,
+digital ASICs or FPGAs, and so forth. While power supply bypassing will help filter out some of this noise, it is
+important to understand the effect of power supply ripple on the device performance. When a single-tone
+sinusoidal signal is applied to the power supply of a clock distribution device, such as LMK00304, it can produce
+narrow-band phase modulation as well as amplitude modulation on the clock output (carrier). In the single-side
+band phase noise spectrum, the ripple-induced phase modulation appears as a phase spur level relative to the
+carrier (measured in dBc).
+=== PAGE 30
+Ripple
+Source Bias-Tee Power
+Supplies
+DUT Board
+Limiting
+Amp
+Scope Phase Noise
+Analyzer
+IC
+Measure 100 mVPP 
+ripple on Vcco at IC
+OUT+
+ 
+OUT-
+OUT
+Measure single 
+sideband phase spur 
+power in dBc
+Clock 
+Source
+IN+
+ 
+IN-
+Vcco Vcc
+31
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+Power Supply Bypassing (continued)
+For the LMK00304, power supply ripple rejection, or PSRR, was measured as the single-sideband phase spur
+level (in dBc) modulated onto the clock output when a ripple signal was injected onto the Vcco supply. The
+PSRR test setup is shown in Figure 39.
+Figure 39. PSRR Test Setup
+A signal generator was used to inject a sinusoidal signal onto the Vcco supply of the DUT board, and the peak-
+to-peak ripple amplitude was measured at the Vcco pins of the device. A limiting amplifier was used to remove
+amplitude modulation on the differential output clock and convert it to a single-ended signal for the phase noise
+analyzer. The phase spur level measurements were taken for clock frequencies of 156.25 MHz and 312.5 MHz
+under the following power supply ripple conditions:
+• Ripple amplitude: 100 mVpp on Vcco = 2.5 V
+• Ripple frequencies: 100 kHz, 1 MHz, and 10 MHz
+Assuming no amplitude modulation effects and small index modulation, the peak-to-peak deterministic jitter (DJ)
+can be calculated using the measured single-sideband phase spur level (PSRR) as follows:
+DJ (ps pk-pk) = [(2 × 10(PSRR / 20)) / (π × fCLK)] × 1012 (12)
+The “PSRR vs. Ripple Frequency” plots in Typical Characteristics show the ripple-induced phase spur levels for
+the differential output types at 156.25 MHz and 312.5 MHz. The LMK00304 exhibits very good and well-behaved
+PSRR characteristics across the ripple frequency range for all differential output types. The phase spur levels for
+LVPECL are below –64 dBc at 156.25 MHz and below –62 dBc at 312.5 MHz. Using Equation 12, these phase
+spur levels translate to Deterministic Jitter values of 2.57 ps pk-pk at 156.25 MHz and 1.62 ps pk-pk at 312.5
+MHz. Testing has shown that the PSRR performance of the device improves for Vcco = 3.3 V under the same
+ripple amplitude and frequency conditions.
+10.4 Thermal Management
+Power dissipation in the LMK00304 device can be high enough to require attention to thermal management. For
+reliability and performance reasons the die temperature should be limited to a maximum of 125°C. That is, as an
+estimate, TA (ambient temperature) plus device power dissipation times θJA should not exceed 125°C.
+The package of the device has an exposed pad that provides the primary heat removal path as well as excellent
+electrical grounding to the printed circuit board. To maximize the removal of heat from the package a thermal
+land pattern including multiple vias to a ground plane must be incorporated on the PCB within the footprint of the
+package. The exposed pad must be soldered down to ensure adequate heat conduction out of the package.
+=== PAGE 31
+0.2 mm, typ
+1.27 mm, 
+typ
+3.1 mm, min
+32
+LMK00304
+SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018 www.ti.com
+Product Folder Links: LMK00304
+Submit Documentation Feedback Copyright © 2012–2018, Texas Instruments Incorporated
+Thermal Management (continued)
+A recommended land and via pattern is shown in Figure 40. More information on soldering WQFN packages can
+be obtained at: http://www.ti.com/packaging.
+Figure 40. Recommended Land and Via Pattern
+To minimize junction temperature it is recommended that a simple heat sink be built into the PCB (if the ground
+plane layer is not exposed). This is done by including a copper area of about 2 square inches on the opposite
+side of the PCB from the device. This copper area may be plated or solder coated to prevent corrosion but
+should not have conformal coating (if possible), which could provide thermal insulation. The vias shown in
+Figure 40 should connect these top and bottom copper layers and to the ground layer. These vias act as “heat
+pipes” to carry the thermal energy away from the device side of the board to where it can be more effectively
+dissipated.
+10.4.1 Support for PCB Temperature up to 105°C
+The LMK00304 can maintain a safe junction temperature below the recommended maximum value of 125°C
+even when operated on a PCB with a maximum board temperature (Tb) of 105°C. This is shown by the following
+example calculation, which assumes the worst-case IC power dissipation (PDEVICE) from Power Dissipation
+Example: Worst-Case Dissipation and a 4-layer JEDEC test board with no airflow.
+SPACER
+TJ = Tb + (ψjb × PDEVICE)
+where
+• Tb = 105°C
+• ψjb = 11.9°C/W
+• PDEVICE = 561 mW (13)
+SPACER
+TJ = 111.7°C (14)
+=== PAGE 32
+33
+LMK00304
+www.ti.com SNAS577G – FEBRUARY 2012 – REVISED AUGUST 2018
+Product Folder Links: LMK00304
+Submit Documentation FeedbackCopyright © 2012–2018, Texas Instruments Incorporated
+11 Device and Documentation Support
+11.1 Documentation Support
+11.1.1 Related Documentation
+For related documents, see:
+AN-912 Common Data Transmission Parameters and their Definitions (SNLA036)
+11.2 Receiving Notification of Documentation Updates
+To receive notification of documentation updates, navigate to the device product folder on ti.com. In the upper
+right corner, click on Alert me to register and receive a weekly digest of any product information that has
+changed. For change details, review the revision history included in any revised document.
+11.3 Community Resources
+The following links connect to TI community resources. Linked contents are provided "AS IS" by the respective
+contributors. They do not constitute TI specifications and do not necessarily reflect TI's views; see TI's Terms of
+Use.
+TI E2E™ Online Community TI's Engineer-to-Engineer (E2E) Community. Created to foster collaboration
+among engineers. At e2e.ti.com, you can ask questions, share knowledge, explore ideas and help
+solve problems with fellow engineers.
+Design Support TI's Design Support Quickly find helpful E2E forums along with design support tools and
+contact information for technical support.
+11.4 Trademarks
+E2E is a trademark of Texas Instruments.
+All other trademarks are the property of their respective owners.
+11.5 Electrostatic Discharge Caution
+These devices have limited built-in ESD protection. The leads should be shorted together or the device placed in conductive foam
+during storage or handling to prevent electrostatic damage to the MOS gates.
+11.6 Glossary
+SLYZ022 — TI Glossary.
+This glossary lists and explains terms, acronyms, and definitions.
+12 Mechanical, Packaging, and Orderable Information
+The following pages include mechanical, packaging, and orderable information. This information is the most
+current data available for the designated devices. This data is subject to change without notice and revision of
+this document. For browser-based versions of this data sheet, refer to the left-hand navigation.
+=== PAGE 33
+PACKAGE OPTION ADDENDUM
+www.ti.com 10-Nov-2025
+PACKAGING INFORMATION
+Orderable part number Status
+(1)
+Material type
+(2)
+Package | Pins Package qty | Carrier RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C) Part marking
+(6)
+LMK00304SQ/NOPB Active Production WQFN (RTV) | 32 1000 | SMALL T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+LMK00304SQ/NOPB.A Active Production WQFN (RTV) | 32 1000 | SMALL T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+LMK00304SQE/NOPB Active Production WQFN (RTV) | 32 250 | SMALL T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+LMK00304SQE/NOPB.A Active Production WQFN (RTV) | 32 250 | SMALL T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+LMK00304SQX/NOPB Active Production WQFN (RTV) | 32 2500 | LARGE T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+LMK00304SQX/NOPB.A Active Production WQFN (RTV) | 32 2500 | LARGE T&R Yes SN Level-3-260C-168 HR -40 to 85 K00304
+ 
+(1) Status:  For more details on status, see our product life cycle.
+ 
+(2) Material type:  When designated, preproduction parts are prototypes/experimental devices, and are not yet approved or released for full production. Testing and final process, including without limitation quality assurance,
+reliability performance testing, and/or process qualification, may not yet be complete, and this item is subject to further changes or possible discontinuation. If available for ordering, purchases will be subject to an additional
+waiver at checkout, and are intended for early internal evaluation purposes only. These items are sold without warranties of any kind.
+ 
+(3) RoHS values:  Yes, No, RoHS Exempt. See the TI RoHS Statement for additional information and value definition.
+ 
+(4) Lead finish/Ball material:  Parts may have multiple material finish options. Finish options are separated by a vertical ruled line. Lead finish/Ball material values may wrap to two lines if the finish value exceeds the maximum
+column width.
+ 
+(5) MSL rating/Peak reflow:  The moisture sensitivity level ratings and peak solder (reflow) temperatures. In the event that a part has multiple moisture sensitivity ratings, only the lowest level per JEDEC standards is shown.
+Refer to the shipping label for the actual reflow temperature that will be used to mount the part to the printed circuit board.
+ 
+(6) Part marking:  There may be an additional marking, which relates to the logo, the lot trace code information, or the environmental category of the part.
+ 
+Multiple part markings will be inside parentheses. Only one part marking contained in parentheses and separated by a "~" will appear on a part. If a line is indented then it is a continuation of the previous line and the two
+combined represent the entire part marking for that device.
+ 
+Important Information and Disclaimer:The information provided on this page represents TI's knowledge and belief as of the date that it is provided. TI bases its knowledge and belief on information provided by third parties, and
+makes no representation or warranty as to the accuracy of such information. Efforts are underway to better integrate information from third parties. TI has taken and continues to take reasonable steps to provide representative
+and accurate information but may not have conducted destructive testing or chemical analysis on incoming materials and chemicals. TI and TI suppliers consider certain information to be proprietary, and thus CAS numbers
+and other limited information may not be available for release.
+ 
+In no event shall TI's liability arising out of such information exceed the total purchase price of the TI part(s) at issue in this document sold by TI to Customer on an annual basis.
+Addendum-Page 1
+=== PAGE 34
+PACKAGE OPTION ADDENDUM
+www.ti.com 10-Nov-2025
+ 
+Addendum-Page 2
+=== PAGE 35
+PACKAGE MATERIALS INFORMATION
+  
+www.ti.com 1-Aug-2025
+TAPE AND REEL INFORMATION
+Reel Width (W1)
+REEL DIMENSIONS
+A0
+B0
+K0
+W
+Dimension designed to accommodate the component length
+Dimension designed to accommodate the component thickness
+Overall width of the carrier tape
+Pitch between successive cavity centers
+Dimension designed to accommodate the component width
+TAPE DIMENSIONS
+K0  P1
+B0 W
+A0Cavity
+QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+Pocket Quadrants
+Sprocket Holes
+Q1 Q1Q2 Q2
+Q3 Q3Q4 Q4 User Direction of Feed
+P1
+Reel
+Diameter
+ 
+*All dimensions are nominal
+Device Package
+Type
+Package
+Drawing
+Pins SPQ Reel
+Diameter
+(mm)
+Reel
+Width
+W1 (mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+LMK00304SQ/NOPB WQFN RTV 32 1000 177.8 12.4 5.3 5.3 1.3 8.0 12.0 Q1
+LMK00304SQE/NOPB WQFN RTV 32 250 177.8 12.4 5.3 5.3 1.3 8.0 12.0 Q1
+LMK00304SQX/NOPB WQFN RTV 32 2500 330.0 12.4 5.3 5.3 1.3 8.0 12.0 Q1
+Pack Materials-Page 1
+=== PAGE 36
+PACKAGE MATERIALS INFORMATION
+  
+www.ti.com 1-Aug-2025
+TAPE AND REEL BOX DIMENSIONS
+Width (mm)
+W L
+H
+ 
+*All dimensions are nominal
+Device Package Type Package Drawing Pins SPQ Length (mm) Width (mm) Height (mm)
+LMK00304SQ/NOPB WQFN RTV 32 1000 208.0 191.0 35.0
+LMK00304SQE/NOPB WQFN RTV 32 250 208.0 191.0 35.0
+LMK00304SQX/NOPB WQFN RTV 32 2500 356.0 356.0 36.0
+Pack Materials-Page 2
+=== PAGE 37
+www.ti.com
+PACKAGE OUTLINE
+C
+5.15
+4.85
+5.15
+4.85
+0.8
+0.7
+0.05
+0.00
+2X 3.5
+28X 0.5
+2X 3.5
+32X 0.5
+0.3
+32X 0.30
+0.18
+ 3.1 0.1
+(0.1) TYP
+WQFN - 0.8 mm max heightRTV0032A
+PLASTIC QUAD FLATPACK - NO LEAD
+4224386/B   04/2019
+0.08 C
+0.1 C A B
+0.05
+NOTES:
+ 
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+    per ASME Y14.5M. 
+2. This drawing is subject to change without notice. 
+3. The package thermal pad must be soldered to the printed circuit board for thermal and mechanical performance.
+PIN 1 INDEX AREA
+SEATING PLANE
+PIN 1 ID
+SYMMEXPOSED
+THERMAL PAD
+SYMM
+1
+8
+9 16
+17
+24
+2532
+33
+SCALE  2.500
+AB
+=== PAGE 38
+www.ti.com
+EXAMPLE BOARD LAYOUT
+28X (0.5)
+(1.3)
+(1.3)
+(R0.05) TYP
+0.07 MAX
+ALL AROUND
+0.07 MIN
+ALL AROUND
+32X (0.6)
+32X (0.24)
+(4.8)
+(4.8)
+(3.1)
+(3.1)
+( 0.2) TYP
+VIA
+WQFN - 0.8 mm max heightRTV0032A
+PLASTIC QUAD FLATPACK - NO LEAD
+4224386/B   04/2019
+NOTES: (continued)
+ 
+4. This package is designed to be soldered to a thermal pad on the board. For more information, see Texas Instruments literature
+    number SLUA271 (www.ti.com/lit/slua271).
+5. Vias are optional depending on application, refer to device data sheet. If any vias are implemented, refer to their locations shown
+    on this view. It is recommended that vias under paste be filled, plugged or tented.
+SYMM
+SYMM
+SEE SOLDER MASK
+DETAIL
+LAND PATTERN EXAMPLE
+EXPOSED METAL SHOWN
+SCALE: 15X
+1
+8
+9 16
+17
+24
+2532
+33
+METAL EDGE
+SOLDER MASK
+OPENING
+EXPOSED METAL
+METAL UNDER
+SOLDER MASK
+SOLDER MASK
+OPENING
+EXPOSED
+METAL
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+SOLDER MASK DEFINED
+SOLDER MASK DETAILS
+=== PAGE 39
+www.ti.com
+EXAMPLE STENCIL DESIGN
+32X (0.6)
+32X (0.24)
+28X (0.5)
+(4.8)
+(4.8)
+(0.775) TYP
+(0.775) TYP
+4X (1.35)
+4X (1.35)
+(R0.05) TYP
+WQFN - 0.8 mm max heightRTV0032A
+PLASTIC QUAD FLATPACK - NO LEAD
+4224386/B   04/2019
+NOTES: (continued)
+ 
+6. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate
+   design recommendations. 
+ 
+SOLDER PASTE EXAMPLE
+BASED ON 0.125 MM THICK STENCIL
+SCALE: 20X
+ 
+EXPOSED PAD 33
+76% PRINTED SOLDER COVERAGE BY AREA UNDER PACKAGE
+SYMM
+SYMM 
+1
+8
+9 16
+17
+24
+2532
+33
+=== PAGE 40
+IMPORTANT NOTICE AND DISCLAIMER
+TI PROVIDES TECHNICAL AND RELIABILITY DATA (INCLUDING DATASHEETS), DESIGN RESOURCES (INCLUDING REFERENCE 
+DESIGNS), APPLICATION OR OTHER DESIGN ADVICE, WEB TOOLS, SAFETY INFORMATION, AND OTHER RESOURCES “AS IS” 
+AND WITH ALL FAULTS, AND DISCLAIMS ALL WARRANTIES, EXPRESS AND IMPLIED, INCLUDING WITHOUT LIMITATION ANY 
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT OF THIRD 
+PARTY INTELLECTUAL PROPERTY RIGHTS.
+These resources are intended for skilled developers designing with TI products. You are solely responsible for (1) selecting the appropriate 
+TI products for your application, (2) designing, validating and testing your application, and (3) ensuring your application meets applicable 
+standards, and any other safety, security, regulatory or other requirements.
+These resources are subject to change without notice. TI grants you permission to use these resources only for development of an 
+application that uses the TI products described in the resource. Other reproduction and display of these resources is prohibited. No license 
+is granted to any other TI intellectual property right or to any third party intellectual property right. TI disclaims responsibility for, and you fully 
+indemnify TI and its representatives against any claims, damages, costs, losses, and liabilities arising out of your use of these resources.
+TI’s products are provided subject to TI’s Terms of Sale, TI’s General Quality Guidelines, or other applicable terms available either on 
+ti.com or provided in conjunction with such TI products. TI’s provision of these resources does not expand or otherwise alter TI’s applicable 
+warranties or warranty disclaimers for TI products. Unless TI explicitly designates a product as custom or customer-specified, TI products 
+are standard, catalog, general purpose devices.
+TI objects to and rejects any additional or different terms you may propose.
+IMPORTANT NOTICE
+Copyright © 2025, Texas Instruments Incorporated
+Last updated 10/2025

@@ -14,22 +14,22 @@ run_sim() {
 }
 
 echo "=== [1/6] Milestone 1: Standalone 1,280-Input Time-Multiplexed Adder Tree ==="
-xvlog -sv polyphase_adder_tree.sv tb_fir_milestone1.sv
+xvlog -sv polyphase_adder_tree.sv Testbench/legacy_fir_milestones/tb_fir_milestone1.sv
 xelab tb_fir_milestone1 -s sim_m1
 run_sim sim_m1
 
 echo "=== [2/6] Milestone 1: Full Interpolator + MAC + Adder Tree (SYM_FOLD_EN=0, rate_shift 0..3) ==="
-xvlog -sv polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv tb_fir_interp_m1.sv
+xvlog -sv polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv Testbench/legacy_fir_milestones/tb_fir_interp_m1.sv
 xelab tb_fir_interp_m1 -s sim_interp_m1
 run_sim sim_interp_m1
 
 echo "=== [3/6] Milestone 2: Bit-Exact Option B Half-Curve Fold (SYM_FOLD_EN=1, rate_shift 0..3) ==="
-xvlog -sv polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv tb_fir_interp_m2.sv
+xvlog -sv polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv Testbench/legacy_fir_milestones/tb_fir_interp_m2.sv
 xelab tb_fir_interp_m2 -s sim_interp_m2
 run_sim sim_interp_m2
 
 echo "=== [4/6] Milestone 3: Stereo Wrapper + Quad-MAC URAM288 + Half-Curve Fold ==="
-xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv tb_fir_stereo_m3.sv
+xvlog -sv -d SIM polyphase_mac_engine.sv polyphase_adder_tree.sv fir_polyphase_interpolator.sv fir_stage1b_interp8.sv fir_polyphase_stereo.sv Testbench/legacy_fir_milestones/tb_fir_stereo_m3.sv
 xelab tb_fir_stereo_m3 -s sim_stereo_m3
 run_sim sim_stereo_m3
 

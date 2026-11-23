@@ -164,14 +164,14 @@ def _alinx_symbol(name, pins, used):
 # RTL port -> carrier net label; the connector pin comes from the XDC ';#' comment (authoritative),
 # so this table only names nets.  Ports deliberately left unmapped -> carrier no-connect:
 #   mclk_n (single-ended mclk_p drive, pair reserved), relay_level[0:1] (driven 0, struck bom-7 level
-#   relays), led_status (on-module LED1), i2s_data2 (removed 2026-11-15 - XMOS sole source).
+#   relays), led_status (on-module LED1).
 PORT_LABELS = {
     "spi_xmos_sclk": "SPI_XMOS_SCLK", "spi_xmos_cs_n": "SPI_XMOS_CS_N",
     "spi_xmos_mosi": "SPI_XMOS_MOSI", "spi_xmos_miso": "SPI_XMOS_MISO",
     "spi_ap_sclk": "SPI_AP_SCLK", "spi_ap_cs_n": "SPI_AP_CS_N",
     "spi_ap_mosi": "SPI_AP_MOSI", "spi_ap_miso": "SPI_AP_MISO", "spi_ap_irq_n": "SPI_AP_IRQ_N",
     "fpga_irq_n": "FPGA_IRQ_N", "ext_rst_n": "EXT_RST_N",
-    "i2s_bclk": "I2S_BCLK", "i2s_lrclk": "I2S_LRCLK", "i2s_data": "I2S_DATA",
+    "i2s_bclk": "I2S_BCLK", "i2s_lrclk": "I2S_LRCLK", "i2s_data": "I2S_DATA", "i2s_data2": "I2S_DATA2",
     "relay_line_mute": "RLY_LINE_MUTE", "pg_all": "PG_ALL",
     "test_select_n": "TEST_SELECT_N", "test_step_n": "TEST_STEP_N", "test_led": "TEST_LED",
     "led_debug[0]": "LED_DBG0", "led_debug[1]": "LED_DBG1",
@@ -212,7 +212,7 @@ def som_used():
         for p, (sig, f) in J[c].items():
             sig = sig.replace(" ", "")
             if sig.startswith("VCCIO_") or sig.startswith("VCCO_"):
-                used[c][p] = sig     # ACKU15S: the CARRIER feeds the SoM bank VCCOs -> v18 rail
+                used[c][p] = sig     # ACKU15S: SoM bank-VCCO outputs -> carrier v18 rail (SoM takes +12 V only, user 2026-11-19)
             elif sig == "+12V":
                 used[c][p] = "+12V"
             elif sig in JTAG_PINS:
@@ -238,7 +238,7 @@ def conn_nets(J, used, c, G, GND):
             elif lab.startswith("DAT"):
                 nets[p] = G(lab + "_1V8")      # LVCMOS18 leg -> XLAT sheet (SN74AXC8T245) -> DATnn at 3.3 V -> cell D
             elif lab.startswith("VCCIO_") or lab.startswith("VCCO_"):
-                nets[p] = G("v18")          # ACKU15S: carrier V18 rail FEEDS the SoM bank VCCOs
+                nets[p] = G("v18")          # ACKU15S: SoM-generated bank VCCOs supply carrier V18 (+12 V is the only carrier feed)
             elif lab == "+12V":
                 nets[p] = G("v12som")
             elif lab in ("FPGA_VP_IN", "FPGA_VN_IN"):
@@ -251,9 +251,9 @@ def conn_nets(J, used, c, G, GND):
 
 SOM_DESCR = {
     "J1": "banks 90/91 - control plane (dual SPI, I2S, IRQs, reset, relay, test, debug LEDs, clk_sel); MGT 227-231 unused",
-    "J2": "bank 65 - coefficient-flash x1 SPI (cf_*), JTAG, SYSMON VP/VN (tied GND), VCCIO_64/65 (carrier-fed v18); MGT 224-226 unused",
-    "J3": "power + config: +12 V feed (8 pins), SelectMAP (unused; DONE->FPGA_DONE), BOOT_M0..2 straps, VCCAUX_PG->SOM_PG, VCCIO_69/70/71 (carrier-fed v18); MGT 127-132 unused",
-    "J4": "banks 69/70/71/93/94 - cascode_l/r -> DATnn/DATRnn (col-mirrored), mclk_p/n diff pair, VCCO_90_91_93_94 (carrier-fed v18), PMBus pins (no-connect)",
+    "J2": "bank 65 - coefficient-flash x1 SPI (cf_*), JTAG, SYSMON VP/VN (tied GND), VCCIO_64/65 (SoM-fed v18); MGT 224-226 unused",
+    "J3": "power + config: +12 V feed (8 pins), SelectMAP (unused; DONE->FPGA_DONE), BOOT_M0..2 straps, VCCAUX_PG->SOM_PG, VCCIO_69/70/71 (SoM-fed v18); MGT 127-132 unused",
+    "J4": "banks 69/70/71/93/94 - cascode_l/r -> DATnn/DATRnn (col-mirrored), mclk_p/n diff pair, VCCO_90_91_93_94 (SoM-fed v18), PMBus pins (no-connect)",
 }
 
 def _sym(name, units_body, footprint, datasheet, descr, ref="Q"):
@@ -302,7 +302,7 @@ def _sodimm200_symbol_units():
 def _sodimm200_symbol():
     return _sym("VARSOM_SODIMM200", _sodimm200_symbol_units(), FP["SODIMM200"],
                 "datasheets/VAR-SOM-AM62P_Datasheet.pdf",
-                "Variscite VAR-SOM SODIMM-200 card-edge socket (right-angle, module lies parallel to carrier); pins 1..200 per VAR-SOM-AM62P datasheet pin-list tables; socket MPN TBD",
+                "Variscite VAR-SOM SODIMM-200 card-edge socket (right-angle, module lies parallel to carrier); pins 1..200 per VAR-SOM-AM62P datasheet pin-list tables; socket = TE 1612618-4 (RULED 2026-11-19)",
                 ref="J")
 
 def write_local_lib():
@@ -411,13 +411,8 @@ def write_local_lib():
     tps4501 = _box_unit("TPS7A4501", 1,
                         [("2", "IN", "power_in"), ("1", "SHDN", "input"), ("3", "GND", "power_in")],
                         [("4", "OUT", "power_out"), ("5", "ADJ", "input")])
-    # TI LM317 / LM337 (TO-220 KC): LM317 1=ADJ 2=VOUT 3=VIN (tab=VOUT); LM337 1=ADJ 2=VIN 3=VOUT (tab=VIN)
-    lm317 = _box_unit("LM317T", 1,
-                      [("3", "IN", "power_in"), ("1", "ADJ", "input")],
-                      [("2", "OUT", "power_out")])
-    lm337 = _box_unit("LM337T", 1,
-                      [("2", "IN", "power_in"), ("1", "ADJ", "input")],
-                      [("3", "OUT", "power_out")])
+    # TI LM317 / LM337 symbol defs REMOVED 2026-11-19: the P16A/N16A pre-regs are 6x parallel
+    # LT3045 / LT3094 (ruled 2026-11-03, U7801-U7812 on PREREG); nothing referenced these defs.
     # --- Tub-1 AC entry (bom 17p): transformers, CM choke, relays, voltage-select logic ---
     # R-core transformers, DUAL-PRIMARY (two independent 115 V windings, separate wire sets) +
     # electrostatic screen (SCN).  Select is series/parallel across UNIFIED banks (2026-11-03 ruling):
@@ -462,6 +457,29 @@ def write_local_lib():
     cmc = _box_unit("CM_CHOKE", 1,
                     [("1", "L1", "passive"), ("3", "N1", "passive")],
                     [("2", "L2", "passive"), ("4", "N2", "passive")])
+    # TI TPD4E05U06 quad ESD array, USON-10 DQA (1x2.5 mm, 0.5 mm pitch): 4 protected channels
+    # (pins 1/2/4/5 = D1+/D1-/D2+/D2-), pins 3/8 = GND, pins 6/7/9/10 = NC flow-through
+    # routing pads (datasheet: leave floating or GND - drawn as no_connect)
+    tpd4e = _box_unit("TPD4E05U06", 1,
+                      [("1", "D1+", "bidirectional"), ("2", "D1-", "bidirectional"),
+                       ("4", "D2+", "bidirectional"), ("5", "D2-", "bidirectional")],
+                      [("3", "GND", "power_in"), ("8", "GND", "power_in"),
+                       ("6", "NC", "no_connect"), ("7", "NC", "no_connect"),
+                       ("9", "NC", "no_connect"), ("10", "NC", "no_connect")], 12.7)
+    # Abracon ARJM11C7-502-AB-ER2-T GbE MagJack (RULED 2026-11-20, user).  Pin map verified vs the vendor
+    # KiCad symbol + datasheet 502 schematic (datasheets/ARJM11.pdf p16): P1/P2 = TD1+/-, P3/P4 = TD2+/-,
+    # P5/P6 = PHY-side centre taps (internally bussed -> NC on the board), P7/P8 = TD3+/-, P9/P10 = TD4+/-,
+    # P11/P12 = green LED A/K, P13/P14 = yellow LED A/K, MH3/MH4 = shield stakes -> CHASSIS_PE.
+    # Bob-Smith (4x 75 R + 1 nF/2 kV) is INTEGRATED on the cable side per the 502 schematic - no external parts.
+    arjm = _box_unit("ARJM11C7_502", 1,
+                     [("P1", "TD1+", "bidirectional"), ("P2", "TD1-", "bidirectional"),
+                      ("P3", "TD2+", "bidirectional"), ("P4", "TD2-", "bidirectional"),
+                      ("P5", "CT1", "passive"), ("P6", "CT2", "passive"),
+                      ("P7", "TD3+", "bidirectional"), ("P8", "TD3-", "bidirectional")],
+                     [("P9", "TD4+", "bidirectional"), ("P10", "TD4-", "bidirectional"),
+                      ("P11", "A_GRN", "passive"), ("P12", "K_GRN", "passive"),
+                      ("P13", "A_YEL", "passive"), ("P14", "K_YEL", "passive"),
+                      ("MH3", "SH", "passive"), ("MH4", "SH", "passive")])
     # TI TLV431AIDBZR SOT-23-3: DBZ pin map 1 = CATHODE, 2 = REF, 3 = ANODE (VERIFY)
     tlv = _box_unit("TLV431", 1, [("3", "A", "power_in"), ("2", "REF", "input")], [("1", "K", "passive")])
     # TI TLC555C SOIC-8: 1 GND 2 TRIG 3 OUT 4 RESET 5 CTRL 6 THR 7 DIS 8 VCC
@@ -514,6 +532,15 @@ def write_local_lib():
                      ("17", "VDDIOB18", "power_in"), ("26", "VDDIOB18", "power_in"),
                      ("22", "PLL_AVDD", "power_in"), ("30", "USB_VDD33", "power_in"),
                      ("31", "USB_VDD18", "power_in"), ("65", "VSS", "power_in")], width=25.4))
+    # TI TS3USB30E DGS VSSOP-10 (SCDS255G Table 4-1 + truth table, verified 2026-11-20):
+    # 1 S, 2 D1+, 3 D2+, 4 D+, 5 GND, 6 D-, 7 D2-, 8 D1-, 9 OE, 10 VCC.
+    # OE high = disconnect; OE low: S=0 -> D1, S=1 -> D2.
+    usbmux = _box_unit("TS3USB30E", 1,
+                       [("4", "D+", "bidirectional"), ("6", "D-", "bidirectional"),
+                        ("1", "S", "input"), ("9", "OE_N", "input")],
+                       [("2", "D1+", "bidirectional"), ("8", "D1-", "bidirectional"),
+                        ("3", "D2+", "bidirectional"), ("7", "D2-", "bidirectional"),
+                        ("10", "VCC", "power_in"), ("5", "GND", "power_in")])
     # TI ISOUSB211 USB 2.0 HS (480 Mbps) galvanic isolator, SSOP-28 DP, internal LDOs on both sides -
     # pin map VERIFIED SLLSFC5D Table 4-1 2026-11-01. Side 1 = upstream (cable): VBUS1/VCC1 take USB VBUS
     # (4.25-5.5 V) -> internal LDOs make V3P3V1/V1P8V1 (bypass only). Side 2 = downstream (device/XMOS):
@@ -605,10 +632,7 @@ def write_local_lib():
                   "TI TPS389001 adjustable supervisor, DSE WSON-6 1.5x1.5; VITN 1.15 V on SENSE; RESET open-drain; pin map verified SBVS227 2026-10-12 ** VERIFY EP/footprint **", ref="U")
            + _sym("TPS7A4501", tps4501, FP["TO263_5"], "https://www.ti.com/lit/ds/symlink/tps7a45.pdf",
                   "TI TPS7A4501 1.5 A adjustable LDO, DDPAK/TO-263-5 (KTT); SBVS364 pin table 1 SHDN 2 IN 3 GND 4 OUT 5 ADJ, tab = pin 3 = GND; V4P3 Tub-1 pre-reg (bom 17n)", ref="U")
-           + _sym("LM317T", lm317, FP["TO220_3"], "https://www.ti.com/lit/ds/symlink/lm317.pdf",
-                  "TI LM317 1.5 A adjustable positive regulator, TO-220 KC: 1 ADJ 2 VOUT 3 VIN (tab=VOUT); P16A +16.2 V Tub-1 pre-reg (bom 17n)", ref="U")
-           + _sym("LM337T", lm337, FP["TO220_3"], "https://www.ti.com/lit/ds/symlink/lm137.pdf",
-                  "TI LM337 1.5 A adjustable negative regulator, TO-220 KC: 1 ADJ 2 VIN 3 VOUT (tab=VIN); N16A -16.2 V Tub-1 pre-reg (bom 17n)", ref="U")
+           # LM317T/LM337T symbols removed 2026-11-19 - superseded by the LT3045/LT3094 banks (see above)
            + _sym("UCD90120A", ucd, FP["TI_RGC64"], "https://www.ti.com/lit/ds/symlink/ucd90120a.pdf",
                   "TI UCD90120A 13-input PMBus rail monitor + sequencer, VQFN-64 RGC 9x9; telemetry only (NOT mute path) - bom 17(m2)/(m3); pin map verified SLVSAN9C 2026-10-12 ** VERIFY footprint EP dims **", ref="U")
            + _sym("XFMR_TP4S", xfmr4, FP["XFMR2"], "",
@@ -635,6 +659,12 @@ def write_local_lib():
                   "TI ISOUSB211 USB 2.0 HS (480 Mbps) galvanic isolator w/ internal LDOs, SSOP-28 DP - external-interface moat; pin map verified SLLSFC5D Table 4-1 2026-11-01", ref="U")
            + _sym("USBLC6", usblc6, FP["SOT23_6"], "https://www.st.com/resource/en/datasheet/usblc6-2.pdf",
                   "ST USBLC6-2SC6 USB-HS ESD rail-clamp array, SOT-23-6 (PROPOSED - user cross-check)", ref="D")
+           + _sym("TS3USB30E", usbmux, FP["MSOP10"], "https://www.ti.com/lit/ds/symlink/ts3usb30e.pdf",
+                  "TI TS3USB30E USB 2.0 HS (480 Mbps) 1:2 mux/demux w/ ESD, VSSOP-10 DGS: D+/D- common -> XMOS device, D1 = J852 path via U852, D2 = SoM USB0 host; OE_N tied low = always enabled, S=0 -> D1; pinout SCDS255G Table 4-1 verified 2026-11-20", ref="U")
+           + _sym("TPD4E05U06", tpd4e, FP["DQA10"], "https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf",
+                  "TI TPD4E05U06 4-ch 0.5 pF ESD clamp, USON-10 DQA 1x2.5 mm (RULED 2026-11-19, user; 2x on GbE MDI); pin map verified datasheet table 4-2: 1/2/4/5 = protected channels, 3/8 = GND, 6/7/9/10 = NC", ref="U")
+           + _sym("ARJM11C7_502", arjm, FP["ARJM11"], "datasheets/ARJM11.pdf",
+                  "Abracon ARJM11C7-502-AB-ER2-T 1000Base-T MagJack RJ45, tab-down EMI fingers, green+yellow LEDs, integrated Bob-Smith (RULED 2026-11-20, user); pin map = vendor CAD symbol + ds 502 schematic: P1-10 PHY TD/CT (CTs NC), P11-14 LED A/K, MH3/MH4 shield", ref="J")
            + _sym("QSPI_FLASH", qspi, FP["SOIC8W"], "",
                   "3 V SPI/QSPI NOR flash, SOIC-8 208mil (RULED IS25LP016D-JBLE; std JEDEC package, std pinout); XMOS boot via SFDP", ref="U")
            + "\n)\n")
@@ -998,6 +1028,49 @@ def write_local_footprints():
     W.append(')')
     with open(os.path.join(d, "Wurth_WE-CNSW-0805_CM-Choke.kicad_mod"), "w", encoding="utf-8") as f:
         f.write("\n".join(W) + "\n")
+    # Abracon ARJM11C7-502-AB-ER2-T GbE MagJack (J856, RULED 2026-11-20, user).  Pad geometry transcribed
+    # verbatim from the vendor KiCad model (datasheets/LIB_ARJM11C7-502-AB-ER2-T/ARJM11C7-502-AB-ER2-T/
+    # KiCad/ARJM11C7502ABER2T.kicad_mod - legacy `(module` format, re-emitted natively): 10 signal pins
+    # (0.9 drill, 1.4 pads) on the 2.54-row/1.27-stagger grid, 4 LED pins (1.02 drill, 1.53 pads) inboard
+    # of the shield stakes, MH3/MH4 = plated shield stakes (1.6 drill -> CHASSIS_PE), MH1/MH2 = 3.25 NPTH
+    # locating posts.  Jack opening faces -y (front edge at y=-4.15); body outline -13.69..2.26 x, -4.15..17.1 y.
+    J = ['(footprint "Abracon_ARJM11C7-502" (version 20240108) (generator "gen_kicad") (generator_version "1") (layer "F.Cu")',
+         '  (descr "Abracon ARJM11C7-502-AB-ER2-T 1000Base-T MagJack RJ45 + LEDs (green/yellow), tab-down, EMI fingers; vendor land pattern (SnapEDA/Abracon CAD)")',
+         '  (tags "Abracon ARJM11 MagJack RJ45 Ethernet 1000Base-T")',
+         '  (attr through_hole)',
+         '  (property "Reference" "REF**" (at -5.72 -6.2 0) (layer "F.SilkS") (uuid "%s") (effects (font (size 1.27 1.27) (thickness 0.254))))' % U(),
+         '  (property "Value" "ARJM11C7-502" (at -5.72 19.2 0) (layer "F.Fab") (uuid "%s") (effects (font (size 1.27 1.27) (thickness 0.254))))' % U(),
+         '  (property "Datasheet" "datasheets/ARJM11.pdf" (at 0 0 0) (layer "F.Fab") hide (uuid "%s") (effects (font (size 1 1) (thickness 0.15))))' % U(),
+         '  (fp_rect (start -13.69 -4.15) (end 2.26 17.10) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (uuid "%s"))' % U(),
+         '  (fp_rect (start -15.768 -5.15) (end 4.337 18.15) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (uuid "%s"))' % U(),
+         '  (fp_line (start -13.69 1.85) (end -13.69 -4.15) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_line (start -13.69 -4.15) (end 2.26 -4.15) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_line (start 2.26 -4.15) (end 2.26 1.85) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_line (start -13.69 4.85) (end -13.69 17.15) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_line (start -13.69 17.15) (end 2.26 17.15) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_line (start 2.26 17.15) (end 2.26 4.85) (stroke (width 0.2) (type solid)) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_circle (center 3.15 0) (end 3.30 0) (stroke (width 0.1) (type solid)) (fill none) (layer "F.SilkS") (uuid "%s"))' % U(),
+         '  (fp_text user "${REFERENCE}" (at -5.72 6.5 0) (layer "F.Fab") (uuid "%s") (effects (font (size 0.8 0.8) (thickness 0.12))))' % U()]
+    sig_pads = [("P1", 0.0, 0.0), ("P2", -1.27, -2.54), ("P3", -2.54, 0.0), ("P4", -3.81, -2.54),
+                ("P5", -5.08, 0.0), ("P6", -6.35, -2.54), ("P7", -7.62, 0.0), ("P8", -8.89, -2.54),
+                ("P9", -10.16, 0.0), ("P10", -11.43, -2.54)]
+    led_pads = [("P11", -12.50, 8.89), ("P12", -12.50, 10.92), ("P13", 1.07, 8.89), ("P14", 1.07, 10.92)]
+    for i, (num, x, y) in enumerate(sig_pads):
+        shape = "rect" if i == 0 else "circle"
+        J.append('  (pad "%s" thru_hole %s (at %.3f %.3f) (size 1.400 1.400) (drill 0.9) (layers "*.Cu" "*.Mask") (uuid "%s"))'
+                 % (num, shape, x, y, U()))
+    for num, x, y in led_pads:
+        J.append('  (pad "%s" thru_hole circle (at %.3f %.3f) (size 1.530 1.530) (drill 1.02) (layers "*.Cu" "*.Mask") (uuid "%s"))'
+                 % (num, x, y, U()))
+    for num, x, y in (("MH1", 0.0, 6.35), ("MH2", -11.43, 6.35)):
+        J.append('  (pad "%s" np_thru_hole circle (at %.3f %.3f) (size 3.25 3.25) (drill 3.25) (layers "*.Cu" "*.Mask") (uuid "%s"))'
+                 % (num, x, y, U()))
+    for num, x, y in (("MH3", 2.035, 3.3), ("MH4", -13.465, 3.3)):
+        J.append('  (pad "%s" thru_hole circle (at %.3f %.3f) (size 2.400 2.400) (drill 1.6) (layers "*.Cu" "*.Mask") (uuid "%s"))'
+                 % (num, x, y, U()))
+    J.append(')')
+    with open(os.path.join(d, "Abracon_ARJM11C7-502.kicad_mod"), "w", encoding="utf-8") as f:
+        f.write("\n".join(J) + "\n")
     # vendor-supplied footprints (user downloads under datasheets/<part>/KiCADv6/footprints.pretty), copied verbatim
     for src, dst in VENDOR_FOOTPRINTS:
         with open(os.path.join(ROOT, "datasheets", src), encoding="utf-8") as f:
@@ -1014,6 +1087,7 @@ VENDOR_FOOTPRINTS = [
     (r"MAX22445FAWE_\KiCADv6\footprints.pretty\21-0042B_16_MXM.kicad_mod", "ADI_21-0042B_16_WSOIC"),       # MAX22444/22445 W SOIC-16 (ADI pkg 21-0042B)
     (r"ADP7158ACPZ_3_3_R7\KiCADv6\footprints.pretty\CP-10-9_ADI.kicad_mod", "ADI_CP-10-9_LFCSP-10"),      # ADP7158 LFCSP-10 3x3 EP (ADI pkg CP-10-9)
     (r"CAXC8T245QWRGYRQ1\KiCADv6\footprints.pretty\VQFN25_RGY_TEX.kicad_mod", "TI_RGY_VQFN-24_3.5x5.5mm_P0.5mm_EP"),   # SN74AXC8T245 RHL/RGY VQFN-24 (nominal density; -L/-M variants left in datasheets/), pad 25 = EP
+    (r"TPD4E05U06QDQARQ1\KiCADv6\footprints.pretty\DQA0010A.kicad_mod", "TI_DQA0010A_USON-10"),                      # TPD4E05U06 USON-10 DQA 1x2.5 mm (TI land pattern example; DQA0010B interchangeable per TI E2E)
 ]
 
 # ACKU15S SoM connector placement on the carrier - POSITIONS TBD.  The old ACVU13P pattern
@@ -1430,6 +1504,7 @@ FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_160
           TSSOP16="Package_SO:TSSOP-16_4.4x5mm_P0.65mm",
           WQFN32="Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm",
           MSOP12EP="Package_SO:MSOP-12-1EP_3x4.039mm_P0.65mm_EP1.651x2.845mm_ThermalVias",
+          MSOP10="Package_SO:MSOP-10_3x3mm_P0.5mm",
           SOT223="Package_TO_SOT_SMD:SOT-223", SOD123="Diode_SMD:D_SOD-123",
           RARR0612="Resistor_SMD:R_Array_Convex_4x0612", LCC8="Package_LCC:Analog_LCC-8_5x5mm_P1.27mm",
           CP5="Capacitor_THT:CP_Radial_D5.0mm_P2.50mm", FILM5="Capacitor_THT:C_Rect_L7.2mm_W7.2mm_P5.00mm_FKS2_FKP2_MKS2_MKP2",
@@ -1441,6 +1516,7 @@ FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_160
           SOIC16W="Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", SOIC16="Package_SO:SOIC-16_3.9x9.9mm_P1.27mm", WSON6="Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm",
           TI_DSE6="Package_SON:WSON-6_1.5x1.5mm_P0.5mm",
           TI_RGC64="Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP3.8x3.8mm",
+          HDR1x3="Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
           HDR1x4="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
           SOT23="Package_TO_SOT_SMD:SOT-23", LED0603="LED_SMD:LED_0603_1608Metric", C1210="Capacitor_SMD:C_1210_3225Metric",
           CPOLY8="Capacitor_SMD:CP_Elec_8x10.5", HDR2x10="Connector_PinHeader_2.54mm:PinHeader_2x10_P2.54mm_Vertical",
@@ -1461,19 +1537,25 @@ FP = dict(R0402="Resistor_SMD:R_0402_1005Metric", R0603="Resistor_SMD:R_0603_160
           CMC4="bfdac:Common_Mode_Choke_Schaffner_RN222",
           XFMR2="bfdac:XFMR_Rcore_TP4S_TBD", XFMR4="bfdac:XFMR_Rcore_TP8S_TBD",
           MIN3="Connector_Phoenix_MSTB:PhoenixContact_MSTBV_2,5_3-GF-5,08_1x03_P5.08mm_Vertical_ThreadedFlange_MountHole",
+          MIN3H="Connector_Phoenix_MSTB:PhoenixContact_MSTB_2,5_3-GF-5,08_1x03_P5.08mm_Horizontal_ThreadedFlange_MountHole",
           MIN4="Connector_Phoenix_MSTB:PhoenixContact_MSTBV_2,5_4-GF-5,08_1x04_P5.08mm_Vertical_ThreadedFlange_MountHole",
+          MIN4H="Connector_Phoenix_MSTB:PhoenixContact_MSTB_2,5_4-GF-5,08_1x04_P5.08mm_Horizontal_ThreadedFlange_MountHole",
+          MIN5="Connector_Phoenix_MSTB:PhoenixContact_MSTBV_2,5_5-GF-5,08_1x05_P5.08mm_Vertical_ThreadedFlange_MountHole",
+          MIN5H="Connector_Phoenix_MSTB:PhoenixContact_MSTB_2,5_5-GF-5,08_1x05_P5.08mm_Horizontal_ThreadedFlange_MountHole",
           G5LE="Relay_THT:Relay_SPDT_Omron-G5LE-1", G2RL="Relay_THT:Relay_DPDT_Omron_G2RL-2",
           X2CAP="Capacitor_THT:C_Rect_L18.0mm_W5.0mm_P15.00mm_FKS3_FKP3", Y2CAP="Capacitor_THT:C_Rect_L13.0mm_W4.0mm_P10.00mm_FKS3_FKP3_MKS4",
           RAXPWR="Resistor_THT:R_Axial_Power_L25.0mm_W9.0mm_P30.48mm",
           XU316="bfdac:XMOS_QF60_7x7_P0.4", SSOP28="Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
-          XTAL3225="Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+          XTAL3225="bfdac:Epson_TSX-3225_09Z-AC3",
           HDR1x8="Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
           HDR2x10_127="Connector_PinHeader_1.27mm:PinHeader_2x10_P1.27mm_Vertical_SMD",
-          SODIMM200="bfdac:SODIMM-200_TBD",
+          SODIMM200="bfdac:TE_1612618-4_SODIMM-200_9.2H",
           SMA="Diode_SMD:D_SMA", SOD323="Diode_SMD:D_SOD-323", CP16="Capacitor_THT:CP_Radial_D16.0mm_P7.50mm",
           SMB="Diode_SMD:D_SMB",
           USBC="Connector_USB:USB_C_Receptacle_GCT_USB4085",
           SOT583_8="Package_TO_SOT_SMD:SOT-583-8",
+          DQA10="bfdac:TI_DQA0010A_USON-10",
+          ARJM11="bfdac:Abracon_ARJM11C7-502",
           LXAL4020="Inductor_SMD:L_Coilcraft_XAL4020-XXX")
 def _ohms(s):
     """'59.0' / '4.99k' / '1M' -> ohms (Value-field notation used on the refs sheet)."""
@@ -1556,7 +1638,7 @@ CTRL_PARTS = {  # control-plane sheet 2026-10-07 (bom 20 / 21): AP isolation bar
     "isoF":   ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs: U502 I2S, sides swapped for FPGA-as-master - side A = FPGA (V18): BCLK/LRCLK/FPGA_IRQ_N -> AP; side B = AP (VAP_IO): SDATA -> FPGA. SDATA = silence with the AP off (bom 21, ruled 2026-10-09)"),
     "isoC2":  ("MAX22445C", FP["ADI_WSOIC16"], "MAX22445CAWE+", "3/1 digital isolator, default-HIGH outputs: U509 host-AP SPI (SCLK/CS_N/MOSI AP->FPGA, MISO back) - second FPGA SPI slave port (2026-11-14 dual-SPI: AP has direct register access; CS_N deselected with AP off). Side A = AP (VAP_IO), side B = FPGA (V18)"),
     "isoF2":  ("MAX22445F", FP["ADI_WSOIC16"], "MAX22445FAWE+", "3/1 digital isolator, default-LOW outputs, sides swapped: U513 AP IRQ - side A = FPGA (V18): SPI_AP_IRQ_N -> AP; side B = AP (VAP_IO). IRQ_N reads asserted while the FPGA domain is down (same convention as U502); IN2/IN3/IN4 spare (tied), OUT2/OUT3/OUT4 NC"),
-    "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), IN2/IN3/IN4 spare (tied to GNDA; ch2 was AP_I2S_DATA2 -> I2S_DATA2, removed 2026-11-15 - XMOS is the sole I2S source), OUT2/OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
+    "iso1":   ("MAX22444C", FP["ADI_WSOIC16"], "MAX22444CAWE+", "4/0 digital isolator, default-HIGH: U503 AP_RST_N -> EXT_RST_N (released with an open header), ch2 = AP_I2S_DATA2 -> I2S_DATA2 (AP McASP0 second I2S source, restored 2026-11-20), IN3/IN4 spare tied GNDA / OUT3/OUT4 NC; pin 7 I.C. to GNDA (datasheet: open / GNDA / VDDA allowed) (bom 21, ruled 2026-10-09)"),
     "isoi2c": ("ISO1640", FP["SOIC8"], "ISO1640BDR", "bidirectional I2C isolator: TMP117 sensor bus (side 1, V33D, 3.0-5.5 V) <-> AP (side 2, VAP_IO, 2.25-5.5 V) (bom 20, ruled 2026-10-05; ISO1610 was a non-existent MPN, corrected 2026-10-08). VAP_IO MUST be >= 2.25 V - a 1.8 V AP needs a different isolator or a level shifter"),
     "tmp":    ("TMP117", FP["WSON6"], "TMP117AIDRVR", "+-0.1 C sensor; 4 on one bus via ADD0 (GND 0x48, V+ 0x49, SDA 0x4A, SCL 0x4B); placement per bom 20"),
     "jap":    ("AP DIG + PWR", FP["PCIEX16"], "10165968-113Y000LF", "Amphenol PCIe x16 Gen6 vertical SMT card-edge socket, 164 pos (2x82) @1.0mm, 1.57mm card, 11.25mm above board, solder-retention hold-downs. Conn1/J506<->J7705 AP digital + power link; riser = user PCB with card-edge fingers both ends (SEAF-40/SEAR-40 struck 2026-11-16 - SEAR not purchasable). Side A = carrier power (V12SOM x20, GND, V33_IF_IN), side B = AP domain (signals, VAP_IO, GND_AP) per docs/PCIE_PIN_ASSIGNMENTS.md. Land = PCIe_x16_Amphenol_10165968 (SnapEDA-verified Amphenol drawing). West edge closest to FPGA, B.Cu."),
@@ -1585,6 +1667,10 @@ AP_PARTS = {  # AP/base-board sheet 2026-11-01 (bom 23): XMOS + isolated USB fro
                " 4.25 V VBUS1 min at 4.75 V VBUS."),
     "cmc2":   ("90R@100MHz", "bfdac:Wurth_WE-CNSW-0805_CM-Choke", "Wurth 744232090 (USER-SELECTED 2026-11-17; alt: Murata DLW21HN900SQ2)",
                "common-mode scrub on D+/D- between the TVS and the ISOUSB211 (data-line coupled inductor, SMD 2-line; WE-CNSW-0805, 90R@100MHz, 370 mA, 0.3R DCR)"),
+    "usbmux": ("TS3USB30E", FP["MSOP10"], "TS3USB30EDGSR (PROPOSED - default variant; uQFN-10 RSW alt if space-tight)",
+               "USB-HS 1:2 analog mux: XMOS device port <- {D1 = external J852 path via U852 | D2 = SoM USB0 host};"
+               " exists ONLY for AP->XMOS DFU - normal audio input select is the FPGA i2s_data/i2s_data2 src_sel"
+               " (2026-11-20 ruling).  OE tied low = always enabled; R860 pull-down = S low -> D1 external path at boot."),
     "usbc":   ("USB-C 16P", FP["USBC"], "USB4085-GF-A (RULED 2026-11-01, user; ~27.7k Newark 2026-11;"
                " hybrid alternates HRO TYPE-C-31-M-12 (JLC) / Wurth 632723300011 / Amphenol 12401610E4-2A)",
                "USB 2.0-only USB-C receptacle at the AP-board edge, presented through a MILLED face pocket (chassis wall"
@@ -1600,27 +1686,31 @@ AP_PARTS = {  # AP/base-board sheet 2026-11-01 (bom 23): XMOS + isolated USB fro
                "XMOS QSPI boot flash @ 3.3 V (boot pins on VDDIOL on QF60B); SOIC-8 208mil. Alternates same package:"
                " MX25V1635FM2I, W25Q32JVSSIQ; 150mil-only parts (JNLE, GD25Q16CTIGR, AT25SF161B-SSHB) do NOT fit."
                " XMOS libquadflash self-configures via SFDP - any SFDP QSPI NOR works; 16 Mbit covers UAC2 image + DFU spare"),
-    "xtal":   ("24MHz", FP["XTAL3225"], "TBD - 24 MHz 3225 crystal (Epson FA-128 / NX3225SA class)",
-               "XMOS reference: CL ~9 pF, ESR <= 60 R, fundamental (datasheet crystal table); load caps sized after pick"),
+    "xtal":   ("24MHz", FP["XTAL3225"], "TSX-3225 24.0000MF15X-AC3 (RULED 2026-11-19, user)",
+               "Epson TSX-3225 24 MHz +/-10 ppm, CL = 9 pF, ESR 40 R max, fundamental, 4-SMD 3225 (09Z-AC3 footprint, nominal variant); XMOS checklist satisfied (CL ~9 pF, ESR <= 60 R)"),
     "r1m":    ("1M", FP["R0603"], "CRCW06031M00FKEA", "crystal feedback resistor (datasheet: Rf = 1 M)"),
-    "clx":    ("TBD", FP["C0603"], "TBD - C0G/NP0 0603 (size to crystal CL)", "XIN/XOUT load caps; value = 2 x (CL - Cstray) once the crystal is locked"),
+    "clx":    ("10p", FP["C0603"], "GRM1885C1H100JA01D (PROPOSED)", "XIN/XOUT load caps: CL = 9 pF crystal -> C = 2 x (9 - Cstray) ~= 10 pF at Cstray ~4 pF; VERIFY vs measured board stray at layout"),
     "l600":   ("600R@100MHz", FP["L0603"], "BLM18PG601SN1D (PROPOSED; Taiyo Yuden BKH1608LM601-T is the datasheet-example part)",
                "PLL_AVDD filter bead, 600 R @ 100 MHz, DCR < 1 R per the XMOS schematic checklist"),
     "c10u":   ("10u", FP["C0603"], "GRM188R61A106KE69D (PROPOSED)", ">= 10 uF bulk decoupling per supply, XMOS checklist"),
     "rpu4k7": ("4.7k", FP["R0603"], "CRCW06034K70FKEA", "QSPI CS_N / BOOTSEL strap / RST_N pull-up"),
     "xsys2":  ("XSYS2", FP["HDR2x10_127"], "FTSH-110-01-F-DV-K-TR  ** PROPOSED **",
                "XMOS xSYS2 debug receptacle (XTAG4 20-pin 0.05in IDC ribbon, keyed shroud) - JTAG-only subset per XU316 ds App F.2: pin 1 VREF_JTAG = VAP18 (1.8 V JTAG group), 2 TMS, 4 TCK, 6 TDO, 8 TDI, 10 RST_N, 3/5/7/9 GND_AP; pins 11-20 (VREF_LINK + xLINK on X1D16-19) NC - X1D16 is committed to USB_ATTACH and XMOS rates the link advanced-debug-only. xflash over XTAG4 programs U853 through JTAG (ds sec 12).  ** VERIFY MPN + land pattern **"),
-    "somskt": ("SODIMM-200", FP["SODIMM200"], "TBD - DDR2-class SODIMM-200 RA socket for VAR-SOM-AM62P (TE/JAE/Foxconn)  ** PROPOSED **",
-               "VAR-SOM-AM62P host SoM carrier socket, right-angle SODIMM-200 (module lies parallel to board). Footprint TBD from socket MPN dimensional drawing. Pin map = VAR-SOM-AM62P datasheet pin-list tables; VERIFY-marked pins pending Variscite pin-list confirmation."),
-    "magjack":("RJ45-MAG", "bfdac:RJ45_GBE_MAG_TBD", "TBD GbE MagJack 1000Base-T w/ LEDs (Wuerth/Bel/Amphenol class)  ** PROPOSED **",
-               "GbE MagJack (RJ45 + magnetics + LEDs) for the SoM's onboard PHY MDI. Stock KiCad MagJack symbols are 10/100 - use generic RJ45_LED_Shielded symbol; MPN + footprint TBD at distributor pass."),
-    "host20": ("HOST_SOM", FP["HDR2x10"], "TBD - host SoM mate (SODIMM/module connector, part pick pending)",
-               "application-processor link: private SPI (host=master) + IRQ doorbell + I2S slave TX + reset + FPGA clocks"),
-    "hdr3":   ("HDR-1xN", FP["HDR2x10"], "TBD - pin header (console/service)", "generic pin-header placeholder for SoM console + USB service headers (J857/J858); land TBD with connector choice"),
-    "r470":   ("470R", FP["R0603"], "TBD 470 R", "GbE MagJack LED series resistor (VERIFY value vs SoM LED drive)"),
-    "tvsmdi": ("TVS-MDI", FP["SOT23"], "TBD low-cap TVS ~1-3 pF (Semtech RClamp0521P-class)  ** PROPOSED **", "per-line ESD clamp on PHY-side GbE MDI; low capacitance required for 1G signalling - VERIFY MPN + land"),
-    "pwr4":   ("+3V3-DC", FP["MIN4"], "1777099",
-               "Phoenix MSTBV 2,5/4-GF-5,08 vertical header, 4-pos 5.08 mm, threaded flange + board mount holes,"
+    "somskt": ("SODIMM-200", FP["SODIMM200"], "TE 1612618-4 (RULED 2026-11-19, user; DDR2-keyed RA SODIMM-200, 9.2 mm stack, -55..85C, solder-peg + locking ejectors)",
+               "VAR-SOM-AM62P host SoM carrier socket, right-angle SODIMM-200 (module lies parallel to board, 9.2 mm stack). Land pattern per ENG_CD_1612618_E4 sht 2 - pad geometry proven (same land as TE 1473149/1565917 family); solder-peg/locating holes VERIFY vs STEP before fab. Pin map = VAR-SOM-AM62P datasheet pin-list tables; VERIFY-marked pins pending Variscite pin-list confirmation."),
+    "magjack":("ARJM11C7-502", FP["ARJM11"], "ARJM11C7-502-AB-ER2-T (RULED 2026-11-20, user)",
+               "Abracon ARJM11 1000Base-T MagJack for the SoM's onboard PHY MDI - integrated magnetics"
+               " (the galvanic barrier) + Bob-Smith termination (4x 75 R + 1 nF/2 kV on cable side,"
+               " no external parts) + green/yellow LEDs; tab-down pkg w/ EMI fingers; land pattern ="
+               " vendor CAD (datasheets/LIB_ARJM11C7-502-AB-ER2-T/), footprint bfdac:Abracon_ARJM11C7-502"),
+    # "host20" removed 2026-11-19: dead entry, never placed - AP host link is drawn via J855 SODIMM socket.
+    "hdr3":   ("HDR-1x3", FP["HDR1x3"], "TSW-103-07-G-S", "Samtec TSW 1x3 2.54 mm vertical header - J857 SoM UART0 console (RX/TX/GND_AP); debug/bring-up only, DNP-able"),
+    "hdr1x4": ("HDR-1x4", FP["HDR1x4"], "TSW-104-07-G-S", "Samtec TSW 1x4 2.54 mm vertical header - J858 USB0 service (D+/D-/GND_AP, pin 4 NC); debug/bring-up only, DNP-able"),
+    "r470":   ("470R", FP["R0603"], "CRCW0603470RFKEA", "GbE MagJack LED series resistor (VERIFY value vs SoM LED drive; housekeeping class = CRCW 1 %, same as rled)"),
+    "tvsmdi": ("TPD4E05U06", FP["DQA10"], "TPD4E05U06DQAR (RULED 2026-11-19, user)",
+               "TI quad 0.5 pF ESD clamp, USON-10 DQA 1x2.5 mm; 2 devices cover the 8 PHY-side GbE MDI lines; low capacitance for 1G signalling"),
+    "pwr4":   ("+3V3-DC", FP["MIN4H"], "1776524 (RULED 2026-11-20, user)",
+               "Phoenix MSTB 2,5/4-GF-5,08 HORIZONTAL header, 4-pos 5.08 mm, threaded flange,"
                " 12 A / 320 V - RS-50-3.3 DC output landing in the AP section (J854): pins 1-2 = +3.3 V -> VAP_IO,"
                " pins 3-4 = -V return -> GND_AP; mate = MSTB 2,5/4-STF-5,08 screw-clamp plug; USER-RULED 2026-11-01"),
     # --- XMOS power tree (XMOS-prescribed discrete sequencing, user ruling 2026-11-01) ---
@@ -1735,7 +1825,7 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     "hdr4":    ("PMBUS", FP["HDR1x4"], "TSW-104-07-G-S", "UCD PMBus service header (USB-TO-GPIO2 4-wire subset: SDA/SCL/GND/3V3), on the SENS bus - DNP, bring-up/debug only"),
     "rcset":   ("4.7u", FP["C0805"], "GRM21BR71E475KA73L", "LT3045/LT3094 C_SET, X7R 25 V 0805"),
     "cldo10":  ("10u", FP["C1206"], "GRM31CR71E106KA12L", "LDO IN/OUT ceramic, X7R 25 V 1206"),
-    "rbal":    ("20mR", FP["R0603"], "TBD 20 mR 1% (ERJ-3GEY0R20V-class)  ** PROPOSED **", "LT3045/LT3094 parallel ballast ~20 mR per OUT for current sharing (dissipation negligible at ~85 mA/die); VERIFY MPN + tolerance at ordering"),
+    "rbal":    ("20mR", FP["R0603"], "WSL0603R0200FEA  ** PROPOSED **", "LT3045/LT3094 parallel ballast ~20 mR per OUT for current sharing (dissipation negligible at ~85 mA/die): Vishay WSL Power Metal Strip 0603, 20 mR 1 %, low-TCR metal element (the earlier 'ERJ-3GEY0R20V-class' pointer was wrong - that MPN is 200 mR thick film); thick-film alt = ERJ-3BSJR02V 5 %; VERIFY at ordering"),
     "cpgfb":   ("1n", FP["C0603"], "GRM1885C1H102JA01D", "PGFB / MON node HF cap, C0G 50 V"),
     "c1u":     ("1u", FP["C0603"], "GRM188R61E105KA12D", "ADP7158 BYP/REF/VREG caps (min 1 uF), X5R 25 V 0603"),
     "cbpcap":  ("100n", FP["C0603"], "GRM188R71C104KA01D", "UCD BPCAP internal-1.8 V bypass + VDD/sense HF, X7R 25 V ** VERIFY BPCAP value **"),
@@ -1752,18 +1842,18 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     "z5v6":    ("5.6V", FP["SOD123"], "BZT52C5V6T-7", "hot-side 5.6 V shunt rail for the window-sense detector"),
     "mov275sw": ("S14K275", FP["MOV14"], "EPCOS B72214S0271K101 (S14K275)", "275 VAC / 4.5 kA disc MOV across each SSR switch block - transformer kickback clamp  ** RULED 2026-11-03 user **"),
     "csnubx":  ("100n", FP["X2CAP"], "B32922C3104K", "100 nF/305 VAC X2 film snubber cap across each SSR block  ** RULED 2026-11-03 user **"),
-    "rsnubx":  ("47", FP["RPWR"], "film/composition ~0.5-1 W non-wirewound  ** PROPOSED MPN **", "47 R SSR snubber R - limits the cap discharge spike at switch-on + damps turn-off ring; non-wirewound (inductance fights HF damping); tune at bench vs measured transformer leakage"),
-    "xfconn5": ("CON5", FP["MIN4"], "MSTBV 2,5/5-GF-5,08  ** PROPOSED **", "Phoenix MSTBV 5-pos primary harness landing (P1A/P1B/P2A/P2B/SCN); land TBD - 5-pos variant of the 4-pos MSTBV drawing"),
+    "rsnubx":  ("47", FP["RPWR"], "PR01000104709JAC00  ** PROPOSED **", "47 R SSR snubber R - limits the cap discharge spike at switch-on + damps turn-off ring: Vishay PR01 axial 1 W metal film = non-wirewound (inductance fights HF damping); tune at bench vs measured transformer leakage"),
+    "xfconn5": ("CON5", FP["MIN5H"], "1776537 (RULED 2026-11-20, user)", "Phoenix MSTB 2,5/5-GF-5,08 HORIZONTAL header, 5-pos 5.08 mm, threaded flange, 12 A / 320 V - primary harness landing (P1A/P1B/P2A/P2B/SCN), plug direction parallel to board for edge exit; mate = MSTB 2,5/5-STF-5,08 screw-clamp plug (0.2-2.5 mm2); horizontal 5-pos sibling of the RULED 4-pos vertical 1777099"),
     "d220":    ("STPS10L60D", FP["TO220AC"], "STPS10L60D", "ST 60 V/10 A low-Vf Schottky bridge leg, TO-220AC (Vf ~0.48 V typ @10 A/25 C; bom 17n: low-Vf silicon chosen over 650 V SiC ~1.5 V/diode) ** VERIFY Vf at the actual capacitor-charge pulse current + IFSM **"),
     "d18br":   ("MBR10100", FP["TO220AC"], "MBR10100", "generic/onsemi 100 V/10 A Schottky, TO-220AB - AC18 bridge legs  ** RULED 2026-11-03 user ** (each leg sees ~51 V reverse + commutation spikes on the 18-0-18 CT -> 60 V STPS10L60D was too thin)"),
-    "lm317":   ("LM317", FP["TO220_3"], "LM317KCSE3", "TI LM317 adj positive reg, 40 V in-out diff / 1.5 A, TO-220 KC: P16A +16.2 V pre-reg; 240/2.87k on 1.25 V ref = 16.24 V; ~4 W @ 0.5 A -> heatsink ** VERIFY MPN **"),
-    "lm337":   ("LM337", FP["TO220_3"], "LM337KCSE3", "TI LM337 adj negative reg, 40 V in-out diff / 1.5 A, TO-220 KC (1 ADJ 2 IN 3 OUT, tab=IN): N16A -16.2 V pre-reg; same 240/2.87k divider; ~4 W -> heatsink ** VERIFY MPN **"),
+    # lm317/lm337 entries removed 2026-11-19: dead leftovers from before the 2026-11-03 ruling;
+    # P16A = 6x LT3045 (U7801-06), N16A = 6x LT3094 (U7807-12) via "lt3045"/"lt3094"/"rbal" keys.
     "cres18":  ("10000u", FP["CP18"], "UPW1H103MHHD", "Nichicon PW 10,000 uF 50 V reservoir for the +-24 V raw rails (2 per rail) ** RULED 2026-11-03 user: PW series locked - long-life 105 C, ripple-verified adequate **"),
     "cres9":   ("10000u", FP["CP16"], "UPW1E103MHD", "Nichicon PW 10,000 uF 25 V reservoir for VRAW9 (V8P3 raw ~12 V) ** RULED 2026-11-03 user: PW locked **"),
-    "cldo50":  ("10u", FP["C1206"], "GRM31CR71H106KA12L", "10 uF/50 V X7R 1206 - LM317/LM337 IN/OUT caps (24 V raw + 16.2 V nodes exceed the 25 V cldo10 rating)"),
+    "cldo50":  ("10u", FP["C1206"], "GRM31CR71H106KA12L", "10 uF/50 V X7R 1206 - LT3045/LT3094 bank IN cap on the filtered raw nodes (24 V raw exceeds the 25 V cldo10 rating; datasheet min 4.7 uF on IN)"),
     "rbleed":  ("", FP["R2010"], "TNPW2010%sFEEA", "bleeder / minimum-load resistor, TNPW2010 1 % 0.5 W (Value = resistance, MPN = 4-char code)"),
-    "rpi":     ("", FP["RPWR"], "Vishay PR03 / SQP-class axial 3 W  ** PROPOSED value+MPN **", "pi-filter series R between reservoir and LDO input bank - RC with reservoir in / LDO-cap out, thermal sharing + ~20-30 dB added 100 Hz rejection; tune at bench"),
-    "fuse_t":  ("T-fuse", FP["FUSER"], "T-rated TR5 radial pico fuse (Littelfuse 373/Wickmann 372 class)  ** PROPOSED value **", "secondary-winding series fuse, one per AC leg - fault containment per transformer winding; slow-blow for cap-charge inrush"),
+    "rpi":     ("", FP["RPWR"], "Vishay PR02/PR03 axial metal film, per-value: 0R47 = PR02000204707JAC00 (PR02 2 W - PR03's ohmic range starts at 0.68 R), 3R9 = PR03000203908JAC00, 4R7 = PR03000204708JAC00  ** PROPOSED **", "pi-filter series R between reservoir and LDO input bank - RC with reservoir in / LDO-cap out, thermal sharing + ~20-30 dB added 100 Hz rejection; non-wirewound film, tune at bench"),
+    "fuse_t":  ("T-fuse", FP["FUSER"], "Littelfuse 372 series TR5 time-lag 250 V, per-rating: T1A = 37211000411, T1.6A = 37211600411, T4A = 37214000411  ** PROPOSED **", "secondary-winding series fuse, one per AC leg - fault containment per transformer winding; slow-blow for cap-charge inrush (the 372 series is the T-rated TR5 - the earlier '373/Wickmann 372 class' note was wrong: 373 is FAST-acting)"),
     "cres10m": ("10000u", FP["CP18"], "UPW1C103MHD", "Nichicon PW 10,000 uF 16 V 18x35.5 105 C reservoir can; 3 per 6 VAC transformer = 30 mF vs the 22 mF/33 mF sizing band (bom 17n) ** RULED 2026-11-03 user: PW locked - verify ripple >=1.5 A @120 Hz at receipt **"),
     "cfilm1u": ("1u", FP["FILM5S"], "MKS2C051001K00JSSD", "WIMA MKS2 1 uF 63 V film across each reservoir bank (bridge commutation / HF bypass) ** VERIFY MPN **"),
     "c10n":    ("10n", FP["C0603"], "GRM1885C1H103JA01D", "TPS7A4501 ADJ noise-bypass cap, C0G 50 V"),
@@ -1772,7 +1862,7 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     # --- ACENTRY (bom 17p): mains entry + protection + auto voltage select + soft-start.  All on_board=no ---
     "iec":     ("DD12-PEM", "", "DD12.4121.111", "Schurter DD12 power-entry module: C14 inlet + 4 A standard filter (2x1.5 mH CM choke, 100 nF X2, 2x2.2 nF Y2, 1M bleed) + 2-pole fuseholder + 2-pole rocker switch, screw-on A portrait, 6.3 mm QC tabs - USER-LOCKED 2026-10-27 (needs 4301.1401 2-pole drawer + RC320 rear cover + 2x T2A fuse)"),
     "fuse20":  ("FUSE-T2A", "", "0001.2509", "Schurter SPT 5x20 time-lag fuse T2A/250V, 2 pcs fitted in the DD12 2-pole drawer (sized for 115 V operation ~1.3 A draw) - chassis part, no PCB footprint"),
-    "min14":   ("MAINS-IN", FP["MIN3"], "1777086", "Phoenix MSTBV 2,5/3-GF-5,08 vertical header, 3-pos 5.08 mm, threaded flange + board mount holes; mate = MSTB 2,5/3-STF-5,08 plug (screw-clamp 0.2-2.5 mm2 = 14-24 AWG, 12 A/250 V); PEM end = insulated FASTON-250 receptacle; USER-RULED 2026-10-27"),
+    "min14":   ("MAINS-IN", FP["MIN3H"], "1776511 (RULED 2026-11-20, user)", "Phoenix MSTB 2,5/3-GF-5,08 HORIZONTAL header, 3-pos 5.08 mm, threaded flange; mate = MSTB 2,5/3-STF-5,08 plug (screw-clamp 0.2-2.5 mm2 = 14-24 AWG, 12 A/250 V); PEM end = insulated FASTON-250 receptacle; horizontal sibling of 1777086 (USER-RULED 2026-10-27, superseded 2026-11-20)"),
     "mov275":  ("TMOV-275", FP["MOV14"], "TMOV14RP275E", "Littelfuse TMOV14RP275E thermally-protected MOV, 275 VAC / 430 V var / 6 kA, 2-lead (internal thermal disconnect, no monitor lead); L-N differential surge clamp - USER-RULED 2026-10-27"),
     "movpe":   ("IsoM5-275", FP["ISO5"], "ISOM5-275-B-L2", "Bourns IsoM5-275 IsoMOV hybrid MOV+GDT, 275 VAC MCOV / 10 kA / <10 uA leakage / ~30 pF; L-PE and N-PE common-mode surge clamp - GDT blocks MOV leakage+aging on the PE legs, fuse-clearing end-of-life; USER-RULED 2026-10-27"),
     "cmc":     ("CM-CHOKE", FP["CMC4"], "RN222-2-02-6M8", "Schaffner RN222-2-02-6M8 CM line choke 2 A / 6.8 mH, ~140 VA @ 115 V ~1.3 A worst-case; USER-LOCKED 2026-10-27 (alt: RN212-2-02-1M8)"),
@@ -1795,10 +1885,10 @@ PWR_PARTS = {  # POWER sheet pass 2026-10-12 (bom 17(l)-17(m3)): dual-mono POL r
     "xfmr6":   ("XFMR-6VAC", FP["XFMR2"], "RN20-2x6V2.5A-TAP", "R-core RN-20 30 VA: 2x6 VAC / 2.5 A secondaries (paralleled per channel), tapped 0/115/230 V primary + SCN screen -> PE - Alibaba R-core; dims/lead gauge/dots VERIFY at receipt"),
     "xfmr9":   ("XFMR-9VAC", FP["XFMR2"], "RN10-2x9V0.83A-TAP", "R-core RN-10 15 VA: 2x9 VAC / 0.83 A - S1-S2 = V8P3 feed, S3-S4 = dedicated VSEL_AUX winding - same"),
     "xfmr18":  ("XFMR-18VCT", FP["XFMR4"], "RN35-4x18V0.7A-TAP", "R-core RN-35 50 VA: 4x18 VAC / 0.7 A; two paralleled pairs then series-aided -> 18-0-18 CT - same"),
-    "xfconn": ("XF-CONN", FP["MIN4"], "1777099", "Phoenix MSTBV 2,5/4-GF-5,08 vertical header, 4-pos 5.08 mm, threaded flange + board mount holes, 12 A / 320 V - transformer leads; mate = MSTB 2,5/4-STF-5,08 screw-clamp plug (0.2-2.5 mm2); USER-RULED 2026-10-30"),
+    "xfconn": ("XF-CONN", FP["MIN4H"], "1776524 (RULED 2026-11-20, user)", "Phoenix MSTB 2,5/4-GF-5,08 HORIZONTAL header, 4-pos 5.08 mm, threaded flange, 12 A / 320 V - transformer leads, plug parallel to board for edge exit; mate = MSTB 2,5/4-STF-5,08 screw-clamp plug (0.2-2.5 mm2); horizontal sibling of 1777099 (USER-RULED 2026-10-30, superseded by horizontal 2026-11-20)"),
     "smps":   ("PSU-12V", "", "LRS-200-12", "Mean Well LRS-200-12 enclosed AC/DC SMPS, 200 W / +12 V / 17 A, universal 90-264 VAC input (own inrush limiting, no tap-select needed), chassis-mount screw terminals in tub - feeds V12SOM SoM-only rail (bom 17d); USER-RULED 2026-10-30"),
     "smps33": ("PSU-3V3", "", "RS-50-3.3", "Mean Well RS-50-3.3 enclosed AC/DC SMPS, ~50 W / +3.3 V / ~10 A, universal 88-264 VAC input (own inrush limiting), chassis-mount screw terminals in tub - dedicated brick for the ENTIRE AP island + the mains-select/staging relay coils (13 x G5LE ~400 mW each = ~5 W worst case at 115 V): +V pins = VAP_IO direct (no VAP5), -V pins = GND_AP return; its I/O isolation floats the GND_AP domain (bom 23); USER-RULED 2026-11-01, bumped RS-25->RS-50 for relay-coil headroom 2026-11-03"),
-    "smpsconn": ("XF-CONN", FP["MIN3"], "1777086", "Phoenix MSTBV 2,5/3-GF-5,08 vertical header, 3-pos 5.08 mm, threaded flange + board mount holes - SMPS mains feed (J930) and V12SOM DC harness (J931/32, 3 paralleled 12 A pins per pole); mate = MSTB 2,5/3-STF-5,08; USER-RULED 2026-10-30"),
+    "smpsconn": ("XF-CONN", FP["MIN3H"], "1776511 (RULED 2026-11-20, user)", "Phoenix MSTB 2,5/3-GF-5,08 HORIZONTAL header, 3-pos 5.08 mm, threaded flange - SMPS mains feed (J930) and V12SOM DC harness (J931/32, 3 paralleled 12 A pins per pole); mate = MSTB 2,5/3-STF-5,08; horizontal sibling of 1777086 (USER-RULED 2026-10-30, superseded 2026-11-20)"),
     "csnub":   ("100n", FP["C0603"], "GRM1885C2A104JA01D", "bridge-diode RC snubber cap, C0G 100 V (per-diode Hagerman damping)"),
     "rsnub":   ("22", FP["R0603"], "TNPW060322R0FEEA", "bridge-diode RC snubber resistor, 22 R 1%"),
     "c1ut":    ("1u", FP["C0805"], "GRM21BR71C105KA01L", "TLC555 timing cap, X7R 16 V"),
@@ -2061,16 +2151,16 @@ def build_channel(ch, cell, core, iv, refs, d):
     # PWR_FLAG table (L sheet only, shared nets): flags for rails driven by connectors/LDOs elsewhere so
     # ERC sees an intentional source.  Per-channel POL nets (P15A_L etc.) are LDO-driven -> no flag needed.
     rails = [] if ch != "L" else [
-             # P16A/N16A/V8P3 are now driven by U7801/U7802/U7901 on the PREREG sheet (power_out pins
+             # P16A/N16A/V8P3 are now driven by U7801-U7812/U7901 on the PREREG sheet (power_out pins
              # in-project, 2026-10-28) - like the V4P3 branches a PWR_FLAG here is an ERC power_out
              # conflict, so these entries carry labels/descriptions but no flag.
-             ("P16A", "+16.2 V pre-reg from the power tube -> +15 V-class LT3045/LT3094 POLs; in at J603/J604 stackers (driven: U7801 LM317 on PREREG)", True),
-             ("N16A", "-16.2 V pre-reg -> -15 V-class LT3094 POLs (N15A, VEE15); in at J603/J604 stackers (driven: U7802 LM337 on PREREG)", True),
+             ("P16A", "+16.2 V pre-reg from the power tube -> +15 V-class LT3045/LT3094 POLs; in at J603/J604 stackers (driven: U7801-U7806 6x LT3045 on PREREG)", True),
+             ("N16A", "-16.2 V pre-reg -> -15 V-class LT3094 POLs (N15A, VEE15); in at J603/J604 stackers (driven: U7807-U7812 6x LT3094 on PREREG)", True),
              ("V8P3", "+8.3 V pre-reg -> VE1 LT3045s (per channel); in at J603/J604 stackers (driven: U7901 TPS7A4501 on PREREG)", True),
              # V4P3_LA/LB/RA/RB are driven by the TPS7A4501s on the PREREG sheet (power_out pins in-project):
              # PWR_FLAGs here would be ERC power_out conflicts - no flag entries (bom 17n).
              ("GND", "analog ground reference", False),
-             ("V18", "1.8 V translator A-side + PG_ALL pull-up, supplied by the SoM (VCCIO_65_EX) - not generated on this board", False),
+             ("V18", "1.8 V translator A-side + PG_ALL pull-up, supplied by the SoM (VCCIO_64/65, VCCIO_69/70/71, VCCO_90_91_93_94 outputs) - not generated on this board", False),
              # V33D/V33CLK/V33FF/V33RLY have on-board LDO drivers now (U512/U340/U460/U603): a PWR_FLAG on
              # those nets is an ERC pin_to_pin error (power_out vs power_out) - they must NOT be flagged.
              ("V12SOM", "+12 V SoM feed, SoM-only (switcher, 15 A planning figure) - Conn1/J506 PCIe x16 20-contact bank on side A with GND returns; see docs/PCIE_PIN_ASSIGNMENTS.md", False),
@@ -2395,8 +2485,9 @@ def main():
     fpga.text("FPGA interface (bom 1.3): Alinx ACKU15S module (XCKU15P), carrier connectors J1/J2/J4 here + J3 on the SOM sheet (4x Samtec ADM6-60)."
               " J4 = both cascode buses (col-mirrored L/R halves) -> DAT01..64/DATR01..64 + mclk_p/n diff pair (B94_L6) + PMBus (NC). J1 = control plane (banks 90/91)."
               " J2 = coefficient flash + JTAG + SYSMON + bank 65. Pin map = datasheets/acku15s_pins.csv + acku15s_dac_top.xdc ';#' comments (authoritative)."
-              " Unused connector pins are no-connect type; all GND pins tied. ACKU15S feeds the SoM bank VCCOs FROM THE CARRIER: v18 drives VCCO_90_91_93_94 (J4),"
-              " VCCIO_64/65 (J2), VCCIO_69/70/71 (J3) plus the translator/isolator A-sides -> a carrier 1.8 V rail is REQUIRED (source LDO/part TBD - was SoM-fed on the ACVU13P).", 20, 17)
+              " Unused connector pins are no-connect type; all GND pins tied. ACKU15S takes only the +12 V carrier feed (user 2026-11-19): the SoM generates its bank VCCOs onboard and"
+              " SUPPLIES them - VCCO_90_91_93_94 (J4), VCCIO_64/65 (J2), VCCIO_69/70/71 (J3) -> carrier V18 for the translator/isolator A-sides + PG_ALL pull-up."
+              " No carrier 1.8 V regulator (same arrangement as VCCIO_65_EX on the ACVU13P). VERIFY: are all VCCIO pins one onboard rail, or separate bank groups?", 20, 17)
     fpga.text("Clock tree (bom 1.1, item 15 option 2): no mux chip. Y301 (49.152) / Y302 (45.1584) CCHD-957 enabled one at a time via E/D (clk_sel -> Y302, !clk_sel -> Y301 through U301 LVC1G04;"
               " clk_sel pulled low = 48k family default), outputs joined through 33 R each on the XOCLK net -> root U302 (this channel; R channel root U303 on the R sheet, same net) -> 8 leaves"
               " U304..U311 -> 64 FF clocks MCLK01..64, 33 R at every driver pin. FPGA mclk = U312 LVC1G125 copy of XOCLK -> 100/120 divider -> J4-B4 (B94_L6_P / F11, mclk_p) as LVCMOS18 single-ended"
@@ -2408,7 +2499,7 @@ def main():
         fpga.place(LIB("ACKU15S_J4"), "J4", v, 60 + 90 * u, 100, conn_nets(J, used, "J4", G, GND), unit=u + 1, **k)
         fpga.place(LIB("ACKU15S_J1"), "J1", v, 440 + 90 * u, 100, conn_nets(J, used, "J1", G, GND), unit=u + 1, **k)
         fpga.place(LIB("ACKU15S_J2"), "J2", v, 820 + 90 * u, 100, conn_nets(J, used, "J2", G, GND), unit=u + 1, **k)
-    fpga.text("J1 control-plane pins (banks 90/91, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N, I2S_BCLK/LRCLK/DATA (XMOS is the sole I2S source),"
+    fpga.text("J1 control-plane pins (banks 90/91, xdc s4-7/10/5b) -> CTRL sheet: SPI_XMOS_SCLK/CS_N/MOSI/MISO (XMOS bus via U501) + SPI_AP_SCLK/CS_N/MOSI/MISO/IRQ_N (host-AP bus via U509/U513, dual-SPI 2026-11-14), FPGA_IRQ_N, EXT_RST_N, I2S_BCLK/LRCLK/DATA + I2S_DATA2 (dual source 2026-11-20: XMOS + AP McASP0, FPGA src-select),"
               " RLY_LINE_MUTE (-> OUT sheet unmute gate), PG_ALL, LED_DBG0..3, TEST_SELECT_N/STEP_N/LED, CLK_SEL (J1-A1).  No-connect by ruling: mclk_n (J4 pair reserved), relay_level[0:1] (driven 0 - struck bom-7 level relays), led_status (on-module LED1)."
               " DAT01..64/DATR01..64 = both cascode buses on J4 banks 69/70/71/93/94 (col-mirrored so each channel's drive leaves the SoM on its own half of the analog-edge connector) -> the 64 L/R CELL sheets (root). MCLK_FPGA on J4-B4/B94_L6_P. JTAG_* from J2 -> SOM sheet header.", 20, 27)
     # --- oscillators, enable mux, FPGA copy
@@ -2539,7 +2630,7 @@ def main():
         v, fp, mpn, ds = SOM_PARTS[key]
         return dict(footprint=fp, mpn=mpn, descr=ds), v
     som.text("Alinx ACKU15S SoM carrier (bom item 16): four Samtec ADM6-60-01.5-L-4-2-A-TR (240-pin, 4 x 60, 0.635 mm) - J1/J2/J4 on the FPGA sheet, J3 (power + config) here."
-             " J3 = +12 V feed (8 pins) + SelectMAP (unused; DONE -> FPGA_DONE) + BOOT_M0..2 straps + VCCAUX_PG -> SOM_PG + VCCIO_69/70/71 <- carrier v18. All MGT quads no-connect; GND tied."
+             " J3 = +12 V feed (8 pins) + SelectMAP (unused; DONE -> FPGA_DONE) + BOOT_M0..2 straps + VCCAUX_PG -> SOM_PG + VCCIO_69/70/71 -> carrier v18 (SoM output). All MGT quads no-connect; GND tied."
              " SoM is 80 x 80 mm; connector X/Y datum is the layout blocker (Alinx ACKU15S DXF/STEP needed - placeholder square in som_seed.kicad_pcb).", 20, 17)
     k, v = sp_("j")
     for u in range(4):
@@ -2557,7 +2648,7 @@ def main():
     for i in range(4):
         som.place("Device:C", "C80%d" % (3 + i), v, 120 + 12 * i, 480, {"1": G("v12som"), "2": GND}, **k)
     # JTAG header (Xilinx 14-pin 2 mm): odd pins GND, 2 VREF (bank-0 VCCO = 1.8 V on the SoM), 4 TMS 6 TCK 8 TDO 10 TDI, 12/14 NC
-    som.text("JTAG: FPGA_TCK/TMS/TDI/TDO from J2 C2/C1/B1/B2 to a Xilinx 14-pin 2 mm header. VREF = V18 (carrier-fed 1.8 V)."
+    som.text("JTAG: FPGA_TCK/TMS/TDI/TDO from J2 C2/C1/B1/B2 to a Xilinx 14-pin 2 mm header. VREF = V18 (SoM-fed 1.8 V)."
              " VERIFY: the SoM may already carry its own JTAG header - keep both, cable goes to one.", 200, 455)
     k, v = sp_("jtag")
     som.place("Connector_Generic:Conn_02x07_Odd_Even", "J802", v, 230, 485,
@@ -2587,7 +2678,7 @@ def main():
         return dict(footprint=fp, mpn=mpn, descr=ds), v
     ctrl.text("Isolation barrier (user rulings 2026-10-05 / 2026-10-07; dual-SPI 2026-11-14): the application processor (AP) is its own ground domain (GND_AP, VAP_IO). Everything that crosses to the"
               " FPGA/analog side goes through isolators: U501 MAX22445C = XMOS control SPI (XMOS_SPI_* -> SPI_XMOS_*), U502 MAX22445F = I2S with the FPGA as master (BCLK/LRCLK FPGA->AP + FPGA_IRQ_N, SDATA AP->FPGA; sides swapped),"
-              " U503 MAX22444C = AP reset -> EXT_RST_N (+3 spare fwd), U504 ISO1640 = I2C to the four TMP117 (sensor bus on the FPGA/analog side, V33D = ISO1640 side 1; AP = side 2, VAP_IO >= 2.25 V)."
+              " U503 MAX22444C = AP reset -> EXT_RST_N + ch2 AP_I2S_DATA2 -> I2S_DATA2 (AP McASP0 second I2S source, 2026-11-20; +2 spare fwd), U504 ISO1640 = I2C to the four TMP117 (sensor bus on the FPGA/analog side, V33D = ISO1640 side 1; AP = side 2, VAP_IO >= 2.25 V)."
               " U509 MAX22445C = host-AP SPI (AP_SPI_* -> SPI_AP_*): second independent SPI slave port - the AP SoM has direct FPGA register access alongside the XMOS (per-port write ACL in RTL; XMOS = audio-path subset). U513 MAX22445F = SPI_AP_IRQ_N FPGA->AP (sides swapped like U502)."
               " FPGA side of the MAX2244x = V18 (1.71 V capable; ISO77xx were not - 2026-10-09)."
               " Conn1/J506 is the PCIe x16 card-edge site (user riser PCB, 2026-11-16): west edge, closest to FPGA, main-board bottom. VAP_IO/GND_AP serve the AP and AP-side isolator supplies; V33_IF_IN/GND feed the separate carrier-side 1.8 V LDO. Conn1 side A carries 20 V12SOM contacts + GND returns; side B is the AP domain. J507/J508 are removed. SOM_PG is included but still needs an isolation-path review. SPI: 10 MHz standard-timed guaranteed, 50 MHz with AP RX sample delay (bom 21).", 20, 17)
@@ -2616,9 +2707,9 @@ def main():
     k, v = cp_("iso1")
     ctrl.place(LIB("MAX22444"), "U503", v, 130, 145,
                {"VDDA": G("VAP_IO"), "GNDA": G("GND_AP"), "GNDAB": G("GND_AP"), "IC": G("GND_AP"),
-                "IN1": G("AP_RST_N"), "IN2": G("GND_AP"), "IN3": G("GND_AP"), "IN4": G("GND_AP"),
+                "IN1": G("AP_RST_N"), "IN2": G("AP_I2S_DATA2"), "IN3": G("GND_AP"), "IN4": G("GND_AP"),
                 "VDDB": G("v18"), "GNDB": GND, "GNDBB": GND, "ENB": G("v18"),
-                "OUT1": G("EXT_RST_N"), "OUT2": ("NC", ""), "OUT3": ("NC", ""), "OUT4": ("NC", "")}, **k)
+                "OUT1": G("EXT_RST_N"), "OUT2": G("I2S_DATA2"), "OUT3": ("NC", ""), "OUT4": ("NC", "")}, **k)
     k, v = cp_("isoi2c")
     ctrl.place(LIB("ISO1640"), "U504", v, 130, 175,
                {"VCC1": G("V33D"), "GND1": GND, "SDA1": G("SENS_SDA"), "SCL1": G("SENS_SCL"),
@@ -2790,7 +2881,7 @@ def main():
     GNDAP = G("GND_AP")
     ap.text("AP / BASE BOARD (SEPARATE PCB).  U851 = XMOS XU316-1024-QF60B xcore.ai USB audio bridge (CONFIRMED): UAC2 async"
             " USB + I2S slave TX (FPGA is the clock master) + SPI master to the FPGA register map + SPI slave to the host"
-            " + I2C master to the sensor bus.  B variant = 3.3 V IO banks, matching the AP domain; VDDIOB18 stays 1.8 V.", 20, 15)
+            ".  Sensor I2C moved to the SoM's I2C0 (2026-11-21 ruling: AP owns the island bus).  B variant = 3.3 V IO banks, matching the AP domain; VDDIOB18 stays 1.8 V.", 20, 15)
     ap.text("MOAT MODEL (user ruling 2026-11-01) - two barriers, three ground domains:  external world (USB_GND) -> J852 ->"
             " D851 TVS -> L851 CM choke -> U852 ISOUSB211 (moat 1, cable side powered by VBUS via internal LDOs) -> XMOS in"
             " GND_AP -> carrier isolators U501-504 (moat 2) -> FPGA/analog GND.  USB_GND NEVER meets GND_AP; the connector"
@@ -2804,12 +2895,13 @@ def main():
             " off VAP09 via L852/C862/C863 (was mis-assigned to VAP18 in early notes).", 20, 29)
     ap.text("XU316 GPIO allocation (proposed; firmware owns final port assignment):  FPGA SPI master: X0D32/33/35/36 ="
             " SCLK/CS_N/MOSI/MISO (net group XMOS_SPI_* -> carrier U501 -> SPI_XMOS_*; 2026-11-14 rename, was AP_SPI_*)."
-            "  I2S slave TX: X0D37/38 BCLK/LRCLK in, X0D40 SDATA out.  Sensor I2C: X0D41/42."
+            "  I2S slave TX: X0D37/38 BCLK/LRCLK in, X0D40 SDATA out.  X0D41/42 spare (sensor I2C moved to SoM I2C0)."
             " AP_IRQ_N (FPGA->AP) = X0D43.  Host link (SPI slave, host is master): X0D00/29/39/11 = CS_N/SCLK/MISO/MOSI,"
             " X0D30 = doorbell IRQ -> host.  USB attach detect = X1D16.  Future S/PDIF input lands on X1D22.", 20, 36)
     # --- USB connector + ESD + CM choke + ISOUSB211 moat (all upstream of the isolator live in USB_GND)
     ap.text("USB front end: J852 USB-C (CC1/CC2 5.1k Rd, shell->CHASSIS_PE, milled-pocket presentation)"
-            " -> D852 VBUS TVS + D851 TVS -> L851 CM choke -> U852 ISOUSB211 -> U851 USB PHY pins."
+            " -> D852 VBUS TVS + D851 TVS -> L851 CM choke -> U852 ISOUSB211 -> U857 TS3USB30E mux port D1 -> U851 USB PHY"
+            " pins (D2 = SoM USB0 host - DFU access only; audio input select is the FPGA I2S src_sel, not this mux; S=USB_MUX_SEL low = D1)."
             " VBUS1/VCC1 = cable"
             " VBUS (internal LDOs generate V3P3V1/V1P8V1; bypass caps only).  Side 2 = VAP_IO domain (VBUS2+V3P3V2+VCC2 to"
             " VAP_IO; internal LDO generates V1P8V2).  EQ straps to ground = default equalization; CDPENZx high = charging"
@@ -2840,7 +2932,7 @@ def main():
               "GND1": G("USB_GND"), "V2OK": ("NC", ""), "UD-": G("USB_DM_ISO"), "UD+": G("USB_DP_ISO"),
               "EQ10": G("USB_GND"), "EQ11": G("USB_GND"), "CDPENZ1": ("L", "V3P3V1"), "NC": ("NC", ""),
               "VBUS2": G("VAP_IO"), "VCC2": G("VAP_IO"), "V3P3V2": G("VAP_IO"), "V1P8V2": ("L", "V1P8V2"),
-              "GND2": GNDAP, "V1OK": ("L", "USB_ATTACH"), "DD+": ("L", "XMOS_USB_DP"), "DD-": ("L", "XMOS_USB_DM"),
+              "GND2": GNDAP, "V1OK": ("L", "USB_ATTACH"), "DD+": ("L", "USB_PC_DP"), "DD-": ("L", "USB_PC_DM"),
               "EQ20": GNDAP, "EQ21": GNDAP, "CDPENZ2": G("VAP_IO")}, **k)
     # VBUS + internal-LDO rail bypass (datasheet: bypass cap on each generated rail) - spread horizontally, never stack
     k, v = ap_("c10u")
@@ -2853,6 +2945,21 @@ def main():
     k, v = cp_("c100n")
     for i in range(2):
         ap.place("Device:C", "C85%d" % (6 + i), v, 195 + 15 * i, 100, {"1": G("VAP_IO"), "2": GNDAP}, **k)
+    # --- U857 TS3USB30E USB-HS mux (2026-11-20): XMOS USB device port <- {D1 = J852 path
+    #     via U852 | D2 = SoM USB0 host}.  Exists ONLY for AP->XMOS DFU - normal audio input
+    #     select is FPGA-side i2s_data/i2s_data2 src_sel.  OE tied low = always enabled;
+    #     R860 pull-down holds S low -> D1 external path at boot until the AP drives SEL.
+    k, v = ap_("usbmux")
+    ap.place(LIB("TS3USB30E"), "U857", v, 210, 40,
+             {"D+": ("L", "XMOS_USB_DP"), "D-": ("L", "XMOS_USB_DM"),
+              "D1+": ("L", "USB_PC_DP"), "D1-": ("L", "USB_PC_DM"),
+              "D2+": ("L", "USB_SOM0_DP"), "D2-": ("L", "USB_SOM0_DM"),
+              "S": G("USB_MUX_SEL"), "OE_N": GNDAP,
+              "VCC": G("VAP_IO"), "GND": GNDAP}, **k)
+    k, v = ap_("rpu4k7")
+    ap.place("Device:R", "R860", v, 195, 40, {"1": G("USB_MUX_SEL"), "2": GNDAP}, **k)
+    k, v = cp_("c100n")
+    ap.place("Device:C", "C864", v, 195, 55, {"1": G("VAP_IO"), "2": GNDAP}, **k)
     # --- U851 XU316-QF60B, three units
     k, v = ap_("xu316")
     ap.place(LIB("XU316_QF60"), "U851", v, 250, 65,
@@ -2866,11 +2973,12 @@ def main():
              {"X0D00": ("L", "HOST_CS_N"), "X0D01": ("L", "QSPI_CS_N"), "X0D04": ("L", "QSPI_D0"),
               "X0D05": ("L", "QSPI_D1"), "X0D06": ("L", "QSPI_D2"), "X0D07": ("L", "QSPI_D3"),
               "X0D10": ("L", "QSPI_CLK"), "X0D11": ("L", "HOST_MOSI"),
-              "X0D29": ("L", "HOST_SCLK"), "X0D30": ("L", "HOST_IRQ_N"), "X0D31": ("NC", ""),
+              "X0D29": ("L", "HOST_SCLK"), "X0D30": ("L", "HOST_IRQ_N"), "X0D31": ("L", "XMOS_DFU_EN"),
               "X0D32": G("XMOS_SPI_SCLK"), "X0D33": G("XMOS_SPI_CS_N"), "X0D35": G("XMOS_SPI_MOSI"),
               "X0D36": G("XMOS_SPI_MISO"), "X0D37": G("AP_I2S_BCLK"), "X0D38": G("AP_I2S_LRCLK"),
               "X0D39": ("L", "HOST_MISO"), "X0D40": G("AP_I2S_DATA"),
-              "X0D41": G("AP_SDA"), "X0D42": G("AP_SCL"), "X0D43": G("AP_IRQ_N")}, unit=1, **k)
+              "X0D41": ("NC", ""), "X0D42": ("NC", ""),                 # freed 2026-11-21: sensor I2C -> SoM I2C0 (J855 87/88)
+              "X0D43": G("AP_IRQ_N")}, unit=1, **k)
     ap.place(LIB("XU316_QF60"), "U851", v, 250, 180,
              {"X1D00": ("NC", ""), "X1D01": ("NC", ""), "X1D09": ("NC", ""), "X1D10": ("NC", ""),
               "X1D11": ("NC", ""), "X1D13": ("NC", ""), "X1D16": ("L", "USB_ATTACH"), "X1D17": ("NC", ""),
@@ -2902,6 +3010,10 @@ def main():
     ap.place("Device:C", "C860", v, 355, 155, {"1": ("L", "XOUT"), "2": GNDAP}, **k)
     k, v = ap_("rpu4k7")
     ap.place("Device:R", "R854", v, 305, 175, {"1": G("VAP18"), "2": ("L", "XMOS_RST_N")}, **k)
+    # DFU gate default = DISARMED: X0D31 floats until the AP (J855.69) is alive + pinmuxed;
+    # 4.7k PD wins over the AM62P pad's internal PU (~20 k) -> ~0.6 V < VIL, DFU stays off
+    # until AP software deliberately drives it high (2026-11-18 DFU-is-AP-only ruling).
+    ap.place("Device:R", "R864", v, 320, 195, {"1": G("XMOS_DFU_EN"), "2": GNDAP}, **k)
     k, v = cp_("c100n")
     ap.place("Device:C", "C861", v, 330, 155, {"1": ("L", "XMOS_RST_N"), "2": GNDAP}, **k)
     k, v = ap_("xsys2")
@@ -2949,25 +3061,40 @@ def main():
         # private link (host = SPI master) - MCSPI1 IOSet_1
         m[75] = ("L", "HOST_SCLK"); m[70] = ("L", "HOST_MOSI")
         m[77] = ("L", "HOST_MISO"); m[79] = ("L", "HOST_CS_N")
-        m[63] = ("L", "HOST_IRQ_N")                        # VERIFY: GPIO1_44 pick
-        m[65] = G("AP_RST_N")                              # VERIFY: GPIO1_42 pick - host drives OD
+        m[63] = ("L", "HOST_IRQ_N")                        # VERIFIED: pin 63 = MMC1_DAT1 -> GPIO1_44 (Table 2); VDDSHV5 domain - XMOS holds unasserted until SYS_NRSTIN_3V3+1ms
+        m[65] = G("AP_RST_N")                              # VERIFIED: pin 65 = MMC1_DAT3 -> GPIO1_42 (Table 2); host drives OD
         # FPGA SPI master (2026-11-14 dual-SPI: AP gets its own FPGA register port via carrier U509/U513;
         # nets AP_SPI_* -> SPI_AP_* on the FPGA side).  Proposed = MCSPI2 on McASP0/MMC1-region balls -
         # VERIFY vs Variscite pin-list: assembly options + TI D0/D1 direction convention.
-        m[80] = G("AP_SPI_SCLK")                           # SPI2_CLK (MCAN1_TX ball; MCAN1 unused) - VERIFY
-        m[45] = G("AP_SPI_MOSI")                           # SPI2_D0 (MCASP0_AXR3, no-ALP) - VERIFY
-        m[41] = G("AP_SPI_MISO")                           # SPI2_D1 (MCASP0_AXR2, no-ALP assembly) - VERIFY
-        m[39] = G("AP_SPI_CS_N")                           # SPI2_CS0 (MCASP0_AFSR) - VERIFY
-        m[61] = G("AP_SPI_IRQ_N")                          # VERIFY: GPIO1_46 pick - FPGA status IRQ input
-        # I2S slave-TX on shared FPGA clocks - McASP0
+        m[43] = G("AP_SPI_SCLK")                           # SPI2_CLK IOSet_2 (MCASP0_ACLKR ball G20, no-ALP) - moved off pin 80 (MMC1_SDCD = VDDSHV5 domain + SD-boot strap constraint) 2026-11-18 vs datasheet Table 70
+        m[45] = G("AP_SPI_MOSI")                           # SPI2_D0 IOSet_2 (MCASP0_AXR3 ball D25, no-ALP) - VERIFIED Table 70
+        m[41] = G("AP_SPI_MISO")                           # SPI2_D1 IOSet_2 (MCASP0_AXR2 ball E25, no-ALP) - VERIFIED Table 70
+        m[39] = G("AP_SPI_CS_N")                           # SPI2_CS0 IOSet_2 (MCASP0_AFSR ball G23) - VERIFIED Table 70
+        m[61] = G("AP_SPI_IRQ_N")                          # pin 61 = MMC1_DAT2 -> GPIO1_43 (was mislabeled GPIO1_46, that is pin 60) - VERIFIED Table 2; VDDSHV5-domain GPIO: needs pin 22 NC + bank at 3.3V + XMOS must not drive during SoM boot
+        # I2S slave-TX on shared FPGA clocks - McASP0 (restored 2026-11-20: AP = second I2S
+        # source; FPGA selects XMOS-vs-AP stream in fabric, i2s_data vs i2s_data2).
         m[117] = G("AP_I2S_BCLK")                          # MCASP0_ACLKX
         m[72]  = G("AP_I2S_LRCLK")                         # MCASP0_AFSX (no-ALP pin - VERIFY)
-        m[69]  = ("NC", "")                                # MCASP0_AXR0 - was AP_I2S_DATA2; freed 2026-11-15 (XMOS sole source)
+        m[17]  = G("AP_I2S_DATA2")                         # MCASP0_AXR1 (no-ALP, free) slave-TX data -> carrier U503 ch2 -> FPGA i2s_data2 (J1-A6/B2)
+        m[69]  = G("XMOS_DFU_EN")                          # MCASP0_AXR0 ball F23 -> GPIO0_86 (VERIFY num); AP drives high to arm XMOS DFU (2026-11-18 ruling: DFU is AP-only, gated on this GPIO)
+        m[68]  = G("USB_MUX_SEL")                          # SPI0_CS1/GPIO1_16 -> U857 TS3USB30E S pin: low = J852 external path (R860 pd default), high = SoM USB0 host (DFU)
         m[83]  = ("L", "SOM_UART_RX"); m[85] = ("L", "SOM_UART_TX")   # console
-        # USB unexposed in v1 - PHY VBUS pins left NC (USB disabled; VERIFY)
-        for p in (94, 106, 82, 104): m[p] = ("NC", "")
-        m[114] = ("L", "USB_SOM0_DM"); m[116] = ("L", "USB_SOM0_DP")  # header/TP only
-        m[108] = ("NC", ""); m[110] = ("NC", "")
+        # Sensor bus (TMP117 x4 + UCD PMBus monitors behind U504 ISO1640) - AP owns
+        # the island I2C (user rethink 2026-11-21, was XMOS X0D41/42).  I2C0 is the
+        # SoM's dedicated controller -> Linux i2c-dev, no XMOS firmware.
+        m[87]  = G("AP_SDA")                               # I2C0_SDA (ball A24) - no strap role, clean
+        m[88]  = G("AP_SCL")                               # I2C0_SCL (ball B25) = BOOTMODE06, 10K PU on SOM;
+                                                           # R503 pulls same direction, no active driver in the
+                                                           # SYS_NRSTIN_3V3+1ms window -> strap stays at SOM default 1
+        # USB0 = SoM HOST port -> U857 TS3USB30E port D2 -> XMOS device.  The mux exists ONLY
+        # for AP->XMOS DFU (2026-11-20 ruling: audio is the direct McASP0 I2S path, not USB).
+        # D1 = J852 external path = default.  Board-level host link = no real 5 V VBUS:
+        # USB0_VBUS sense workaround TBD (DT vbus-always-on or pull to VAP_IO).
+        m[114] = ("L", "USB_SOM0_DM"); m[116] = ("L", "USB_SOM0_DP")  # -> U857 D2-/D2+
+        m[94]  = ("L", "USB0_DRVVBUS")                       # host VBUS-enable out - unused, no VBUS switch (board-level link)
+        m[106] = ("L", "USB0_VBUS")                          # host VBUS sense input - TBD tie (see note)
+        m[82] = ("NC", ""); m[104] = ("NC", "")
+        m[108] = ("NC", ""); m[110] = ("NC", "")                       # USB1 stays unexposed
         return m
     k, v = ap_("somskt")
     nets = sodimm_map()
@@ -2980,36 +3107,43 @@ def main():
     #     galvanic barrier (~1.5-2.25 kVrms) - cable side floats, shield bonds to chassis PE at the
     #     panel (same rule as the USB shell; moat model).  ESD = low-cap TVS on the 8 PHY-side MDI lines.
     k, v = ap_("magjack")
-    ap.place("Connector:RJ45_LED_Shielded", "J856", v, 500, 260,
-             {"1": ("L", "ETH0_MDI_A_P"), "2": ("L", "ETH0_MDI_A_M"),
-              "3": ("L", "ETH0_MDI_B_P"), "6": ("L", "ETH0_MDI_B_M"),
-              "4": ("L", "ETH0_MDI_C_P"), "5": ("L", "ETH0_MDI_C_M"),
-              "7": ("L", "ETH0_MDI_D_P"), "8": ("L", "ETH0_MDI_D_M"),
-              "9": ("L", "ETH0_LED_ACT"), "10": ("L", "ETH0_LED_A1"),
-              "11": ("L", "ETH0_LED_LINK"), "12": ("L", "ETH0_LED_A2"),
-              "SH": G("CHASSIS_PE")}, **k)
+    ap.place(LIB("ARJM11C7_502"), "J856", v, 500, 260,
+             {"P1": ("L", "ETH0_MDI_A_P"), "P2": ("L", "ETH0_MDI_A_M"),
+              "P3": ("L", "ETH0_MDI_B_P"), "P4": ("L", "ETH0_MDI_B_M"),
+              "P7": ("L", "ETH0_MDI_C_P"), "P8": ("L", "ETH0_MDI_C_M"),
+              "P9": ("L", "ETH0_MDI_D_P"), "P10": ("L", "ETH0_MDI_D_M"),
+              "P5": ("NC", ""), "P6": ("NC", ""),   # PHY-side CTs, internally bussed (502 schematic) -> float
+              "P11": ("L", "ETH0_LED_A1"), "P12": ("L", "ETH0_LED_LINK"),   # green = LINK (VERIFY vs SoM LED map)
+              "P13": ("L", "ETH0_LED_A2"), "P14": ("L", "ETH0_LED_ACT"),    # yellow = ACT
+              "MH3": G("CHASSIS_PE"), "MH4": G("CHASSIS_PE")}, **k)
     # --- LED series resistors
     k, v = ap_("r470")
     ap.place("Device:R", "R870", v, 480, 290, {"1": ("L", "ETH0_LED_A1"), "2": G("VAP_IO")}, **k)
     ap.place("Device:R", "R871", v, 520, 290, {"1": ("L", "ETH0_LED_A2"), "2": G("VAP_IO")}, **k)
-    # --- MDI-side ESD: 8x low-cap TVS (GbE needs <=~1-3 pF/line), each MDI line -> GND_AP
+    # --- MDI-side ESD: 2x TPD4E05U06 quad low-cap TVS (0.5 pF/line, RULED 2026-11-19);
+    #     D860 protects pairs A+B, D861 pairs C+D; each channel clamps one MDI line -> GND_AP
     k, v = ap_("tvsmdi")
-    for i, net in enumerate(("ETH0_MDI_A_P", "ETH0_MDI_A_M", "ETH0_MDI_B_P", "ETH0_MDI_B_M",
-                             "ETH0_MDI_C_P", "ETH0_MDI_C_M", "ETH0_MDI_D_P", "ETH0_MDI_D_M")):
-        ap.place("Device:D_TVS", "D8%d" % (60 + i), v, 540 + 15 * i, 260,
-                 {"A1": ("L", net), "A2": GNDAP}, **k)
-    ap.text("Ethernet isolation = MagJack transformer (cable side floats); SH -> CHASSIS_PE at the panel."
-            " Bob-Smith termination required at MPN selection: 4x 75 R (each pair centre-tap, cable side)"
-            " joined to one 1 nF/2 kV cap -> CHASSIS_PE.  VERIFY the chosen jack brings CT pins out (or"
-            " integrates the termination).  D860-867 = low-cap TVS (<=~1-3 pF) on PHY-side MDI.  R870/R871"
-            " = LED series Rs (VERIFY 470 R vs SoM LED drive).", 500, 380)
+    for i, nets4 in enumerate((("ETH0_MDI_A_P", "ETH0_MDI_A_M", "ETH0_MDI_B_P", "ETH0_MDI_B_M"),
+                              ("ETH0_MDI_C_P", "ETH0_MDI_C_M", "ETH0_MDI_D_P", "ETH0_MDI_D_M"))):
+        ap.place(LIB("TPD4E05U06"), "D8%d" % (60 + i), v, 545 + 25 * i, 260,
+                 {"D1+": ("L", nets4[0]), "D1-": ("L", nets4[1]),
+                  "D2+": ("L", nets4[2]), "D2-": ("L", nets4[3]),
+                  "GND": GNDAP}, **k)
+    ap.text("Ethernet isolation = MagJack transformer (cable side floats); SH stakes -> CHASSIS_PE at the panel."
+            " J856 = Abracon ARJM11C7-502-AB-ER2-T (RULED 2026-11-20): Bob-Smith termination INTEGRATED"
+            " (4x 75 R pair CTs -> 1 nF/2 kV -> shield, per ds 502 schematic) - no external network."
+            " PHY-side CT pins P5/P6 float (internally bussed).  D860/D861 = 2x TPD4E05U06 quad ESD"
+            " (0.5 pF/line) on PHY-side MDI.  LEDs: green = LINK, yellow = ACT; R870/R871 = anode series"
+            " Rs to VAP_IO (VERIFY 470 R vs SoM LED drive + LED colour map).", 500, 380)
     ap.text("J855 = VAR-SOM-AM62P host SoM on SODIMM-200 (RA socket, module flat on board).  Module carries"
             " LPDDR4+eMMC+PMIC+GbE PHY - carrier is sockets/connectors only.  Private link = MCSPI1 (host"
             " master) -> XMOS slave; HOST_IRQ_N = XMOS doorbell.  FPGA link = MCSPI2 (host master) -> FPGA"
             " AP-SPI slave via carrier isolators U509/U513 (2026-11-14 dual-SPI; AP_SPI_* nets, SPI2 IOSet"
             " VERIFY pending pin-list cross-check); AP_SPI_IRQ_N = FPGA status IRQ -> host GPIO.  I2S:"
-            " McASP0 unused (XMOS is the sole I2S source - AP_I2S_DATA2 removed 2026-11-15).  UART0 = console.  USB"
-            " unexposed (single-USB-face ruling: J852/XMOS only).  Ethernet-only ruling 2026-11-03 - no radio"
+            " McASP0 slave-TX = second FPGA I2S source (restored 2026-11-20; shared BCLK/LRCLK on pins 117/72, AXR1 data"
+            " pin 17 -> carrier U503 ch2 -> FPGA i2s_data2; FPGA fabric selects XMOS vs AP stream).  UART0 = console.  USB0 = host to"
+            " XMOS via U857 TS3USB30E mux port D2 - DFU access only (2026-11-20 ruling; S=USB_MUX_SEL, R860 pd -> D1 default)."
+            "  Ethernet-only ruling 2026-11-03 - no radio"
             " antenna needed.  VERIFY: MDI pair assignment, McASP0_AFSX pin (72 = no-ALP option), IRQ/RST"
             " GPIO picks, USB VBUS NC = USB off.", 500, 300)
     ap.text("SOM_RST_N (pin 98) = SoM cold-reset input - reset source TBD (supervisor chain / button)."
@@ -3018,6 +3152,7 @@ def main():
     k, v = ap_("hdr3")
     ap.place("Connector_Generic:Conn_01x03", "J857", v, 640, 340,
              {"1": ("L", "SOM_UART_RX"), "2": ("L", "SOM_UART_TX"), "3": GNDAP}, **k)
+    k, v = ap_("hdr1x4")
     ap.place("Connector_Generic:Conn_01x04", "J858", v, 640, 360,
              {"1": ("L", "USB_SOM0_DP"), "2": ("L", "USB_SOM0_DM"), "3": GNDAP, "4": ("NC", "")}, **k)
     ap.text("J857 = SoM UART0 console (RX/TX/GND_AP, 3V3 levels - factory/debug).  J858 = USB0 service"
@@ -3370,7 +3505,7 @@ def main():
                 " (Conn2 north), J704 mates J604 (Conn3 south) through the user-made PCIe riser PCBs.", 20, 17)
     prereg.text("Reservoir sizing (per transformer, 2 A DC worst): 3 x 10,000 uF/16 V high-ripple 105 C = 30 mF; ~1 V pp ripple at"
                 " 50 Hz/-10% line -> trough ~5.8 V vs the 4.8 V floor (4.3 V out + 0.5 V TPS7A4501 dropout budget). P16A/N16A/V8P3"
-                " stages are DRAWN below (bottom strip, 2026-10-28 - 115 V mains ruling). Mains fuse/switch/inlet"
+                " stages are DRAWN below (bottom strip, 2026-10-28; universal input since 2026-10-30). Mains fuse/switch/inlet"
                 " filter live in the chassis DD12 PEM (see ACENTRY); PE bond at the module.", 20, 24)
     def preg_(key, value=None, code=None):
         return pw_(key, value, code)
@@ -3444,12 +3579,13 @@ def main():
             prereg.place("Device:R", "R%d" % (rb + 2), v, bx + 60, uy + 15, {"1": ("L", adj), "2": GND}, **k)
             k, v = preg_("c10n")
             prereg.place("Device:C", "C%d" % (cb + 6), v, bx + 75, uy + 15, {"1": ("L", adj), "2": GND}, **k)
-    # --- shared rails (bom 17o; 115 V mains only, user ruling 2026-10-28): T902 dual-18 VAC -> +-16.2 V;
-    #     T903 9 VAC -> +8.3 V.  These stages feed BOTH PCIe mates (shared nets, not per-channel).
+    # --- shared rails (bom 17o; universal input UN-PARKED 2026-10-30 - tapped primaries normalize the
+    #     secondary voltage on either line): T902 dual-18 VAC -> +-16.2 V; T903 9 VAC -> +8.3 V.
+    #     These stages feed BOTH PCIe mates (shared nets, not per-channel).
     #     AC18 topology: two independent 18 VAC windings series-aided -> 18-0-18 CT = GND -> 4 x STPS10L60D
-    #     bridge legs + RC snubbers -> +-24 V raw -> LM317/LM337 -> P16A/N16A.  Assumes S2/S3 are the
-    #     same-polarity winding ends - VERIFY dots at part receipt (bom 17p open item a).
-    prereg.text("SHARED-RAIL STAGES (bom 17o; 115 V mains ruling 2026-10-28): T902 2x18 VAC series-aided"
+    #     bridge legs + RC snubbers -> +-24 V raw -> 6x LT3045 / 6x LT3094 -> P16A/N16A.  Assumes S2/S3
+    #     are the same-polarity winding ends - VERIFY dots at part receipt (bom 17p open item a).
+    prereg.text("SHARED-RAIL STAGES (bom 17o; universal input - K901 normalizes secondary V on either line): T902 2x18 VAC series-aided"
                 " 18-0-18 (S2+S3 = CT = GND, tied at T902 on ACENTRY) -> bridge + snubbers -> +-24 V raw (2x10 mF/50 V per rail)"
                 " -> 6x parallel LT3045 = P16A +16.2 V, 6x parallel LT3094 = N16A -16.2 V (RULED 2026-11-03:"
                 " class-A continuous ~0.5 A -> ~3.9 W spread 6 ways = ~0.65 W/die, ~39 C junction margin;"
@@ -3496,6 +3632,12 @@ def main():
     for i, (ref, net) in enumerate((("R7803", "VRAW16P"), ("R7804", "VRAW16N"))):
         prereg.place("Device:R", ref, v, ax + 205 + 15 * i, ay + 70,
                      {"1": ("L", net), "2": ("L", net + "_F")}, **k)
+    # input cap on each filtered raw feed (datasheet min 4.7 uF on IN; 10 uF/50 V - the ~24 V
+    # raw node exceeds the 25 V cldo10 rating).  Placed at the pi-filter output on the ay+70 row.
+    k, v = preg_("cldo50")
+    for i, (ref, net) in enumerate((("C7848", "VRAW16P_F"), ("C7878", "VRAW16N_F"))):
+        prereg.place("Device:C", ref, v, ax + 235 + 15 * i, ay + 70,
+                     {"1": ("L", net), "2": GND}, **k)
     # regulators: 6x parallel LT3045 -> P16A (+16.2 V); 6x parallel LT3094 -> N16A (-16.2 V).
     # RULED 2026-11-03 (user): replaces LM317/LM337 - class-A I/V+V loads draw ~0.4-0.5 A CONTINUOUS,
     # so ~3.9 W is spread across 6 dies (~0.65 W each, ~26 C rise, ~39 C junction margin @60 C amb).
@@ -3505,8 +3647,12 @@ def main():
     for ni, (rbase, ob, sym, pk, inn, outn, neg, ypos, setnet) in enumerate((
             (7801, 7801, "Regulator_Linear:LT3045xMSE", "lt3045", "VRAW16P_F", "P16A", False, 105, "SET_P16A"),
             (7807, 7831, "Regulator_Linear:LT3094xMSE", "lt3094", "VRAW16N_F", "N16A", True,  175, "SET_N16A"))):
+        # pitch 28 (was 25): die i's OUT-side label lands at ux+12.7 and die i+1's IN-side label
+        # snapped to ux+25-12.7 = the SAME point -> different-named labels coincided and merged
+        # VRAW16x_F into BAL_*/P16A (IN shorted to OUT through the ballast chain).  28 mm keeps
+        # every left/right label anchor on distinct snapped points.
         for i in range(6):
-            ux = ax + 30 + 25 * i
+            ux = ax + 30 + 28 * i
             k, v = preg_(pk)
             nets = {"IN": ("L", inn), "EN/UV": ("L", "ENUV_%s" % outn), "PG": G("pg_all"),
                     "PGFB": ("L", "PGF_%s" % outn), "SET": ("L", setnet),
@@ -3516,7 +3662,9 @@ def main():
                 nets["VIOC"] = GND
             prereg.place(sym, "U%d" % (rbase + i), v, ux, ay + ypos, nets, **k)
             k, v = preg_("rbal")
-            prereg.place("Device:R", "R%d" % (ob + 20 + i), v, ux + 15, ay + ypos,
+            # ux+17 (was +15): a vertical Device:R stub at ux+15 snapped onto die i+1's IN label
+            # anchor (ux+15.3) and merged VRAW16x_F into the ballast node on the N16A bank.
+            prereg.place("Device:R", "R%d" % (ob + 20 + i), v, ux + 17, ay + ypos,
                          {"1": ("L", "BAL_%s%d" % (outn, i)), "2": G(outn.lower())}, **k)
             k, v = preg_("cldo10")
             prereg.place("Device:C", "C%d" % (ob + 40 + i), v, ux, ay + ypos - 12,
@@ -3790,9 +3938,11 @@ def main():
                     ac.place("Device:Fuse", "F%d" % (951 + i * 8 + c * 4 + fi), v, tx + 55 + 15 * fi, 115 + 25 * c,
                              {"1": conns[pin], "2": G_(dst)}, **k)
                     fi += 1
-    ac.text("Transformer harness: J920/22/24/26 = primary leads (0 V / 115 V tap / 230 V end / SCN->PE),"
-            " J921/23 + J925/28 + J927 = secondary leads - all Phoenix MSTBV 2,5/4-GF-5,08 flanged"
-            " headers (1777099, 12 A / 320 V) + MSTB 2,5/4-STF-5,08 screw-clamp plugs (0.2-2.5 mm2 ="
+    ac.text("Transformer harness: J920/22/24/26 = primary leads (0 V / 115 V tap / 230 V end / SCN->PE)"
+            " on 5-pos Phoenix MSTB 2,5/5-GF-5,08 HORIZONTAL headers (1776537 RULED, edge-exit plugs)"
+            " + MSTB 2,5/5-STF-5,08 plugs;"
+            " J921/23 + J925/28 + J927 = secondary leads on 4-pos MSTB 2,5/4-GF-5,08 HORIZONTAL"
+            " headers (1776524, 12 A / 320 V) + MSTB 2,5/4-STF-5,08 screw-clamp plugs (0.2-2.5 mm2 ="
             " 14-24 AWG, ample for every secondary incl. the paralleled 6 V windings)."
             "  NOTE: the idle tap bus stays live - TAP230 carries ~230 V even on 115 V mains and"
             " TAP115 sits at ~115 V on 230 V mains; both are mains-domain for spacing.", 270, 140, size=1.2)
@@ -3908,8 +4058,8 @@ def main():
     k, v = ac_("rmon", "10k", "1002")
     ac.place("Device:R", "R816", v, 580, 178, {"1": G_("VAP_IO"), "2": ("L", "THRES")}, **k)
     ac.place("Device:R", "R817", v, 580, 192, {"1": ("L", "THRES"), "2": G_("GND_AP")}, **k)
-    ac.place("Device:R", "R818", v, 580, 205, {"1": G_("VAP_IO"), "2": ("L", "THRES2")}, **k)
-    ac.place("Device:R", "R819", v, 580, 218, {"1": ("L", "THRES2"), "2": G_("GND_AP")}, **k)
+    ac.place("Device:R", "R818", v, 580, 208, {"1": G_("VAP_IO"), "2": ("L", "THRES2")}, **k)
+    ac.place("Device:R", "R819", v, 580, 221, {"1": ("L", "THRES2"), "2": G_("GND_AP")}, **k)
     # --- BYPS delay (RULED 2026-11-03: discrete, no PMIC): TLC555 delay-OFF on VAP_IO -
     #     OUT high for ~1.1RC ~300 ms after power-up, then low.  Q924 inverts so the S4
     #     LED asserts only after the delay: OUT high -> Q924 on -> BYPSG held low -> S4

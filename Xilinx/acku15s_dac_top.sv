@@ -81,6 +81,7 @@ module acku15s_dac_top #(
     output logic        i2s_bclk,
     output logic        i2s_lrclk,
     input  logic        i2s_data,
+    input  logic        i2s_data2,
 
     // ARM SPI Interface (Control Plane)
     // Dual host SPI — XMOS audio bridge + host AP (isolated on carrier).
@@ -190,6 +191,7 @@ module acku15s_dac_top #(
     logic mmcm_rst, stream_path_reset, stream_busy, stream_clock_ready, serial_enable;
     logic [2:0] stream_rate_request, applied_stream_rate;
     logic stream_rate_toggle, stream_rate_ack, stream_source_valid;
+    logic i2s_src_sel, stream_valid_sel;   // dual-source 2026-11-20: sel + muxed stream-live
     logic [4:0] i2s_rx_trim;
     logic core_stream_fault, serial_fault;
     logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
@@ -253,7 +255,7 @@ module acku15s_dac_top #(
             rate_sel_sync_chain      <= '0;
             level_target_sync_chain  <= '0;
         end else begin
-            svalid_sync_chain        <= {svalid_sync_chain[0], stream_source_valid};
+            svalid_sync_chain        <= {svalid_sync_chain[0], stream_valid_sel};
             rate_sel_sync_chain      <= {rate_sel_sync_chain[0], applied_stream_rate[0]};
             level_target_sync_chain  <= {level_target_sync_chain[2:0], level_target};
         end
@@ -827,6 +829,9 @@ module acku15s_dac_top #(
         .stream_rate_request    (stream_rate_request),
         .stream_rate_toggle     (stream_rate_toggle),
         .stream_source_valid    (stream_source_valid),
+        .stream_source_valid2   (),
+        .i2s_src_sel            (i2s_src_sel),
+        .stream_valid_sel       (stream_valid_sel),
         .i2s_rx_trim            (i2s_rx_trim),
         .stream_busy            (stream_busy),
         .stream_clocks_ready    (stream_clock_ready),
@@ -881,12 +886,14 @@ module acku15s_dac_top #(
         .cell_clk               (cell_clk),
         .rst_n                  (sys_rst_n),
         .enable                 (serial_enable),
-        .source_valid           (stream_source_valid),
+        .source_valid           (stream_valid_sel),
         .rate_shift             (applied_stream_rate[2:1]),
         .rx_trim                (i2s_rx_trim),
+        .src_sel                (i2s_src_sel),
         .i2s_bclk               (i2s_bclk),
         .i2s_lrclk              (i2s_lrclk),
         .i2s_data               (i2s_data),
+        .i2s_data2              (i2s_data2),
         .audio_l                (audio_l),
         .audio_r                (audio_r),
         .new_sample             (new_sample),

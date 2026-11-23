@@ -48,7 +48,16 @@ module tb_dac_ctrl_plane;
     logic stream_audio_ready=1;
     wire [2:0] stream_request;
     wire stream_toggle, source_valid;
+    // Model the stream_rate_controller FSM: applied rate follows each accepted
+    // request one cycle after the toggle (real FSM applies through mute+relock).
+    logic [2:0] applied_rate = 3'd0;
+    logic tog_prev = 1'b0;
+    always @(posedge clk) begin
+        tog_prev <= stream_toggle;
+        if (stream_toggle !== tog_prev) applied_rate <= stream_request;
+    end
     wire [4:0] rx_trim;
+    wire       src_sel, valid_sel, svalid2;
     logic cal_commit_pending=0;
     logic calibration_valid=1;
     wire cal_wr_toggle, cal_commit_toggle;
@@ -80,8 +89,9 @@ module tb_dac_ctrl_plane;
         .cell_test_cfg(cell_cfg), .cell_test_req(cell_req), .cell_test_ack(cell_req),
         .stream_rate_request(stream_request), .stream_rate_toggle(stream_toggle),
         .stream_source_valid(source_valid), .i2s_rx_trim(rx_trim),
+        .stream_source_valid2(svalid2), .i2s_src_sel(src_sel), .stream_valid_sel(valid_sel),
         .stream_busy(stream_busy), .stream_clocks_ready(stream_clocks_ready),
-        .stream_applied_rate(3'd5), .stream_fault(stream_fault),
+        .stream_applied_rate(applied_rate), .stream_fault(stream_fault),
         .stream_audio_ready(stream_audio_ready),
         .cal_commit_pending(cal_commit_pending),
         .cal_write_reject_toggle(1'b0),
@@ -368,28 +378,77 @@ module tb_dac_ctrl_plane;
         stream_busy=1;
         xmos_write(7'h1A, 24'd0);
         check("busy rate request rejected", stream_request, 7);
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'h1D);        // arm, echo=7 == rate_req_src1
         check("source ready rejected while configuring", source_valid, 0);
         stream_busy=0;
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'h1D);        // arm, echo=7
         check("source ready", source_valid, 1);
-        spi_write(7'h1C, 24'd31);             // 0x1C retired -> BAD_ADDR
-        check("capture trim fixed at 8 (reg retired)", rx_trim, 8);
+        // 0x1C I2S_SRC (2026-11-20, AP-only): XMOS write -> BAD_ADDR
+        xmos_write(7'h1C, 24'd31);
+        check("capture trim unchanged (XMOS 0x1C denied)", rx_trim, 8);
+        check("src_sel reset", src_sel, 0);
+        // AP write: src_sel=1, svalid2=0, r2=0 (UNCHANGED from reset -> no
+        // declare leg -> pure select, no re-rate), trims 10/12
+        spi_write(7'h1C, 24'hC0A01);
+        check("src_sel AP-set", src_sel, 1);
+        check("capture trim -> src2 field", rx_trim, 12);
         xmos_write(7'h1B, 24'd0);
-        spi_write(7'h1C, 24'd31);
-        check("capture trim still fixed while stopped", rx_trim, 8);
+        // src_sel=0 while XMOS unarmed: NO re-rate (select != rate, 11-20 ruling);
+        // r2 field=5 stored (deselected declare is inert)
+        spi_write(7'h1C, 24'hC0A14);
+        check("src_sel cleared", src_sel, 0);
+        check("capture trim -> src1 field", rx_trim, 10);
         stream_audio_ready=0;
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'h1D);        // arm, echo=7 == rate_req_src1
         check("stream arm (0x1B) still works — frame-readiness gate moved to automute/top", source_valid, 1);
         stream_audio_ready=1;
         xmos_write(7'h1B, 24'd0);
         spi_read(7'h20, rd);
-        check("applied stream rate status", rd[7:5], 5);
+        check("applied stream rate status", rd[7:5], 7);
         check("requested stream rate status", rd[10:8], 7);
-        check("capture trim status", rd[15:11], 8);
+        check("capture trim status", rd[15:11], 10);
+        check("src_sel status", rd[17], 0);
+        check("svalid_ap status", rd[18], 0);
+        check("rate_req_src2 status", rd[21:19], 5);
+        // Select vs rate separation (2026-11-20 ruling): a bare select of an
+        // UNARMED source never re-rates; the declared rate applies at ARM time.
+        begin
+            logic tog0;
+            tog0 = stream_toggle;
+            spi_write(7'h1C, 24'hC0A15);       // sel=1, svalid2=0, rate2=5 (!=applied 7)
+            check("unarmed src2 select: no re-rate", stream_toggle, tog0);
+            check("src_sel=1 stored", src_sel, 1);
+            xmos_write(7'h1A, 24'd5);          // XMOS declares rate 5 while DESELECTED
+            check("deselected declare stores only", stream_request, 7);
+            check("deselected declare: no re-rate", stream_toggle, tog0);
+            spi_write(7'h1C, 24'hC0A14);       // sel=0 while XMOS unarmed
+            check("unarmed src1 select: no re-rate", stream_toggle, tog0);
+            check("src_sel back to 0", src_sel, 0);
+            xmos_write(7'h1B, 24'h15);         // arm, echo=5: req1(5)!=applied(7) -> apply
+            check("arm applies declared rate (toggle)", stream_toggle, !tog0);
+            check("arm consumed by triggered re-rate", source_valid, 0);
+            check("applied request = src1 declared", stream_request, 5);
+            // eager-declare leg: a CHANGED r2 while AP-selected is a fresh
+            // declaration — fires symmetric to an XMOS RATE write (11-20 audit)
+            tog0 = stream_toggle;
+            spi_write(7'h1C, 24'hC0A15);       // sel=1, v2=0, r2=5 unchanged
+            check("unchanged r2 select: no re-rate", stream_toggle, tog0);
+            check("src_sel=1 for declare test", src_sel, 1);
+            spi_write(7'h1C, 24'hC0A19);       // sel=1, v2=0, r2=6 (fresh declare)
+            check("fresh AP declare applies", stream_toggle, !tog0);
+            check("fresh AP declare request", stream_request, 6);
+            // idempotence: same-rate rewrite invalidates but does NOT relock
+            spi_write(7'h1C, 24'hC0A14);       // sel=0 unarmed -> no fire
+            tog0 = stream_toggle;
+            xmos_write(7'h1A, 24'd6);          // == applied 6 -> invalidate only
+            check("same-rate XMOS rewrite: no relock", stream_toggle, tog0);
+            xmos_write(7'h1A, 24'd7);          // != applied -> declare fires
+            check("new-rate XMOS declare: relock", stream_toggle, !tog0);
+            check("new-rate request", stream_request, 7);
+        end
         check("valid PCM frame status", rd[16], 1);
         stream_fault=1;
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'h1D);        // arm, echo=7 (rejected UNSAFE anyway)
         check("fault blocks source-ready", source_valid, 0);
         begin
             logic [7:0] old_cell_cfg;
@@ -441,7 +500,7 @@ module tb_dac_ctrl_plane;
         check("DPD enable accepted only after calibration/filter setup", dpd_enable, 1);
         spi_read(7'h18, rd);
         check("calibration status valid bit", rd[11], 1);
-        xmos_write(7'h1B, 24'd1);
+        xmos_write(7'h1B, 24'h1D);        // arm, echo=7 == rate_req_src1
         spi_write(7'h15, 24'd0);
         check("DPD mode cannot change with an active AP stream", dpd_enable, 1);
         xmos_write(7'h1B, 24'd0);
@@ -467,7 +526,7 @@ module tb_dac_ctrl_plane;
         // T11: STREAM_VALID is XMOS-only (2026-11-15 ruling — the whole
         //      stream lifecycle is XMOS-owned; AP writes denied BAD_ADDR).
         begin
-            xmos_write(7'h1B, 24'h000001);
+            xmos_write(7'h1B, 24'h00001D);  // arm, echo=7 == rate_req_src1
             check("T11 XMOS stream_valid write executes", source_valid, 1);
             spi_write (7'h1B, 24'h000000);          // AP write -> denied
             check("T11 AP stream_valid write denied", source_valid, 1);
@@ -521,6 +580,83 @@ module tb_dac_ctrl_plane;
             spi_read  (7'h1C, rd);
             check("T14 AP clears ERR_INFO",  rd[10:0], 11'h0);
         end
+
+        // ---- T15: STREAM_EVENT (0x21 W1C / 0x22 read) — stream-gate doorbells
+        //      + arm-echo (2026-11-21 contract).  Layout: [0]preempt_xmos
+        //      [1]preempt_ap [2]echo_mismatch [5:3]rate_req_src1 shadow.
+        //      State in: sel=0, req1=7, applied=7, svalids=0.
+        spi_write (7'h16, 24'h0000FF);          // AP clears sticky (IRQs deassert)
+        spi_write (7'h21, 24'h000007);          // AP W1C clears all event flags
+        spi_read  (7'h22, rd);
+        check("T15 events cleared",        rd[2:0], 3'b000);
+        check("T15 fpga_irq_n deasserted", fpga_irq_n,   1);
+        check("T15 spi_ap_irq_n deasserted", spi_ap_irq_n, 1);
+
+        // T15a: deselect doorbell — XMOS armed+selected, AP selects away.
+        //       sel 0->1 closes the XMOS gate -> preempt_xmos + fpga_irq_n.
+        xmos_write(7'h1B, 24'h1D);              // arm, echo=7 == req1
+        check("T15a XMOS armed",       source_valid, 1);
+        spi_write (7'h1C, 24'hC0A15);           // sel=1, r2=5 unchanged -> pure deselect
+        spi_read  (7'h22, rd);
+        check("T15a preempt_xmos set", rd[0], 1);
+        check("T15a preempt_ap clear", rd[1], 0);
+        check("T15a rate_req_src1 shadow", rd[5:3], 3'd7);
+        check("T15a XMOS doorbell low", fpga_irq_n,   0);
+        check("T15a AP doorbell quiet", spi_ap_irq_n, 1);
+        // XMOS may clear ONLY its own domain {0,2} — bit1 mask test follows;
+        // here only bit0 is set, so a full-mask write clears exactly it.
+        xmos_write(7'h21, 24'h000007);
+        spi_read  (7'h22, rd);
+        check("T15a XMOS W1C cleared its flag", rd[0], 0);
+        check("T15a XMOS doorbell released",    fpga_irq_n, 1);
+
+        // T15b: reverse transition — select back to XMOS (1->0) sets
+        //       preempt_ap + spi_ap_irq_n.  XMOS's svalid survived the
+        //       deselect (same-rate session persists) so req1==applied
+        //       means no apply — only the AP doorbell fires.
+        spi_write (7'h1C, 24'hC0A14);           // sel=0, r2=5
+        spi_read  (7'h22, rd);
+        check("T15b preempt_ap set",   rd[1], 1);
+        check("T15b AP doorbell low",  spi_ap_irq_n, 0);
+        check("T15b XMOS doorbell quiet", fpga_irq_n, 1);
+        spi_write (7'h21, 24'h000002);          // AP clears its bit
+        spi_read  (7'h22, rd);
+        check("T15b events cleared",   rd[2:0], 3'b000);
+        check("T15b AP doorbell released", spi_ap_irq_n, 1);
+
+        // T15c: any rate apply preempts BOTH sources (clock regime destroyed).
+        //       Divergent XMOS 0x1A while selected: req1 7->3, applied->3.
+        xmos_write(7'h1A, 24'd3);
+        spi_read  (7'h22, rd);
+        check("T15c apply preempts both", rd[1:0], 2'b11);
+        check("T15c both doorbells low",  {spi_ap_irq_n, fpga_irq_n}, 2'b00);
+        spi_write (7'h21, 24'h000007);          // clean up via AP
+
+        // T15d: arm-echo — echo != rate_req_src1 refuses the arm + sets [2];
+        //       matching echo arms normally.  req1==applied==3: plain arm.
+        xmos_write(7'h1B, 24'h11);              // arm, echo=4 != req1=3
+        check("T15d echo-mismatch refuses arm", source_valid, 0);
+        spi_read  (7'h22, rd);
+        check("T15d echo_mismatch flag", rd[2], 1);
+        check("T15d XMOS doorbell low",  fpga_irq_n, 0);
+        xmos_write(7'h21, 24'h000004);          // XMOS clears its echo flag
+        spi_read  (7'h22, rd);
+        check("T15d echo flag cleared",  rd[2], 0);
+        xmos_write(7'h1B, 24'h0D);              // arm, echo=3 == req1
+        check("T15d correct echo arms",  source_valid, 1);
+        xmos_write(7'h1B, 24'h0);               // disarm — echo ignored
+
+        // T15e: session-consumed preempt — svalid held through a fault
+        //       auto-clear fires preempt for the source that was live.
+        xmos_write(7'h1B, 24'h0D);              // arm again, echo=3
+        check("T15e armed for fault test", source_valid, 1);
+        stream_fault = 1;
+        repeat(10) @(negedge clk);
+        check("T15e fault consumed session", source_valid, 0);
+        spi_read  (7'h22, rd);
+        check("T15e preempt_xmos on fault", rd[0], 1);
+        stream_fault = 0;
+        spi_write (7'h21, 24'h000007);
 
         if (errors == 0) $display("TB_PASS: tb_dac_ctrl_plane all tests passed");
         else             $display("TB_FAIL: %0d errors", errors);

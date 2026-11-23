@@ -1,0 +1,11 @@
+FILE_TYPE = MULTI_PHYS_TABLE;
+
+PART 'ARJM11C7_502_AB_ER2_T'
+CLASS = IO
+{========================================================================================}
+:"MANUFACTURER_NAME", "MANUFACTURER_PART_NUMBER"= "PART_NUMBER", "JEDEC_TYPE", "PACK_TYPE", "MOUSER_PART_NUMBER", "MOUSER_PRICE/STOCK", "ARROW_PART_NUMBER", "ARROW_PRICE/STOCK", "DESCRIPTION", "DATASHEET", "HEIGHT";
+{========================================================================================}
+ "ABRACON", "ARJM11C7-502-AB-ER2-T" (!) = "", "ARJM11C7502ABER2T", "Other", "815-RJM11C7502ABER2T", "https://www.mouser.co.uk/ProductDetail/ABRACON/ARJM11C7-502-AB-ER2-T?qs=YCa%2FAAYMW01Li4L1TO4qtw%3D%3D", "ARJM11C7-502-AB-ER2-T", "https://www.arrow.com/en/products/arjm11c7-502-ab-er2-t/abracon.html?utm_currency=USD&region=nac", "Modular Connectors / Ethernet Connectors RJ45 JACK W/MAG 1000Base-T", "https://abracon.com/Magnetics/ARJM11.pdf", "13.7 mm"
+END_PART
+
+END.

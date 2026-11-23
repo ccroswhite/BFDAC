@@ -1,0 +1,266 @@
+;Proteus Design Interchange Format
+(PDIF
+ (vendor "SamacSys Limited")
+ (version 1 0)
+ (library
+  (part "ARJM11C7-502-AB-ER2-T"
+   (description "Modular Connectors / Ethernet Connectors RJ45 JACK W/MAG 1000Base-T")
+   (family "CON")
+   (package "ARJM11C7502ABER2T")
+   (attribute "Datasheet Link" "https://abracon.com/Magnetics/ARJM11.pdf")
+   (attribute "Geometry.Height" "13.7mm")
+   (attribute "Manufacturer_Name" "ABRACON")
+   (attribute "Manufacturer_Part_Number" "ARJM11C7-502-AB-ER2-T")
+   (attribute "Mouser Part Number" "815-RJM11C7502ABER2T")
+   (attribute "Mouser Price/Stock" "https://www.mouser.co.uk/ProductDetail/ABRACON/ARJM11C7-502-AB-ER2-T?qs=YCa%2FAAYMW01Li4L1TO4qtw%3D%3D")
+   (attribute "Arrow Part Number" "ARJM11C7-502-AB-ER2-T")
+   (attribute "Arrow Price/Stock" "https://www.arrow.com/en/products/arjm11c7-502-ab-er2-t/abracon.html?utm_currency=USD&region=nac")
+   (gate
+    (symbol "ARJM11C7-502-AB-ER2-T")
+    (pin "TD1+" P1 PS)
+    (pin "TD1-" P2 PS)
+    (pin "TD2+" P3 PS)
+    (pin "TD2-" P4 PS)
+    (pin "CT_1" P5 PS)
+    (pin "CT_2" P6 PS)
+    (pin "TD3+" P7 PS)
+    (pin "TD3-" P8 PS)
+    (pin "TD4+" P9 PS)
+    (pin "TD4-" P10 PS)
+    (pin "A_GREEN" P11 PS)
+    (pin "K_GREEN" P12 PS)
+    (pin "A_YELLOW" P13 PS)
+    (pin "K_YELLOW" P14 PS)
+    (pin "MH3" MH3 PS)
+    (pin "MH4" MH4 PS)
+   )
+  )
+  (symbol "ARJM11C7-502-AB-ER2-T"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 200 100) (pt 1100 100) (pt 1100 -800) (pt 200 -800) (pt 200 100) (closed))
+   )
+   (terminal
+    (body (symbol "PIN") (pt 0 0) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -100) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -200) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -300) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -400) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -500) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -600) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 0 -700) (rot 0) (mir 0) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 0) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -100) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -200) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -300) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -400) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -500) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -600) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+   (terminal
+    (body (symbol "PIN") (pt 1300 -700) (rot 0) (mir X) (visible true))
+    (name (pt 230 0) (rot 0) (just MIDDLE LEFT) (visible true))
+    (number (pt 140 20) (rot 0) (just BOTTOM RIGHT) (visible true)))
+  )
+  (symbol "PIN"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 0 0) (pt 200 0))))
+  (symbol "PINSHORT"
+   (units THOU)
+   (origin (pt 0 0))
+   (graphic
+    (stroke 10)
+    (path (pt 0 0) (pt 100 0))))
+  (package "ARJM11C7502ABER2T"
+   (units MM)
+   (layer TASM
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt -13.69 4.15)
+      (pt 2.26 4.15)
+      (pt 2.26 -17.1)
+      (pt -13.69 -17.1)
+      (pt -13.69 4.15))))
+   (layer OCCA
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt -15.768 5.15)
+      (pt 4.337 5.15)
+      (pt 4.337 -18.15)
+      (pt -15.768 -18.15)
+      (pt -15.768 5.15))))
+   (layer TSLK
+    (graphic
+     (stroke 0.2)
+     (path
+      (closed false)
+      (pt -13.69 -1.85)
+      (pt -13.69 4.15)
+      (pt 2.26 4.15)
+      (pt 2.26 -1.85))))
+   (layer TSLK
+    (graphic
+     (stroke 0.2)
+     (path
+      (closed false)
+      (pt -13.69 -4.85)
+      (pt -13.69 -17.15)
+      (pt 2.26 -17.15)
+      (pt 2.26 -4.85))))
+   (layer TSLK
+    (graphic
+     (stroke 0.1)
+     (path
+      (closed true)
+      (pt 3.1 0)
+      (arc (pt 3.100 0.000) (pt 3.100 -0.050) (pt 3.200 0.050) (start 180.0) (sweep -180.0))
+      (pt 3.2 0)
+      (arc (pt 3.200 0.000) (pt 3.100 -0.050) (pt 3.200 0.050) (start 180.0) (sweep .0))
+      (pt 3.1 0))))
+   (leg P1 (pt 0.000 0.000) (padstack 1))
+   (leg P2 (pt -1.270 2.540) (padstack 0))
+   (leg P3 (pt -2.540 0.000) (padstack 0))
+   (leg P4 (pt -3.810 2.540) (padstack 0))
+   (leg P5 (pt -5.080 0.000) (padstack 0))
+   (leg P6 (pt -6.350 2.540) (padstack 0))
+   (leg P7 (pt -7.620 0.000) (padstack 0))
+   (leg P8 (pt -8.890 2.540) (padstack 0))
+   (leg P9 (pt -10.160 0.000) (padstack 0))
+   (leg P10 (pt -11.430 2.540) (padstack 0))
+   (leg P11 (pt -12.500 -8.890) (padstack 11))
+   (leg P12 (pt -12.500 -10.920) (padstack 12))
+   (leg P13 (pt 1.070 -8.890) (padstack 13))
+   (leg P14 (pt 1.070 -10.920) (padstack 14))
+   (leg MH1 (pt 0.000 -6.350) (padstack 15))
+   (leg MH2 (pt -11.430 -6.350) (padstack 16))
+   (leg MH3 (pt 2.035 -3.300) (padstack 17))
+   (leg MH4 (pt -13.465 -3.300) (padstack 18))
+   (padstack 0
+    (hole 0.9)
+    (plated true)
+    (pad (layer TCOP) (round 1.400))
+    (pad (layer INNER) (round 1.400))
+    (pad (layer BCOP) (round 1.400))
+   )
+   (padstack 1
+    (hole 0.9)
+    (plated true)
+    (pad (layer TCOP) (square 1.400))
+    (pad (layer INNER) (round 1.400))
+    (pad (layer BCOP) (square 1.400))
+   )
+   (padstack 11
+    (hole 1.02)
+    (plated true)
+    (pad (layer TCOP) (round 1.530))
+    (pad (layer INNER) (round 1.530))
+    (pad (layer BCOP) (round 1.530))
+   )
+   (padstack 12
+    (hole 1.02)
+    (plated true)
+    (pad (layer TCOP) (round 1.530))
+    (pad (layer INNER) (round 1.530))
+    (pad (layer BCOP) (round 1.530))
+   )
+   (padstack 13
+    (hole 1.02)
+    (plated true)
+    (pad (layer TCOP) (round 1.530))
+    (pad (layer INNER) (round 1.530))
+    (pad (layer BCOP) (round 1.530))
+   )
+   (padstack 14
+    (hole 1.02)
+    (plated true)
+    (pad (layer TCOP) (round 1.530))
+    (pad (layer INNER) (round 1.530))
+    (pad (layer BCOP) (round 1.530))
+   )
+   (padstack 15
+    (hole 3.25)
+    (plated false)
+    (pad (layer TCOP) (round 1.625))
+    (pad (layer INNER) (round 1.625))
+    (pad (layer BCOP) (round 1.625))
+   )
+   (padstack 16
+    (hole 3.25)
+    (plated false)
+    (pad (layer TCOP) (round 1.625))
+    (pad (layer INNER) (round 1.625))
+    (pad (layer BCOP) (round 1.625))
+   )
+   (padstack 17
+    (hole 1.6)
+    (plated true)
+    (pad (layer TCOP) (round 2.400))
+    (pad (layer INNER) (round 2.400))
+    (pad (layer BCOP) (round 2.400))
+   )
+   (padstack 18
+    (hole 1.6)
+    (plated true)
+    (pad (layer TCOP) (round 2.400))
+    (pad (layer INNER) (round 2.400))
+    (pad (layer BCOP) (round 2.400))
+   )
+   (model "ARJM11C7-502-AB-ER2-T.stp"
+    (euler 90 0 0)
+    (offset -13.420000076293945 -17.079999923706055 -4)
+   )
+  )
+ )
+)

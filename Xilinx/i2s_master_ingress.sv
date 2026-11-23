@@ -4,11 +4,20 @@
 // Return DATA is captured in dsp_clk using delayed, tagged launch events.
 // rx_trim adds DSP cycles to the nominal half-bit sampling position. It is
 // changed only while muted and must be qualified against isolator/AP timing.
+//
+// DUAL SOURCE (2026-11-20): i2s_data = XMOS stream, i2s_data2 = AP McASP0
+// stream — both slave-TX on the shared FPGA-generated BCLK/LRCLK (Option A).
+// src_sel muxes the incoming pin BEFORE the capture pipeline; a select change
+// flushes the pipeline and re-arms framing, so the first sample of the new
+// source is always a complete frame (no torn words). rx_trim is per-source
+// from the register map (the two return paths have different isolator
+// channels + serializers). The control plane mutes across the switch.
 module i2s_master_ingress (
     input logic dsp_clk, cell_clk, rst_n, enable, source_valid,
     input logic [1:0] rate_shift,
     input logic [4:0] rx_trim,
-    input logic i2s_data,
+    input logic src_sel,
+    input logic i2s_data, i2s_data2,
     output logic i2s_bclk, i2s_lrclk,
     output logic [23:0] audio_l, audio_r,
     output logic new_sample, i2s_err, transport_fault, audio_frame_ready
@@ -47,9 +56,10 @@ module i2s_master_ingress (
     end
 
     (* ASYNC_REG = "TRUE" *) logic [2:0] launch_sync;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] data_sync, enable_sync, valid_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] data_sync, enable_sync, valid_sync, sel_sync;
     (* ASYNC_REG = "TRUE" *) logic [4:0] trim_meta, trim_sync;
     logic [4:0] trim_applied;
+    logic sel_applied;
     // Max capture delay: rate_shift=0 gives 46 + rx_trim[4:0](max 31) = 77
     localparam int PIPE_DEPTH = 78;
     logic [PIPE_DEPTH-1:0] sample_pipe;
@@ -79,6 +89,7 @@ module i2s_master_ingress (
     always_ff @(posedge dsp_clk or negedge rst_n) begin
         if (!rst_n) begin
             launch_sync <= 0; data_sync <= 0; enable_sync <= 0; valid_sync <= 0;
+            sel_sync <= 0; sel_applied <= 0;
             trim_meta <= 0; trim_sync <= 0; trim_applied <= 0;
             sample_pipe <= 0; serial_word <= 0; left_word <= 0;
             expected_bit <= 0; frame_armed <= 0; cadence_fault <= 0;
@@ -87,7 +98,8 @@ module i2s_master_ingress (
             for (int i = 0; i < PIPE_DEPTH; i++) tag_pipe[i] <= 0;
         end else begin
             launch_sync <= {launch_sync[1:0], launch_toggle};
-            data_sync <= {data_sync[0], i2s_data};
+            sel_sync <= {sel_sync[0], src_sel};
+            data_sync <= {data_sync[0], sel_sync[1] ? i2s_data2 : i2s_data};
             enable_sync <= {enable_sync[0], enable};
             valid_sync <= {valid_sync[0], source_valid};
             trim_meta <= rx_trim;
@@ -123,8 +135,9 @@ module i2s_master_ingress (
                     end
                 end
             end
-            if (trim_sync != trim_applied) begin
+            if (trim_sync != trim_applied || sel_sync[1] != sel_applied) begin
                 trim_applied <= trim_sync;
+                sel_applied <= sel_sync[1];
                 sample_pipe <= 0;
                 frame_armed <= 0;
                 expected_bit <= 0;

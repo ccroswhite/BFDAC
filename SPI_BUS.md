@@ -33,7 +33,7 @@ Ruling column = review checkbox.
 | 0x00 | NOP | — | no-op; clocks out pending read response | both | both | [ ] confirmed |
 | 0x01 | VOLUME | [23:0] Q0.24 | normalized volume → Q16.16 internal gain; 0xFFFFFF=FS | AP | **AP-only** (ruled 11-14: UAC2 volume disabled; app sets volume) | [x] ruled |
 | 0x02 | LEVEL | [2:0] | digital level cap 000=2V 001=4V 010=6V 011=0.6V 100=0.2V rms; applied muted | AP | **AP-only** (ruled 11-14: app-controlled) | [x] ruled |
-| 0x03 | RATE | [2:0] | alias of STREAM_RATE | **XMOS-only** (ruled 11-15: XMOS is the sole audio source — USB or AP-network relay — rate always originates there; AP writes denied) | [x] ruled |
+| 0x03 | RATE | [2:0] | alias of STREAM_RATE | **XMOS-only** (XMOS declares ITS stream's rate; stored while XMOS deselected, applies on re-select/arm. AP's rate lives in I2S_SRC 0x1C. Same-rate rewrite = stream restart/invalidate only — no relock) | [x] ruled |
 | 0x04 | — | — | **REMOVED** (was UNMUTE — retired 11-15; stream arm = STREAM_VALID 0x1B, user mute = VOLUME) | — | — | [x] removed |
 | 0x05 | BANK_LOAD | [3:0] | legacy DDR4 slot id + coef_load_start trigger | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x06 | — | — | RESERVED (was clk_source_sel, merged 0x03) | — | — | [x] reserved |
@@ -57,8 +57,14 @@ Ruling column = review checkbox.
 | 0x18 | CELL_TEST_L | [7:0] | cell-test cfg L + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x19 | CELL_TEST_R | [7:0] | cell-test cfg R + req toggle | AP | | **AP-only** (ruled 11-16) | [x] ruled |
 | 0x1A | STREAM_RATE | [2:0] | {rate_shift[1:0],family48}; resets unmute/src-valid/dpd | **XMOS-only** (same ruling as 0x03) | [x] ruled |
-| 0x1B | STREAM_VALID | [0] | "stream actually live" flag; IS the stream-arm path (gates unmute_req at top); rejects while busy/not-ready/fault/diagnostics | **XMOS-only** | **XMOS-only** (ruled 11-15: whole stream lifecycle is XMOS-owned) | [x] ruled |
-| 0x1C | — | — | **REMOVED** (was I2S_RX_TRIM: trim [4:0] calculable/negligible → fixed at 8; src_sel [5] + i2s_data2 pin/mux dead — XMOS sole source) | — | — | [x] removed |
+| 0x1B | STREAM_VALID | [4:0] | XMOS "stream actually live" flag at [0]; arms the stream when XMOS is the selected source; rejects while busy/not-ready/fault/diagnostics. **[4:2] arm-echo (2026-11-21 ruling, MANDATORY):** arm writes must echo the source's expected `rate_req_src1`; mismatch refuses the arm + sets `STREAM_EVENT[2]` (no relock burned). Disarm ([0]=0) ignores echo | **XMOS-only** | **XMOS-only** (ruled 11-15, echo ruled 11-21) | [x] ruled |
+| 0x1C | I2S_SRC | [20:0] | **dual-source restore 2026-11-20**: [0] src_sel (0=XMOS i2s_data, 1=AP i2s_data2), [1] AP stream-live flag, [4:2] AP declared rate {shift,fam48}, [12:8] rx_trim_src1, [20:16] rx_trim_src2. **Select ≠ rate**: a bare select of an unarmed source never re-rates. Apply fires on exactly two events: (a) the selected source's **live/divergent** rate — select-to-armed, or arm (0x1C[1] sel=1 / XMOS 0x1B sel=0) with declared≠applied; (b) a **fresh declare while selected** — a CHANGED [4:2] field while sel=1 is symmetric to an XMOS RATE write. Same-rate writes never relock (idempotent). Any apply = re-rate FSM flush+reload + consumes the arm (re-arm post clocks_ready). src_sel flushes capture + re-arms framing — no torn frames | **AP-only** | **AP-only** (ruled 11-20: AP owns input select + its stream declaration; XMOS denied) | [x] ruled |
+
+| 0x1D | VOICING_K2 | [23:0] | k2 raw Q2.25, sign-extended | AP | AP-only | |
+| 0x1E | VOICING_K3 | [23:0] | k3 raw Q2.25, sign-extended | AP | AP-only | |
+| 0x1F | VOICING_CTRL | [8:0] | [0] voicing_en shadow, [8] commit at fir_frame_done | AP | AP-only | |
+| 0x20 | VOICING_FILTER_ID | [15:0] | raw directory ID; 0xFFFF = don't-touch-bank sentinel | AP | AP-only | |
+| 0x21 | STREAM_EVENT | [2:0] | **stream-gate W1C (2026-11-21)**: [0] preempt_xmos, [1] preempt_ap, [2] echo_mismatch — doorbell flags for gate-close/session-consumed/arm-reject events (see FIRMWARE_CONTRACT.md §1-2). XMOS masked to {0,2} (own domain); AP clears all. Asserts fpga_irq_n ([0]|[2]) / spi_ap_irq_n ([1]) | masked | **AP all, XMOS masked** | [x] ruled |
 
 Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 
@@ -82,7 +88,8 @@ Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 | 0x1D | CELL_TEST_L | busy[8], cfg[7:0] |
 | 0x1E | CELL_TEST_R | busy[8], cfg[7:0] |
 | 0x1F | BENCH_STATUS | bench controller status word |
-| 0x20 | STREAM_STATUS | busy[0], clocks_ready[1], source_valid[2], bank_valid[3], fault[4], applied_rate[7:5], req_rate[10:8], rx_trim[15:11], audio_ready[16] |
+| 0x20 | STREAM_STATUS | busy[0], clocks_ready[1], svalid_xmos[2], bank_valid[3], fault[4], applied_rate[7:5], req_rate[10:8], rx_trim_selected[15:11], audio_ready[16], src_sel[17], svalid_ap[18], rate_req_src2[21:19] |
+| 0x22 | STREAM_EVENT | preempt_xmos[0], preempt_ap[1], echo_mismatch[2], rate_req_src1[5:3] (informational shadow only — never authorization) |
 
 Unmapped read → 0xDEADBEEF. Frame 40-bit {R/W, addr[7], data[24], crc8}, CRC-8/0x07.
 
@@ -96,16 +103,17 @@ E TEST_FORMAT, F FILT_RATE.
 
 ## 5. Current draft partition (implemented)
 
-- **XMOS-allowed (5)**: NOP, STICKY_W1C (masked to own bits)
+- **XMOS-allowed (6)**: NOP, STICKY_W1C (masked to own bits), STREAM_EVENT
+  W1C 0x21 (masked to own bits {preempt_xmos, echo_mismatch})
 - **XMOS-only**: RATE 0x03, STREAM_RATE 0x1A, STREAM_VALID 0x1B
   (AP writes denied BAD_ADDR)
 
 - Removed registers: OUTSEL 0x07 (2026-11-14), DAC_MODE 0x0B (2026-11-15),
-  UNMUTE 0x04, I2S_RX_TRIM 0x1C (2026-11-15) — all now reserved,
-  writes → BAD_ADDR
-- **AP-only (17, all ruled)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
+  UNMUTE 0x04 (2026-11-15) — all now reserved, writes → BAD_ADDR.
+  I2S_RX_TRIM 0x1C removed 11-15, **restored as I2S_SRC 11-20** (dual-source)
+- **AP-only (18, all ruled)**: BANK_LOAD, FILTER_LIST_CTRL/APP, FILTER_SELECT,
   FILTER_SELECT_ID, CAL_ADDR/DATA/COMMIT/RDADDR, FLASH_ADDR_LO/HI/CMD/DATA/PTR,
-  DPD_EN, CELL_TEST_L/R
+  DPD_EN, CELL_TEST_L/R, **I2S_SRC**
 - Reads: unrestricted both ports.
 
 ## 6. Rulings log + open items
@@ -153,11 +161,19 @@ E TEST_FORMAT, F FILT_RATE.
   → BAD_ADDR; automute's unmute input is now stream_source_valid &&
   stream_clocks_ready && bank_valid. STREAM_VALID=1 gained the
   cell-test/bench reject that UNMUTE had. MUTE_STATUS[0] now reserved-0.
-- [x] R3 I2S_RX_TRIM (0x1C) → **REMOVED ENTIRELY** (ruled 11-15): the
-  `[4:0]` capture-delay trim is calculable/negligible — ignored for now,
-  hardware fixed at the reset value 8 (`i2s_rx_trim = 5'd8` constant).
-  `[5]` src_sel + the i2s_data2 host-path pin/mux removed (B2/J1-A6
-  freed). Writes to 0x1C → BAD_ADDR.
+- [x] R3 I2S_RX_TRIM (0x1C) → ~~REMOVED 11-15~~ **RESTORED as I2S_SRC
+  (2026-11-20)**: the AP is a second direct I2S source (McASP0 → U503 →
+  `i2s_data2` B2/J1-A6, reinstated). `[0]` src_sel, `[1]` AP stream-live
+  flag (0x1B-equivalent for the AP stream), `[4:2]` AP declared rate,
+  `[12:8]`/`[20:16]` per-source rx_trim (trim is per-source again — the
+  two return paths differ: U502-rev+XU316 vs U503-fwd+McASP0). Select and
+  rate are **separate decisions** (user ruling): a bare `src_sel` change
+  on an unarmed source never touches the clock — the rate applies only
+  when the selected source is live (select-to-armed applies its stored
+  declared rate; an arm — 0x1C[1] sel=1 or XMOS 0x1B sel=0 — applies the
+  declared rate if it diverged while deselected). Any apply runs the
+  re-rate FSM flush+reload (Option A); the deselected source conforms to
+  the wire rate or idles. XMOS denied.
 - [x] R4 STICKY_W1C (0x16) → **MASKED** (ruled 11-15): XMOS may clear
   only its own bits — {SPI_CRC[0], I2S_ERR[1], FRAME_LEN[4]} — via a
   write mask (AP-domain bits DDR4_CALIB/PLL_UNLOCK/BAD_ADDR/CMD_REJECT/
@@ -167,8 +183,11 @@ E TEST_FORMAT, F FILT_RATE.
 - [x] R4b STREAM_VALID (0x1B) → **XMOS-only** (ruled 11-15): XMOS
   controls all streaming — bit rate, stream type — so the stream arm
   flag is XMOS-owned like RATE. AP writes denied BAD_ADDR. Post-R1 it
-  is the sole "stream is live" path: unmute_req = stream_source_valid
-  && clocks_ready && bank_valid. Writing 0 disarms (underrun/stop).
+  is the XMOS "stream is live" path: unmute_req (XMOS selected) =
+  stream_source_valid && clocks_ready && bank_valid. Writing 0 disarms
+  (underrun/stop). **2026-11-20**: the AP's equivalent flag is
+  I2S_SRC[1]; the muxed valid (src_sel ? svalid_ap : svalid_xmos)
+  drives the unmute arm and ingress source_valid.
 - [x] R5 DPD_EN (0x15) → **AP-only** (ruled 11-16 — confirmed).
 - [x] R7 CELL_TEST_L/R → **AP-only** (ruled 11-16 — confirmed).
 - [x] R8 FILTER_* (0x08/09/0A/17) → **AP-only** (ruled 11-16 — confirmed).

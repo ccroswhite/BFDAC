@@ -202,13 +202,15 @@ set_property PACKAGE_PIN F2    [get_ports ext_rst_n];# B90_L3_N J1-B11
 # -----------------------------------------------------------------------------
 # 6. FPGA-master I2S with asynchronously returning serial DATA
 # -----------------------------------------------------------------------------
-set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data}]
-# J1 rows A2-A4, bank 90. BCLK/LRCLK are outputs; DATA is sampled with a
-# qualified delay. (i2s_data2/src_sel removed 2026-11-15 â€” XMOS is the sole
-# audio source; B2/J1-A6 freed.)
+set_property IOSTANDARD LVCMOS18 [get_ports {i2s_bclk i2s_lrclk i2s_data i2s_data2}]
+# J1 rows A2-A4+A6, bank 90. BCLK/LRCLK are outputs; DATA/DATA2 are sampled with a
+# qualified delay. (i2s_data2 restored 2026-11-20 - AP McASP0 = second I2S source
+# via U503 ch2; FPGA fabric selects XMOS vs AP stream; src_sel bit in register map.
+# was removed 2026-11-15 as sole-XMOS-source.)
 set_property PACKAGE_PIN B5    [get_ports i2s_bclk];# B90_L10_P J1-A2
 set_property PACKAGE_PIN C4    [get_ports i2s_lrclk];# B90_L8_N J1-A3
 set_property PACKAGE_PIN C5    [get_ports i2s_data];# B90_L8_P J1-A4
+set_property PACKAGE_PIN B2    [get_ports i2s_data2];# B90_L9_N J1-A6
 set_property DRIVE 4 [get_ports {i2s_bclk i2s_lrclk}]
 set_property SLEW SLOW [get_ports {i2s_bclk i2s_lrclk}]
 set_property IOB TRUE [get_cells {u_i2s_ingress/i2s_bclk_reg u_i2s_ingress/i2s_lrclk_reg}]

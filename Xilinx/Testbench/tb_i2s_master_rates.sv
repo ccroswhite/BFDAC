@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 module tb_i2s_master_rates;
     logic dsp_clk=0, cell_clk=0, rst_n=0, enable=0, source_valid=0, i2s_data=0;
+    logic src_sel=0, i2s_data2=0;   // dual-source ports (2026-11-20): this TB exercises src 0
     logic [1:0] rate_shift=0;
     logic [4:0] rx_trim=0;
     wire i2s_bclk, i2s_lrclk, new_sample, i2s_err, transport_fault, audio_frame_ready;
