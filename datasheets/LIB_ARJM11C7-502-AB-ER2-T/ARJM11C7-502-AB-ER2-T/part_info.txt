@@ -1,9 +1,0 @@
-Manufacturer=ABRACON
-PartNumber=ARJM11C7-502-AB-ER2-T
-PartCategory=Connector
-PackageCategory=Other
-PinCount=16
-Version=9.8
-Released=2019-12-09 10:01:40
-Downloaded=2026-11-20 18:10:52
-3D=Y
