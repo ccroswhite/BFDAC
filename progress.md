@@ -6472,3 +6472,44 @@ the mid-run reorg — reorganized tree verified end-to-end.
   resolved (bank_base param override, spi TB applied-rate model, RTZ stall
   watchdog + cell-measurement TB hookups). RTL epic verification complete;
   only synth_1 post-synth checks remain (tag_pipe_0 SRL + inference).
+
+## REVIEW-5 (external audit batch, 2026-11-23) — ALL VERIFIED, committed 6dcf538
+Verdicts: all 6 critical + 3 medium findings REAL (2.4 N/A — TB not in tree).
+- 1.1 IREG_PRE_B("TRUE") -> FALSE: real URAM288 read is now 2-cycle like the
+  `ifdef SIM model (was 3 — extra addr pipe stage misaligned every coef read
+  in hardware while sims passed).
+- 1.2 QUAD_URAM_EN 1->0 in dac_dsp_core: QUAD mode ignored
+  bank_select/bank_load_target entirely — filter loads would have written the
+  LIVE bank mid-playback (~22 ms corrupted transients). Dual-bank costs
+  80/128 URAMs (62.5%) at NUM_MACS=80. L/R bank-sharing optimization deferred.
+- 1.3 carrier MISO moved from !sck_int to sck_int==1 (high phase): capture
+  now lands 15 ns after the falling-edge launch — matches the XDC §11b model
+  (was 10 ns, under the ~11.5 ns real path). rx_skip consumed on high-phase
+  edges; last bit still captured before op_busy clears.
+- 1.4 cal_coef_store: dsp_rst_n(sys_rst_n) asserted on every rate change was
+  reverting active_sel->0 (zero bank) + clearing calibration_valid ->
+  SPI_W_DPD_EN rejected until 512-word re-upload. Now ext_rst_n synced into
+  dsp_clk (dsp_hard_rst_n) resets bank state/toggles; dsp_rst_n no longer
+  touches them (also removes the toggle_sync_warm skew window).
+- 1.5 rd_req edge-trap -> rd_served flag: a level rd_req raised while
+  u_flash_ctrl was mid-ARM-op could never re-trigger IDLE -> boot deadlock.
+  rd_served sets on accept, clears when rd_req drops (loader drops on done).
+- 1.6 STARTUPE3: USRCCLKO gated to sel_target!=CARRIER (was masked only by
+  the carrier probe pumping 136 clocks; also removes 100 MHz noise on the SoM
+  CCLK trace) + new CCLK_WARM state emits 4 dummy sck clocks post-EOS for
+  UG570's ~3 swallowed handoff edges.
+- 2.1 qspi_boot_loader: first burst clamped to next 256 B boundary
+  (max_beats_256b = 16 - w_addr[7:4]) — 16-B-aligned dest_addr + fixed
+  16-beat bursts could cross 4 KB (AXI A3.4.1).
+- 2.2 cmd_addr/cmd_opcode latched on cmd_trigger (GAP re-read them live);
+  gap_cnt 8->20 clk_200m = 100 ns > 50 ns t_SHSL2 min.
+- 2.3 rd_data readback now CE-qualified by a >=8-cycle rd_addr stability
+  timer -> CDC-15 clock-enable crossing instead of CDC-1/CDC-6 (sign-off gate).
+- 2.4 N/A: tb_dsp_voicing_e2e.sv not in repo (notebook baseline only).
+Verified: tb_qspi_subsys ALL PASS (T5 carrier boot over new sampling),
+tb_cal_coef_store 8/8 (T8 updated: bank+valid must SURVIVE dsp reset,
+still checks no fabricated commit), tb_fir_polyphase_stereo all pass,
+tb_stream_pipeline 8/8, tb_dac_dsp_core 8/8.
+review5_gate_v1: 27/27 PASS, 0 FAIL, first run (Xilinx/logs/review5_gate_v1).
+Residual: synth_1 post-synth checks (tag_pipe_0 SRL, DSP48/BRAM inference)
+now also cover the IREG_PRE_B + QUAD_URAM_EN changes.
