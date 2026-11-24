@@ -173,14 +173,16 @@ set_max_delay -datapath_only 3.5 \
 set_false_path -from [get_ports ext_rst_n]
 
 # Async reset assertion; release is synchronized in DSP and serial cell domains.
-set_false_path -to [get_pins -hierarchical -filter {NAME =~ *dsp_reset_sync_reg*/CLR || NAME =~ *dsp_rst_lvl1_n_reg*/CLR || NAME =~ *dsp_rst_tree_n_reg*/CLR || NAME =~ *cell_reset_reg*/CLR}]
+# 2026-11-23: *dsp_rst*lvl1/tree* widened to also match the dedicated FIR reset
+# tree copies (dsp_rst_fir_lvl1_n / dsp_rst_fir_tree_n, added post-R4).
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *dsp_reset_sync_reg*/CLR || NAME =~ *dsp_rst*lvl1_n_reg*/CLR || NAME =~ *dsp_rst*tree_n_reg*/CLR || NAME =~ *cell_reset_reg*/CLR}]
 
 # dsp_clk reset tree -> cell_clk reset pins (asserted for ~100 us while MMCM relocks).
 set_false_path \
-    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst_tree_n_reg*}] \
+    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst*lvl1_n_reg* || NAME =~ *dsp_rst*tree_n_reg*}] \
     -to   [get_pins -hierarchical -filter {NAME =~ u_i2s_ingress/* && (REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
 set_false_path \
-    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst_tree_n_reg*}] \
+    -from [get_cells -hierarchical -filter {NAME =~ *dsp_reset_sync_reg* || NAME =~ *dsp_rst_lvl1_n_reg* || NAME =~ *dsp_rst*tree_n_reg*}] \
     -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
 
 # -----------------------------------------------------------------------------
@@ -245,6 +247,12 @@ set_max_delay -datapath_only 5.0 \
     -from [get_clocks cell_clk] \
     -to   [get_ports {i2s_bclk i2s_lrclk}]
 set_false_path -to [get_pins {u_stream_rate/lock_sync_reg[0]/D stream_fault_sync_reg[0]/D}]
+
+# First-stage FFs of the 2-FF level syncs (dsp_clk <-> clk_200m): launch skew
+# is absorbed by construction — second stage resolves metastability. Data may
+# arrive on D or S depending on flop flavor, so filter on pin name rather than
+# listing /D explicitly (post-synth 2026-11-23: stream_busy_dsync[0] lands on /S).
+set_false_path -to [get_pins -hierarchical -filter {(NAME =~ audio_ready_sync_reg[0]/* || NAME =~ dpd_miss_sync_reg[0]/* || NAME =~ clk_lock_dsync_reg[0]/* || NAME =~ stream_busy_dsync_reg[0]/* || NAME =~ cell_test_l_dsync_reg[0]/* || NAME =~ cell_test_r_dsync_reg[0]/* || NAME =~ bench_busy_dsync_reg[0]*) && (REF_PIN_NAME == D || REF_PIN_NAME == S)}]
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_stream_rate/applied_rate_reg[*]}] \
     -to   [get_cells {u_coef_subsys/u_coef_loader/rate_r_reg[*]}]
@@ -305,9 +313,13 @@ set_property SLEW        FAST    [get_ports {cascode_l[*] cascode_r[*]}]
 set_property IOB         TRUE    [get_cells {u_dsp_core/cascode_iob_l_reg[*] u_dsp_core/cascode_iob_r_reg[*]}]
 
 # CDC: dsp_clk staging/toggle -> cell_clk sync/capture (toggle handshake)
+# 2026-11-23: -to updated cell_cap_* -> cell_shadow_* — the shadow stage was
+# added in ac718bb (review-4) making staging -> cell_shadow the actual first
+# crossing; the cell_cap names had gone stale (post-synth: 128 uncovered
+# endpoints, WHS -5.615 ns).
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_dsp_core/staging_l_reg[*] u_dsp_core/staging_r_reg[*] u_dsp_core/dem_update_tgl_reg}] \
-    -to   [get_cells {u_dsp_core/cell_cap_l_reg[*] u_dsp_core/cell_cap_r_reg[*] u_dsp_core/tgl_sync_reg[0]}]
+    -to   [get_cells {u_dsp_core/cell_shadow_l_reg[*] u_dsp_core/cell_shadow_r_reg[*] u_dsp_core/tgl_sync_reg[0]}]
 
 # Async reset into the cell_clk reset synchronizer (recovery/removal handled
 # by the 2-FF synchronizer itself)
@@ -637,9 +649,12 @@ set_max_delay -datapath_only 5.0 \
 #     load_done toggle. Both u_coef_mgr and u_voicing_commit sample it only
 #     AT the done edge (quasi-static by then) — cover both destinations
 #     (2026-11-22: u_voicing_commit was previously unconstrained here).
+#     2026-11-23: added loader_err_lvl (subsys-level capture of loader_err_ui
+#     on the synced done edge — same quasi-static property; post-synth showed
+#     it uncovered at WNS -1.006 ns).
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_reg}] \
-    -to   [get_cells -hierarchical -filter {(NAME =~ u_coef_subsys/u_coef_mgr/* || NAME =~ u_coef_subsys/u_voicing_commit/*) && IS_SEQUENTIAL}]
+    -to   [get_cells -hierarchical -filter {(NAME =~ u_coef_subsys/u_coef_mgr/* || NAME =~ u_coef_subsys/u_voicing_commit/* || NAME =~ u_coef_subsys/loader_err_lvl_reg*) && IS_SEQUENTIAL}]
 
 # 5c) failed-load event dsp_clk -> clk_200m: coef_load_err is now a dsp_clk
 #     toggle (loader_err_tog) into a 2-FF XOR sync in dac_ctrl_plane.
@@ -665,16 +680,17 @@ set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/voicing_commit_toggle_reg}] \
     -to   [get_cells {u_coef_subsys/u_voicing_commit/commit_sync_reg[0]}]
 
-# 8) shadow set clk_200m -> dsp_clk: quasi-static bus -> pend_* capture regs
+# 8) shadow set clk_200m -> dsp_clk: quasi-static bus. pend_* capture regs are
+#    not the only consumers — want_swap reads sh_filter_id combinationally into
+#    the commit FSM state / did_fade next-state cones, so scope -to the
+#    destination clock, not a pin list (post-synth 2026-11-23: the pend_*-only
+#    scope left 4 uncovered endpoints, WNS -1.639 ns).
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_ctrl_plane/voicing_sh_en_reg \
                       u_ctrl_plane/voicing_sh_k2_reg[*] \
                       u_ctrl_plane/voicing_sh_k3_reg[*] \
                       u_ctrl_plane/voicing_sh_fid_reg[*]}] \
-    -to   [get_cells {u_coef_subsys/u_voicing_commit/pend_en_reg \
-                      u_coef_subsys/u_voicing_commit/pend_k2_reg[*] \
-                      u_coef_subsys/u_voicing_commit/pend_k3_reg[*] \
-                      u_coef_subsys/u_voicing_commit/pend_filter_id_reg[*]}]
+    -to   [get_clocks dsp_clk]
 
 # 9) status returns dsp_clk -> clk_200m: ack/err toggles get max_delay (toggle
 #    handshake style); swap_busy is a plain level into a 2-FF sync.

@@ -1045,9 +1045,21 @@ module acku15s_dac_top #(
     // Test modes (cell-test enable bit / bench) are the only mid-session
     // relay-open events besides pg_all loss — factory/calibration path
     // (ruling 2026-11-15: relay clicks only at startup + hard faults).
+    // All three raw sources are clk_200m-domain; test_active feeds
+    // u_automute's FSM + sync-reset cone in dsp_clk, so each is 2-FF synced
+    // before the OR — no comb-before-sync crossing (post-synth 2026-11-23:
+    // raw bench_busy showed 33 uncovered clk_200m -> dsp_clk endpoints).
+    (* ASYNC_REG = "TRUE" *) logic [1:0] cell_test_l_dsync = '0;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] cell_test_r_dsync = '0;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] bench_busy_dsync  = '0;
+    always_ff @(posedge dsp_clk) begin
+        cell_test_l_dsync <= {cell_test_l_dsync[0], cell_test_cfg[0][7]};
+        cell_test_r_dsync <= {cell_test_r_dsync[0], cell_test_cfg[1][7]};
+        bench_busy_dsync  <= {bench_busy_dsync[0],  bench_busy};
+    end
     logic test_mode_active;
-    assign test_mode_active = cell_test_cfg[0][7] | cell_test_cfg[1][7] |
-                              bench_busy;
+    assign test_mode_active = cell_test_l_dsync[1] | cell_test_r_dsync[1] |
+                              bench_busy_dsync[1];
 
     // Relay sys_ready: a PLANNED stream-rate transaction (u_stream_rate.busy
     // covers MUTE_WAIT..STARTUP, including the intentional MMCM relock of a

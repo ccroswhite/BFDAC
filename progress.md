@@ -6580,3 +6580,38 @@ Verified: review7_gate_v1 27/27 PASS, 0 FAIL (Xilinx/logs/review7_gate_v1).
 Verified: tb_bench_controller 318 checks (incl. new SEND-timeout test),
 tb_bench_stimulus 346 checks.
 review8_gate_v1: 27/27 PASS, 0 FAIL (Xilinx/logs/review8_gate_v1).
+
+## 2026-11-23 post-synth harvest + CDC constraint repair (post-R8 synth)
+Fresh synth on post-R8 RTL (build/5m/post_synth.dcp). Findings + fixes:
+
+- DPIP/DPOP DRC: all 36 hits are MIG MicroBlaze waivers from the DDR4 IP's own
+  XDC — zero on our RTL.
+- Utilization: URAM 80/128 (62.5%) confirms dual-bank mode live (IREG_PRE_B=FALSE,
+  OREG_B=TRUE verified in dcp); DSP 537/1968; LUT ~14%; BRAM36 349.
+- Inference checks: tag_pipe_0 = FDCE (KEEP/shreg_extract held); MAC DSPs
+  AREG=2 ADREG=1 MREG=1 PREG=1 (shift packing works); adder-tree acc10 (Tier-1)
+  CREG=0 exactly as review-6 predicted — mux pre-register question now
+  evidence-backed, deferred to P&R pressure decision.
+- Timing violations found were CONSTRAINT DRIFT, not logic bugs — XDC
+  exception scopes went stale as R4-R8 RTL added/renamed registers:
+  * staging->cell_cap exception renamed to cell_shadow (shadow stage added in
+    ac718bb; 128 uncovered endpoints, WHS -5.615 report noise — path was
+    always functionally safe via the 8-cell_clk stable window).
+  * dsp_rst_fir_* CLR pins escaped *dsp_rst_lvl1/tree* patterns (FIR reset
+    tree added post-R4) -> patterns widened to *dsp_rst*lvl1/tree*.
+  * voicing_sh_* exception scoped -to pend_* but want_swap reads sh_filter_id
+    combinationally into FSM/did_fade cones -> -to [get_clocks dsp_clk].
+  * load_err exception missed third consumer loader_err_lvl (subsys level).
+  * first-stage sync FPs added: audio_ready/dpd_miss (dsp->200m),
+    clk_lock/stream_busy dsync (data lands on /S pin -> pin-name filter).
+- REAL RTL fix: test_mode_active OR'd raw clk_200m signals (bench_busy +
+  cell_test_cfg[*][7]) into u_automute's dsp_clk FSM/sync-reset cone —
+  unsynchronized crossing. Now each source gets a 2-FF ASYNC_REG chain before
+  the OR (matches the sys_ready_relay "no comb-before-sync" convention).
+  bench_busy->automute showed 33 uncovered endpoints at -1.678 WNS.
+- dsp_clk intra-domain 118K hold-fails at synth = normal pre-route noise
+  (old post-route WHS +0.007 — router/phys_opt fixes holds). Not a regression.
+- async_default -1.305 = MIG-internal rst_input_async (IP-side, not ours).
+- Verified on dcp: all new exceptions resolve objects + cover the violations;
+  remaining clk_200m->dsp_clk fails are bench paths that the new RTL sync
+  cuts (needs re-synth to confirm).
