@@ -28,9 +28,9 @@ module tb_dac_dsp_core;
     //  DUT parameters (small for simulation speed)
     // -------------------------------------------------------------------------
     localparam int NUM_MACS       = 4;
-    localparam int TAPS_PER_PHASE = 64;   // hardcoded in dac_dsp_core
+    localparam int TAPS_PER_PHASE = 256;  // matches dac_dsp_core default
     localparam int NUM_PHASES     = 16;
-    localparam int COEF_DEPTH     = NUM_PHASES * TAPS_PER_PHASE;   // 1024
+    localparam int COEF_DEPTH     = NUM_PHASES * TAPS_PER_PHASE;   // 4096
     localparam int DATA_WIDTH     = 24;
     localparam int COEF_WIDTH     = 18;
 
@@ -59,9 +59,9 @@ module tb_dac_dsp_core;
     logic        new_sample = 0;
 
     logic        coef_we            = 0;
-    logic [9:0]  coef_waddr         = 0;   // $clog2(16*64)=10 bits
+    logic [11:0] coef_waddr         = 0;   // $clog2(16*256)=12 bits
     logic signed [17:0] coef_wdata  = 0;
-    logic [1:0]  coef_wmac          = 0;   // $clog2(NUM_MACS=4)=2 bits
+    logic [2:0]  coef_wmac          = 0;   // $clog2(NUM_MACS+1)=3 bits
 
     logic        bank_select        = 0;
     logic        bank_load_target   = 0;
@@ -153,8 +153,8 @@ module tb_dac_dsp_core;
         for (m = 0; m < NUM_MACS; m++) begin
             for (p = 0; p < COEF_DEPTH; p++) begin
                 @(negedge dsp_clk);
-                coef_wmac   = 2'(m);
-                coef_waddr  = 10'(p);
+                coef_wmac   = m;
+                coef_waddr  = p;
                 coef_wdata  = cval;
             end
         end
@@ -240,8 +240,10 @@ module tb_dac_dsp_core;
         // ==================================================================
         $display("\n--- TEST 2: Zero path (zero coefs + zero audio) ---");
         do_reset;
-        if (u_dut.combined_volume !== 32'h001BFFE4) begin
-            $display("  FAIL: full-scale gain product=0x%08h exp=0x001BFFE4",
+        // REVIEW-9.3: cvol_b_r maps 16'hFFFF -> 17'h1_0000, so full-scale is
+        // unity-exact (28.0 x 1.0 = 0x001C0000, no -28LSB truncation).
+        if (u_dut.combined_volume !== 32'h001C0000) begin
+            $display("  FAIL: full-scale gain product=0x%08h exp=0x001C0000",
                      u_dut.combined_volume);
             fail_count++;
         end else begin

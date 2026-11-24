@@ -10,7 +10,7 @@
 //                         after first in_valid
 //    4. OUTPUT RATE     : exactly 2 out_valid per in_valid (Round 30 true x2:
 //                         passthru first, filtered OUT_SPACING clocks later)
-//    5. PASS-THROUGH    : phase=1 output = shreg[CENTER_TAP] << (ACC-DATA)
+//    5. PASS-THROUGH    : phase=1 output = shreg[NUM_NONZERO] << (ACC-DATA)
 //    6. KNOWN-ANSWER    : DC input → verify filtered output = input * DC_gain
 //    7. IMPULSE RESPONSE: send unit impulse, capture full response, verify
 //                         symmetry, non-zero taps at correct positions,
@@ -29,9 +29,9 @@ module tb_halfband_x2;
     localparam int  COEF_WIDTH = 18;
     localparam int  ACC_WIDTH  = 48;
     localparam int  DSP_STAGES = 3;
-    localparam int  CENTER_TAP = (NUM_TAPS - 1) / 2;  // 31
-    localparam int  FAST_CENTER_TAP = (15 - 1) / 2;
+    localparam int  CENTER_TAP = (NUM_TAPS - 1) / 2;  // 31 (kernel centre; passthru position is NUM_NONZERO)
     localparam int  NUM_NONZERO = (NUM_TAPS + 1) / 4; // 16
+    localparam int  FAST_NUM_NONZERO = (15 + 1) / 4;  // 4 — 15-tap passthru index
     localparam real CLK_PERIOD = 2.8;                  // ~357 MHz
     // Pipeline latency: in_valid → out_valid = DSP_STAGES+1 clock cycles
     localparam int  LATENCY    = DSP_STAGES + 1;       // 4
@@ -94,11 +94,10 @@ module tb_halfband_x2;
 
     // Known-answer: coefficient mirror (Q1.17, must match RTL initial block)
     logic signed [COEF_WIDTH-1:0] tb_coef  [0:NUM_NONZERO-1];
-    logic signed [COEF_WIDTH-1:0] tb_coef_center;
 
     // Per-sample shreg model for pass-through verification
     logic signed [DATA_WIDTH-1:0] tb_shreg [0:NUM_TAPS-1];
-    logic signed [DATA_WIDTH-1:0] fast_shreg [0:14];
+    logic signed [DATA_WIDTH-1:0] fast_shreg [0:7];
     logic signed [DATA_WIDTH-1:0] fast_expected_center [0:63];
     int fast_in_count=0, fast_pass_count=0, fast_out_count=0, fast_errors=0;
     logic signed [ACC_WIDTH-1:0] fast_expected_value;
@@ -109,7 +108,7 @@ module tb_halfband_x2;
             fast_pass_count = 0;
             fast_out_count = 0;
             fast_errors = 0;
-            for (int j=0; j<15; j++) fast_shreg[j] = '0;
+            for (int j=0; j<8; j++) fast_shreg[j] = '0;
         end else begin
             if (fast_out_valid) begin
                 if ((fast_out_count % 2) == 0) begin
@@ -125,9 +124,9 @@ module tb_halfband_x2;
                 fast_out_count++;
             end
             if (fast_in_valid) begin
-                fast_expected_center[fast_in_count] = fast_shreg[FAST_CENTER_TAP];
+                fast_expected_center[fast_in_count] = fast_shreg[FAST_NUM_NONZERO];
                 fast_in_count++;
-                for (int j=14; j>0; j--) fast_shreg[j] = fast_shreg[j-1];
+                for (int j=7; j>0; j--) fast_shreg[j] = fast_shreg[j-1];
                 fast_shreg[0] = fast_data_in;
             end
         end
@@ -227,7 +226,6 @@ module tb_halfband_x2;
     initial begin
         // Initialise tb coefficient mirror (must match RTL initial block exactly)
         for (i = 0; i < NUM_NONZERO; i++) tb_coef[i] = '0;
-        tb_coef_center = 18'sh10000;
         // 63-tap Kaiser beta=16.0 (Step 4C.4, gen_hb_coefs2.py), DC gain=131072 exactly
         tb_coef[ 0] = 18'sh0A1AA;  // h[30]: +41386
         tb_coef[ 1] = 18'sh3CD7C;  // h[28]: -12932
@@ -341,28 +339,21 @@ module tb_halfband_x2;
 
         // ==================================================================
         //  TEST 5: Pass-through correctness (phase=1 outputs)
-        //  Architecture: phase=1 output = shreg[CENTER_TAP] << (ACC_WIDTH-DATA_WIDTH)
-        //  = input that arrived CENTER_TAP samples ago, left-shifted by 24 bits.
+        //  Architecture (REVIEW-9.5): passthru = shreg[NUM_NONZERO]
+        //  << (ACC_WIDTH-DATA_WIDTH) — input that arrived NUM_NONZERO+1
+        //  samples ago, left-shifted by 24 bits.
         //  Method: after flushing with zeros, send a distinct marker value.
-        //  The pass-through output should appear exactly CENTER_TAP+1 in_valid
-        //  events later (since shreg[CENTER_TAP] is the CENTER_TAP-th oldest sample),
-        //  and its value should be marker << 24.
+        //  The pass-through output should appear exactly NUM_NONZERO+1 in_valid
+        //  events later (shreg[NUM_NONZERO] is the NUM_NONZERO-th oldest sample).
         // ==================================================================
         $display("\n--- TEST 5: Pass-through (phase=1) correctness ---");
-        // Phase analysis:
-        //   phase resets to 0. Toggles on every in_valid.
-        //   RTL output mux: phase_d[DSP_STAGES]=1 → acc_passthru (marker<<24)
-        //                   phase_d[DSP_STAGES]=0 → acc_filtered
-        //   acc_passthru captures shreg[CENTER_TAP] when valid_pipe[2] is high.
-        //   shreg[CENTER_TAP] = marker requires CENTER_TAP more in_valid pulses
-        //   after the marker is loaded into shreg[0].
-        //   Round 30: EVERY input emits its passthru as the FIRST of its two
-        //   outputs (no phase parity needed). After marker + CENTER_TAP more
-        //   inputs, the trigger's first output = marker << 24.
+        //   acc_passthru captures shreg[NUM_NONZERO] when valid_pipe[2] is high.
+        //   shreg[NUM_NONZERO] = marker requires NUM_NONZERO more in_valid
+        //   pulses after the marker is loaded into shreg[0].
         do_reset(NUM_TAPS + DSP_STAGES);
-        drive_sample(24'sh5A5A5A, 2);          // marker enters shreg[0]; phase→1
-        repeat(CENTER_TAP) drive_sample(0, 2);     // 31 zeros; marker advances to tap 31
-        // marker is now at shreg[CENTER_TAP]. The following trigger observes it.
+        drive_sample(24'sh5A5A5A, 2);          // marker enters shreg[0]
+        repeat(NUM_NONZERO) drive_sample(0, 2);    // 16 zeros; marker to shreg[16]
+        // marker is now at shreg[NUM_NONZERO]. The following trigger observes it.
         // Fire trigger with phase=1:
         @(negedge clk); data_in = 0; in_valid = 1;
         @(posedge clk);
@@ -388,13 +379,10 @@ module tb_halfband_x2;
         // ==================================================================
         //  TEST 6: Known-answer — DC input
         //  Send a constant DC value for NUM_TAPS samples after reset.
-        //  Once the shift register is full (sample NUM_TAPS onwards), the
-        //  filtered output should equal:
-        //    y_filtered = dc_val * (coef_center + 2*sum(coef_rom)) / 2^(Q1.17)
-        //  In Q1.17: sum all taps of the full impulse response.
-        //  For the half-band, DC gain = coef_center/2^17
-        //                              + 2 * sum(coef_rom[k])/2^17
-        //  (symmetric pairs each contribute 2x).
+        //  Once the shift register is full, the filtered (midpoint) output is:
+        //    y_filtered = dc_val * (2*sum(coef_rom)) / 2^(COEF_WIDTH-2)
+        //  (REVIEW-9.5: no center tap in the midpoint phase; the x2
+        //  interpolator gain halves the divisor — odd taps sum to 0.5·2^17).
         //  The pass-through output when shreg is full of dc_val equals:
         //    y_passthru = dc_val << (ACC_WIDTH - DATA_WIDTH)
         // ==================================================================
@@ -402,18 +390,14 @@ module tb_halfband_x2;
         do_reset(NUM_TAPS + DSP_STAGES);
 
         // Compute expected DC gain in integer arithmetic matching RTL exactly.
-        // Each coef_rom[k] handles symmetric pair: contributes 2*coef_rom[k].
-        // center tap: coef_center (single tap).
-        // Full sum = coef_center + 2*(coef_rom[0]+...+coef_rom[NUM_NONZERO-1])
+        // Each coef_rom[k] handles a symmetric pair: contributes 2*coef_rom[k].
         dc_acc = 0;
-        dc_acc = dc_acc + $signed(tb_coef_center);
         for (k = 0; k < NUM_NONZERO; k++)
             dc_acc = dc_acc + 2 * $signed(tb_coef[k]);
-        // dc_acc is the sum of the filter taps in Q1.17 integer units.
-        // RTL rounds the full-precision sum, then shifts by COEF_WIDTH-1 = 17.
-        // Both output phases use the same ACC_WIDTH representation.
+        // RTL adds 2^(COEF_WIDTH-3) rounding bias, then shifts by COEF_WIDTH-2.
         // Use dc_val = 24'sh400000 (= 2^22, near full-scale but avoids overflow)
-        dc_expected = ($signed(24'sh400000) * dc_acc) >>> (COEF_WIDTH - 1);
+        dc_expected = (($signed(24'sh400000) * dc_acc) + (longint'(1) <<< (COEF_WIDTH - 3)))
+                      >>> (COEF_WIDTH - 2);
         dc_expected = dc_expected <<< (ACC_WIDTH - DATA_WIDTH);
         $display("  DC coef sum (Q1.17 integer) = %0d", dc_acc);
         $display("  Expected filtered output for dc_val=0x400000: 0x%0h (%0d)",
@@ -532,20 +516,23 @@ module tb_halfband_x2;
             $display("  FAIL: unexpected non-zero IR count %0d", nonzero_count); error_count++;
         end
 
-        // Check (d): center-tap filtered output must appear somewhere in buffer
-        // Expected = (impulse * coef_center >>> (Q1.17)) in ACC_WIDTH scale.
-        expected = ACC_WIDTH'(($signed(24'sh400000) * $signed(tb_coef_center))
-                              >>> (COEF_WIDTH - 1));
+        // Check (d): the largest midpoint tap (coef_rom[0], distance-1) must
+        // appear — impulse lands singly in a pair, so the filtered output is
+        // (impulse*coef[0] + 2^15) >>> 16 in ACC_WIDTH scale. (REVIEW-9.5:
+        // no centre tap in the midpoint phase.)
+        expected = ACC_WIDTH'(($signed(24'sh400000) * $signed(tb_coef[0])
+                               + (48'sd1 <<< (COEF_WIDTH - 3)))
+                              >>> (COEF_WIDTH - 2));
         expected = expected <<< (ACC_WIDTH - DATA_WIDTH);
         nonzero_count = 0;  // reuse as found-flag
         for (i = 0; i < ir_count; i++)
             if (ir_cap[i] === expected) nonzero_count = 1;
-        $display("  Center-tap expected value 0x%0h: %0s",
+        $display("  coef[0] tap expected value 0x%0h: %0s",
                  expected, nonzero_count ? "FOUND" : "NOT FOUND");
         if (nonzero_count)
-            $display("  PASS: center-tap output found in impulse response");
+            $display("  PASS: coef[0] tap output found in impulse response");
         else begin
-            $display("  FAIL: center-tap output not found"); error_count++;
+            $display("  FAIL: coef[0] tap output not found"); error_count++;
         end
 
         // ==================================================================
@@ -553,7 +540,7 @@ module tb_halfband_x2;
         //  Send two distinct non-zero inputs A then B (with shreg pre-filled).
         //  The output stream should be interleaved:
         //    [filtered(A), passthru(A_delayed), filtered(B), passthru(B_delayed), ...]
-        //  where passthru = CENTER_TAP-delayed input << 24.
+        //  where passthru = (NUM_NONZERO+1)-delayed input << 24.
         //  Verify that odd outputs (phase=1) always equal the appropriately
         //  delayed version of data_in shifted left.
         // ==================================================================
@@ -568,16 +555,14 @@ module tb_halfband_x2;
         out_count  = 0;
         nonzero_count = 0;
         // We check that pass-through outputs are the shifted version of
-        // what entered the filter CENTER_TAP inputs earlier.
-        // Since shreg starts at all-zeros, the first CENTER_TAP outputs have
-        // passthru=0; after CENTER_TAP inputs the marker appears.
+        // what entered the filter NUM_NONZERO+1 inputs earlier.
         // Simple check: send a distinct marker at input 0, fill rest with 0s.
-        // Then after CENTER_TAP more inputs the pass-through output = marker << 24.
+        // Then after NUM_NONZERO more inputs the pass-through output = marker << 24.
         t8_marker_val = 24'sh3C0000;
         // Send marker
         drive_sample(t8_marker_val, 2);
-        // Push marker to shreg[CENTER_TAP] by sending CENTER_TAP zeros
-        repeat(CENTER_TAP) drive_sample(0, 2);
+        // Push marker to shreg[NUM_NONZERO] by sending NUM_NONZERO zeros
+        repeat(NUM_NONZERO) drive_sample(0, 2);
         // Next sample triggers pass-through of marker
         @(negedge clk); data_in = 0; in_valid = 1;
         @(posedge clk); @(negedge clk); in_valid = 0; data_in = 0;

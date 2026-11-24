@@ -158,7 +158,7 @@ module tb_fir_polyphase_stereo;
             for (a = 0; a < COEF_DEPTH; a++) begin
                 @(negedge clk);
                 coef_we    = 1'b1;
-                coef_wmac  = $clog2(NUM_MACS)'(m);
+                coef_wmac  = m;
                 coef_waddr = $clog2(COEF_DEPTH)'(a);
                 coef_wdata = cval;
             end

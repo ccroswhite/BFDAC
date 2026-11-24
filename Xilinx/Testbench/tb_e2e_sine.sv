@@ -43,9 +43,9 @@ module tb_e2e_sine;
     logic [23:0] audio_l = 0, audio_r = 0;
     logic new_sample = 0;
     logic coef_we = 0;
-    logic [9:0] coef_waddr = 0;
+    logic [11:0] coef_waddr = 0;
     logic signed [17:0] coef_wdata = 0;
-    logic [1:0] coef_wmac = 0;
+    logic [2:0] coef_wmac = 0;
     logic [31:0] sys_volume = 32'h00010000;  // internal Q16.16 gain = 1 code unit
     logic [15:0] boot_envelope_gain = 16'hFFFF;
     wire sample_768k_tick;
@@ -133,9 +133,9 @@ module tb_e2e_sine;
         // uniform coefs 0x1800 (boxcar, /4 rescale for corrected FIR; NS drive ~ +-21 levels DC-equiv)
         @(negedge dsp_clk); coef_we = 1;
         for (int m = 0; m < NUM_MACS; m++)
-            for (int p = 0; p < 1024; p++) begin
+            for (int p = 0; p < 4096; p++) begin
                 @(negedge dsp_clk);
-                coef_wmac = 2'(m); coef_waddr = 10'(p); coef_wdata = 18'sh01800;
+                coef_wmac = m; coef_waddr = p; coef_wdata = 18'sh01800;
             end
         @(negedge dsp_clk); coef_we = 0;
         repeat (8) @(posedge dsp_clk);

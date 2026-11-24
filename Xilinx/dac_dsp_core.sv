@@ -263,7 +263,12 @@ module dac_dsp_core #(
             combined_volume  <= '0;
         end else begin
             cvol_a_r        <= sys_volume[21:0];
-            cvol_b_r        <= {1'b0, boot_envelope_gain};
+            // 0xFFFF = 2^16-1 must map to exactly 1.0 (17'h10000), else the
+            // -cvol_a_r deficit beats the +0x8000 rounding bias at unity and
+            // combined_volume truncates -1 LSB at full volume (-28 at 28x).
+            cvol_b_r        <= (boot_envelope_gain == 16'hFFFF)
+                               ? 17'h1_0000
+                               : {1'b0, boot_envelope_gain};
             cvol_m          <= cvol_a_r * cvol_b_r;
             combined_volume <= 32'((cvol_m + 39'h8000) >> 16);
         end
@@ -688,22 +693,41 @@ module dac_dsp_core #(
     // boundary (pace_div==7) so a cascode pulse can never be truncated by a
     // late or early CDC edge.
     logic [63:0] cell_shadow_l, cell_shadow_r;
-    logic [63:0] cell_cap_l, cell_cap_r;
+    logic [63:0] cell_mid_l,    cell_mid_r;
+    logic [63:0] cell_cap_l,    cell_cap_r;
+    // CDC jitter lets cell_capture_en land anywhere in the pace frame; a
+    // shadow write at pace_div==6/7 can sit adjacent to the div==7 read edge,
+    // duplicating or dropping a DEM sample. Route the shadow->cap handoff
+    // through cell_mid at the phase-3 midpoint when captures arrive in the
+    // {5,6,7,0} quadrant, chosen once on the first capture after a stream
+    // stall (switching mid-stream would pop). Guarantees >=2 cell_clk margin
+    // from the sampling edge either way.
+    logic        cell_use_mid;
+    logic        cell_alive;   // declared here: read by the shadow block below
 
     always_ff @(posedge cell_clk) begin
         if (!cell_rst_n) begin
             cell_shadow_l <= '0;
             cell_shadow_r <= '0;
+            cell_mid_l    <= '0;
+            cell_mid_r    <= '0;
             cell_cap_l    <= '0;
             cell_cap_r    <= '0;
+            cell_use_mid  <= 1'b0;
         end else begin
             if (cell_capture_en) begin
                 cell_shadow_l <= staging_l;
                 cell_shadow_r <= staging_r;
+                if (!cell_alive)
+                    cell_use_mid <= (pace_div >= 3'd5) || (pace_div == 3'd0);
+            end
+            if (pace_div == 3'd3) begin
+                cell_mid_l <= cell_shadow_l;
+                cell_mid_r <= cell_shadow_r;
             end
             if (pace_div == 3'd7) begin
-                cell_cap_l <= cell_shadow_l;
-                cell_cap_r <= cell_shadow_r;
+                cell_cap_l <= cell_use_mid ? cell_mid_l : cell_shadow_l;
+                cell_cap_r <= cell_use_mid ? cell_mid_r : cell_shadow_r;
             end
         end
     end
@@ -714,7 +738,6 @@ module dac_dsp_core #(
     // replay the last DEM word at 75% duty forever. The gate window itself
     // stays pace_div-locked; alive only qualifies emission, so pulse timing
     // keeps zero CDC jitter. Timeout >> sync jitter (±1 cell_clk).
-    logic       cell_alive;
     logic [4:0] cell_alive_cnt;
 
     always_ff @(posedge cell_clk) begin

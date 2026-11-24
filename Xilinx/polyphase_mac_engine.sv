@@ -216,18 +216,26 @@ module polyphase_mac_engine #(
             end
         end else begin : gen_exp_shift
             // Outer MACs: round-half-up then arithmetic right-shift by exp_in.
-            logic signed [47:0] rnd_bias;
-            always_comb rnd_bias = (exp_in == 5'd0) ? 48'sd0
-                                                  : (48'sd1 <<< (exp_in - 5'd1));
+            // exp_in is quasi-static (only moves at a bank swap on an idle
+            // frame boundary), so registering exp_r + the pre-decoded
+            // rnd_bias_r locally severs the bank_select_r1 -> decode -> 48b
+            // add -> 48b barrel-shift critical cone without touching latency.
+            logic [4:0]         exp_r;
+            logic signed [47:0] rnd_bias_r;
 
             always_ff @(posedge clk) begin
                 if (!rst_n) begin
+                    exp_r        <= '0;
+                    rnd_bias_r   <= '0;
                     preg_out     <= '0;
                     preg_rev_out <= '0;
                 end else begin
-                    preg_out     <= (dsp_preg + rnd_bias) >>> exp_in;
+                    exp_r        <= exp_in;
+                    rnd_bias_r   <= (exp_in == 5'd0) ? 48'sd0
+                                                     : (48'sd1 <<< (exp_in - 5'd1));
+                    preg_out     <= (dsp_preg + rnd_bias_r) >>> exp_r;
                     preg_rev_out <= rev_en
-                        ? (dsp_preg_rev + rnd_bias) >>> exp_in
+                        ? (dsp_preg_rev + rnd_bias_r) >>> exp_r
                         : '0;
                 end
             end

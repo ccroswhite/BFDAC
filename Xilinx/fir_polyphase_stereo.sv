@@ -141,7 +141,7 @@ module fir_polyphase_stereo #(
 
     // Per-MAC block exponents (schema 4): dual-banked so an EXP_SLOT stream
     // loads the inactive bank and swaps atomically with the URAMs.
-    logic [4:0]                      exp_mem    [0:1][0:NUM_MACS-1];
+    logic [4:0]                      exp_mem    [0:1][0:NUM_MACS-1] = '{default: '0};
     logic [4:0]                      exp_active [0:NUM_MACS-1];
 
     always_ff @(posedge clk)
@@ -356,6 +356,10 @@ module fir_polyphase_stereo #(
                 assign coef_out[ch][4*u + 1] = signed'({uram_dout[67:66], uram_dout[31:16]});
                 assign coef_out[ch][4*u + 2] = signed'({uram_dout[69:68], uram_dout[47:32]});
                 assign coef_out[ch][4*u + 3] = signed'({uram_dout[71:70], uram_dout[63:48]});
+                assign coef_lo_out[ch][4*u + 0] = '0;
+                assign coef_lo_out[ch][4*u + 1] = '0;
+                assign coef_lo_out[ch][4*u + 2] = '0;
+                assign coef_lo_out[ch][4*u + 3] = '0;
             end else if (u < OUTER_URAMS) begin : gen_dual_dout
                 assign coef_out[ch][2*u]   = bank_select_s3[UGRP]
                                          ? signed'({uram_dout[67:66], uram_dout[31:16]})
@@ -385,10 +389,15 @@ module fir_polyphase_stereo #(
     //  Exponent-file write (schema 4): the EXP_SLOT never selects a URAM;
     //  decode once at the stage-1 write regs into the inactive bank.
     // -------------------------------------------------------------------------
+    // exp_mem is RAM-like storage like the URAM coefficient arrays: fir_rst_n
+    // pulses on stream-rate switches must NOT wipe it — the mantissa URAMs
+    // persist, and exponents cleared to 0 under $2^{e_m}$-boosted mantissas
+    // would amplify filter skirts by up to +186 dB. The declaration init
+    // above gives FPGA FF INIT=0 (sim + bitstream deterministic); loads
+    // fully rewrite the file.
     always_ff @(posedge clk) begin
-        if (!rst_n)
-            exp_mem <= '{default: '0};
-        else if (coef_we_r && (int'(coef_wmac_r) == EXP_SLOT))
+        if (coef_we_r && (int'(coef_wmac_r) == EXP_SLOT)
+                      && (coef_waddr_r < URAM_AW'(NUM_MACS)))
             exp_mem[bank_load_target_r][coef_waddr_r[$clog2(NUM_MACS)-1:0]] <= coef_wdata_r[4:0];
     end
 
