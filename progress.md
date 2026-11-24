@@ -6554,3 +6554,29 @@ Residual: post-synth DSP DRC for adder-tree CREG/mac-engine packing.
   boundary (matches noise_shaper_ef3 Stage-A semantics), dpd_lag_rom 39
   terms/lag<=5/cal range 64..102, TPDF zero-mean + xs64 period/seeds.
 Verified: review7_gate_v1 27/27 PASS, 0 FAIL (Xilinx/logs/review7_gate_v1).
+
+## cont — REVIEW-8: bench SEND deadlock + synth stub-collision guard (2026-11-23)
+- 1.1 MMCM/ff_clk: insertion-delay concern ALREADY resolved post-route —
+  post_route_timing_summary cell_clk->ff_clk: setup 7.56–11.19 ns, hold
+  3.47–5.65 ns over 128 endpoints (the documented 90deg CLKOUT1_PHASE fix
+  holds). MMCME4_ADV conversion declined: zero measured benefit, would
+  invalidate all timing data. Re-verify on next route (report predates R5).
+- 1.2 bench deadlock (REAL, self-reinforcing): SEND waited unconditionally
+  for ack_sync while ack needed 4 pace_tick pulses; sys_rst_n/dsp_clk loss
+  -> stimulus held in reset -> ack never rises -> bench_busy wedges ->
+  blocks the stream restart that would resume pace_tick. Fixes:
+  * stimulus: ack asserts on req_sync at dsp_clk (4-phase handshake completes
+    in ~3 dsp_clk regardless of pace_tick); ack_delay removed.
+  * controller: SEND_TIMEOUT param (CLK_HZ/50 = 20 ms prod; TBs pass 256)
+    -> fault + IDLE on ack starvation; SELECTING cancel -> IDLE direct
+    (applied always 0 there).
+- 2.1 sine amplitude confirmed intentional (+/-4 NS code units ~= -18 dBFS,
+  matches DC steps); multiplier shrunk to 20x6 (INC<2^20, steps<=19).
+- 2.2 button false-path already in XDC; SELECTING->IDLE applied.
+- 2.3 run_step4_signoff.tcl does not exist; all live synth scripts already
+  exclude dac_ddr4_if.sv stub + use ffve1517-2-i. synth_top.tcl was the one
+  unfiltered glob -> added same lsearch exclusion (stub ui_clk=0 would
+  constant-fold the boot/coef AXI path if it ever won).
+Verified: tb_bench_controller 318 checks (incl. new SEND-timeout test),
+tb_bench_stimulus 346 checks.
+review8_gate_v1: 27/27 PASS, 0 FAIL (Xilinx/logs/review8_gate_v1).

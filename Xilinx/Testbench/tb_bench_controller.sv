@@ -8,7 +8,7 @@ module tb_bench_controller;
     wire [31:0] status;
     int ack_timer = 0, checks = 0;
     always #5 clk = ~clk;
-    bench_test_controller #(.CLK_HZ(120), .DEBOUNCE_CYCLES(4), .SELECT_CYCLES(360), .CANCEL_CYCLES(240)) dut (
+    bench_test_controller #(.CLK_HZ(120), .DEBOUNCE_CYCLES(4), .SELECT_CYCLES(360), .CANCEL_CYCLES(240), .SEND_TIMEOUT(256)) dut (
         .clk(clk), .rst_n(rst_n), .select_n(select_n), .step_n(step_n),
         .available(available), .ready(ready), .healthy(healthy), .rate_48(rate_48),
         .cmd_ack(ack), .cmd_req(req), .cmd(cmd), .busy(busy), .led(led), .status(status)
@@ -94,6 +94,14 @@ module tb_bench_controller;
         if (busy) $fatal(1, "held button at boot started test");
         select_n = 1; cycles(15);
         choose(1); held(1,0,0);
+        // SEND timeout: hold the far-end ack low past SEND_TIMEOUT — the
+        // controller must abandon to IDLE with fault set, not wedge busy.
+        allow_ack = 0;
+        tap(1); cycles(300);
+        if (busy || dut.state != dut.IDLE) $fatal(1, "SEND did not time out");
+        if (!dut.fault) $fatal(1, "SEND timeout did not set fault");
+        checks++;
+        allow_ack = 1; cycles(20);
         $display("TB_PASS: bench controller %0d checks, all cell/DC/frequency steps, debounce, LED, faults, ownership", checks);
         $finish;
     end

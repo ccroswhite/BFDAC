@@ -4,7 +4,10 @@ module bench_test_controller #(
     parameter int CLK_HZ = 200000000,
     parameter int DEBOUNCE_CYCLES = CLK_HZ / 100,
     parameter int SELECT_CYCLES = CLK_HZ * 3,
-    parameter int CANCEL_CYCLES = CLK_HZ * 2
+    parameter int CANCEL_CYCLES = CLK_HZ * 2,
+    // SEND abort: a dead dsp_clk or a stimulus held in reset can never raise
+    // ack — time out instead of wedging busy (which gates stream commands).
+    parameter int SEND_TIMEOUT = CLK_HZ / 50
 )(
     input logic clk, rst_n,
     input logic select_n, step_n,
@@ -29,6 +32,7 @@ module bench_test_controller #(
     logic fault;
     logic [6:0] last_step;
     logic [31:0] half_period;
+    logic [31:0] send_count;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -103,6 +107,7 @@ module bench_test_controller #(
             led <= 0;
             fault <= 0;
         end else begin
+            if (state != SEND) send_count <= 0;
             if (state != HOLD || !healthy || cancel_pending) begin
                 blink_count <= 0;
                 led <= 0;
@@ -138,8 +143,8 @@ module bench_test_controller #(
                 end
                 SELECTING: begin
                     if (cancel_pending || long_press) begin
-                        cmd <= 0;
-                        state <= SEND;
+                        // applied is always 0 here — no dsp handshake needed
+                        state <= IDLE;
                     end else if (selection_count == SELECT_CYCLES - 1) begin
                         if (selection >= 1 && selection <= 3 && !press[0]) begin
                             cmd <= {rate_48, 7'd0, 1'b0, selection[1:0]};
@@ -159,7 +164,18 @@ module bench_test_controller #(
                         state <= SEND;
                     end else if (ready && healthy) state <= SEND;
                 end
-                SEND: if (ack_sync) state <= RELEASE_ACK;
+                SEND: begin
+                    if (ack_sync) state <= RELEASE_ACK;
+                    else if (send_count == SEND_TIMEOUT - 1) begin
+                        // dsp_clk dead or stimulus in reset: abandon rather
+                        // than hold busy (which gates stream commands).
+                        fault <= 1;
+                        cancel_pending <= 0;
+                        restart_pending <= 0;
+                        cmd <= 0;
+                        state <= IDLE;
+                    end else send_count <= send_count + 1;
+                end
                 RELEASE_ACK: if (!ack_sync) begin
                     if (cmd[1:0] != 0 && (cancel_pending || long_press || !healthy)) begin
                         cmd <= 0;

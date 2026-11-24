@@ -9,7 +9,6 @@ module bench_test_stimulus (
     output logic signed [47:0] sample_l, sample_r
 );
     (* ASYNC_REG = "TRUE" *) logic req_meta, req_sync;
-    logic [1:0] ack_delay;
     logic [31:0] phase, phase_increment;
     logic signed [15:0] sine_rom [1024];
     logic signed [15:0] sine_q;
@@ -43,7 +42,6 @@ module bench_test_stimulus (
             req_meta <= 0;
             req_sync <= 0;
             ack <= 0;
-            ack_delay <= 0;
             applied <= 0;
             phase <= 0;
             phase_increment <= 0;
@@ -53,24 +51,25 @@ module bench_test_stimulus (
             req_sync <= req_meta;
             sine_q <= sine_rom[phase[31:22]];
             if (!allowed) applied <= 0;
+            // Acknowledge on dsp_clk, not pace_tick: a req arriving while the
+            // audio pace domain is stopped (stream teardown / clock fault)
+            // must still complete the 4-phase handshake, or u_bench_ctrl
+            // wedges in SEND and its bench_busy blocks stream restart.
             if (!req_sync) begin
                 ack <= 0;
-                ack_delay <= 0;
-            end else if (tick && !ack) begin
-                if (ack_delay == 0) begin
-                    if (allowed && ((cmd[1:0] == 1) ||
-                        (cmd[1:0] == 2 && cmd[9:3] <= 4) ||
-                        (cmd[1:0] == 3 && cmd[9:3] <= 19)))
-                        applied <= cmd;
-                    else applied <= 0;
-                    phase <= 0;
-                    phase_increment <= (cmd[10] ? INC_48 : INC_44) * (32'(cmd[9:3]) + 1);
-                    ack_delay <= 1;
-                end else if (ack_delay == 3) begin
-                    ack <= 1;
-                end else ack_delay <= ack_delay + 1;
+            end else if (!ack) begin
+                if (allowed && ((cmd[1:0] == 1) ||
+                    (cmd[1:0] == 2 && cmd[9:3] <= 4) ||
+                    (cmd[1:0] == 3 && cmd[9:3] <= 19)))
+                    applied <= cmd;
+                else applied <= 0;
+                phase <= 0;
+                // INC_* < 2^20 and valid cmds have cmd[9:3] <= 19, so a
+                // 20x6 product suffices — avoids a wide DSP48E2 multiplier.
+                phase_increment <= (cmd[10] ? INC_48 : INC_44) * (6'(cmd[7:3]) + 6'd1);
+                ack <= 1;
             end
-            if (tick && !(req_sync && !ack && ack_delay == 0))
+            if (tick && !(req_sync && !ack))
                 phase <= phase + phase_increment;
         end
     end

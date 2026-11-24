@@ -22,7 +22,7 @@ module tb_cell_measurement;
     logic [2:0] stream_applied_rate;
     logic       rate_tgl_q;
     wire [31:0] manual_status;
-    bench_test_controller #(.CLK_HZ(120), .DEBOUNCE_CYCLES(4), .SELECT_CYCLES(360), .CANCEL_CYCLES(240)) ui (
+    bench_test_controller #(.CLK_HZ(120), .DEBOUNCE_CYCLES(4), .SELECT_CYCLES(360), .CANCEL_CYCLES(240), .SEND_TIMEOUT(256)) ui (
         .clk(ctrl_clk), .rst_n(rst_n), .select_n(button1), .step_n(button2),
         .available(manual_available), .ready(manual_ready), .healthy(safe), .rate_48(1'b1),
         .cmd_req(manual_req), .cmd_ack(manual_ack), .cmd(manual_cmd),
