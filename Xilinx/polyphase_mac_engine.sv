@@ -82,7 +82,7 @@ module polyphase_mac_engine #(
             dsp_adreg <= '0;
             dsp_b2    <= '0;
         end else begin
-            dsp_adreg <= $signed(dsp_a2) +$signed(dsp_a2);
+            dsp_adreg <= $signed({dsp_a2, 1'b0});
             dsp_b2    <= dsp_b1;
         end
     end
@@ -128,7 +128,7 @@ module polyphase_mac_engine #(
                 end else begin
                     dsp_a1_rev    <= audio_rev_in;
                     dsp_a2_rev    <= dsp_a1_rev;
-                    dsp_adreg_rev <= $signed(dsp_a2_rev) +$signed(dsp_a2_rev);
+                    dsp_adreg_rev <= $signed({dsp_a2_rev, 1'b0});
                     dsp_mreg_rev  <= dsp_adreg_rev * dsp_b2;
                     if (phase_sync_d6)
                         dsp_preg_rev <= dsp_mreg_rev;

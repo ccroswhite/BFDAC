@@ -6513,3 +6513,25 @@ tb_stream_pipeline 8/8, tb_dac_dsp_core 8/8.
 review5_gate_v1: 27/27 PASS, 0 FAIL, first run (Xilinx/logs/review5_gate_v1).
 Residual: synth_1 post-synth checks (tag_pipe_0 SRL, DSP48/BRAM inference)
 now also cover the IREG_PRE_B + QUAD_URAM_EN changes.
+
+## cont — REVIEW-6: 4/4 findings FIXED + VERIFIED (2026-11-23)
+- 2.1 polyphase_mac_engine: $signed(dsp_a2)+$signed(dsp_a2) -> {dsp_a2,1'b0}
+  explicit shift, forward + reverse lanes. A+A cannot map into the DSP48E2
+  D±A pre-adder (A=AREG2, D=DREG1 structure mismatch); shift is a pure wire,
+  kills any fabric CARRY8/FF fallback. Identical math, latency preserved —
+  phase_sync_d6 / SNAP_PIPE_DELAY untouched.
+- 2.2 fir_polyphase_interpolator: u_adder_tree/u_adder_tree_rev now
+  .rst_n(rst_n && !rate_flush). Previously a rate_flush during tree drain
+  (up to G1+G2+T3 = 41 cy) let a stale valid_out increment cap_phase_idx,
+  inverting Phase 0/1 for all subsequent frames.
+- 2.3 (* max_fanout = 16 *) on t1_idx/t2_idx — single counters were driving
+  hundreds of mux-select loads across the die. Deferred: snap_buf mux
+  pre-register into DSP48E2 CREG + use_dsp on acc1/acc2/sums — pending
+  post_synth_dsp_drc.rpt evidence (DPIP-1 / DPIP warnings).
+- 2.4 elaboration assert G1>=2 && G2>=2: snap_buf[1:G1-1] with G1=1 gives
+  reversed [1:0] bounds and unguarded snap_buf[t1_idx=0] access.
+- Section 1 (cycle-level verify + 48b headroom): confirmed vs pipeline
+  trace, no change needed. FS_SUM stays at 4 guard bits below ±2^47.
+Verified: tb_fir_polyphase_stereo all 7 PASS.
+review6_gate_v1: 27/27 PASS, 0 FAIL, first run (Xilinx/logs/review6_gate_v1).
+Residual: post-synth DSP DRC for adder-tree CREG/mac-engine packing.

@@ -560,7 +560,7 @@ module fir_polyphase_interpolator #(
         .G2        (TREE_G2)
     ) u_adder_tree (
         .clk      (clk),
-        .rst_n    (rst_n),
+        .rst_n    (rst_n && !rate_flush),
         .snap_en  (snap_en_reg),
         .data_in  (mac_preg),
         .tree_out (tree_sum),
@@ -596,7 +596,7 @@ module fir_polyphase_interpolator #(
                 .G2        (TREE_G2)
             ) u_adder_tree_rev (
                 .clk      (clk),
-                .rst_n    (rst_n),
+                .rst_n    (rst_n && !rate_flush),
                 .snap_en  (snap_en_reg),
                 .data_in  (mac_preg_rev),
                 .tree_out (tree_sum_rev),

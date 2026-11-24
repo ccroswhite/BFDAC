@@ -35,15 +35,20 @@ module polyphase_adder_tree #(
     localparam int G2_W  = (G2 <= 1) ? 1 : $clog2(G2);
     localparam int T3_PAD = 2 ** T3_LEVELS;
 
+    initial begin
+        assert (G1 >= 2 && G2 >= 2)
+            else $fatal(1, "G1 (%0d) and G2 (%0d) must each be >= 2", G1, G2);
+    end
+
     // -------------------------------------------------------------------------
     // Controller Sequencing (Tier 1 -> Tier 2 -> Tier 3)
     // -------------------------------------------------------------------------
     logic            t1_busy;
-    logic [G1_W-1:0] t1_idx;
+    (* max_fanout = 16 *) logic [G1_W-1:0] t1_idx;
     logic            t1_done;
 
     logic            t2_busy;
-    logic [G2_W-1:0] t2_idx;
+    (* max_fanout = 16 *) logic [G2_W-1:0] t2_idx;
     logic            t2_done;
 
     logic [T3_LEVELS:0] t3_valid_pipe;

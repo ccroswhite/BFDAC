@@ -44,6 +44,7 @@ __pycache__/
 
 # Tool-run logs (logs/<job>.log + logs/<job>.done sentinel): readable by the IDE tools; json reports not kept
 /logs/
+Xilinx/logs/
 
 *.out
 *.err
