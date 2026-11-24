@@ -81,7 +81,7 @@ module tb_fir_polyphase_stereo;
     logic                             coef_we;
     logic [$clog2(COEF_DEPTH)-1:0]    coef_waddr;
     logic signed [COEF_WIDTH-1:0]     coef_wdata;
-    logic [$clog2(NUM_MACS)-1:0]      coef_wmac;
+    logic [$clog2(NUM_MACS+1)-1:0]    coef_wmac;  // +1: virtual exp slot
     logic                             bank_select;
     logic                             bank_load_target;
 
@@ -90,6 +90,7 @@ module tb_fir_polyphase_stereo;
     // -------------------------------------------------------------------------
     fir_polyphase_stereo #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (0),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (DATA_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),

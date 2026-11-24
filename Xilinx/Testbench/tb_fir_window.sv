@@ -56,6 +56,8 @@ module tb_fir_window #(
         .interpolated_out (y),
         .interpolated_valid(yv),
         .coef_in          (coef_in),
+        .coef_lo_in       ('{default: '0}),
+        .exp_in           ('{default: '0}),
         .coef_addr_out    (coef_addr)
     );
 

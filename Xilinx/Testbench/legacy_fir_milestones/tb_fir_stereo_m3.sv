@@ -43,6 +43,7 @@ module tb_fir_stereo_m3;
 
     fir_polyphase_stereo #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (0),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (DATA_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),

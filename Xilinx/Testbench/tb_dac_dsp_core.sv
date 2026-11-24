@@ -80,7 +80,7 @@ module tb_dac_dsp_core;
     //  DUT instantiation
     // -------------------------------------------------------------------------
     dac_dsp_core #(
-        .NUM_MACS(NUM_MACS)
+        .NUM_MACS(NUM_MACS), .SPLIT_MACS(0)
     ) u_dut (
         .dsp_clk            (dsp_clk),
         .cell_clk           (cell_clk),

@@ -15,6 +15,7 @@
 
 module dac_coef_subsys #(
     parameter int NUM_MACS = 80,    // production geometry (5x16=80 DQ); taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int SPLIT_MACS = 12,  // schema 4: virtual hi/lo slots after the outer MACs
     parameter int TAPS_PER_PHASE = 256 // Coefs per MAC per phase (production); taps = 16*NUM_MACS*TAPS_PER_PHASE
 )(
     // ui_clk domain (300 MHz = DDR4-2400 / 4, from MIG)
@@ -70,7 +71,7 @@ module dac_coef_subsys #(
     output logic        coef_we,
     output logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,  // coef index within MAC
     output logic signed [17:0]           coef_wdata,
-    output logic [$clog2(NUM_MACS)-1:0]  coef_wmac,
+    output logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0]  coef_wmac,
 
     // Bank switching outputs (dsp_clk domain, to fir_polyphase_stereo)
     output logic        bank_select,        // 0=Bank A active, 1=Bank B active
@@ -115,7 +116,7 @@ module dac_coef_subsys #(
     logic         coef_stall_ui;      // from the coef CDC FIFO (section 3)
     logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr_ui;
     logic signed [17:0]          coef_wdata_ui;
-    logic [$clog2(NUM_MACS)-1:0] coef_wmac_ui;
+    logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0] coef_wmac_ui;
 
     // CDC for load_start: toggle synchronizer (dsp_clk -> ui_clk).
     // mgr_load_start_dsp is a single-cycle pulse at dsp_clk (~3.9ns).
@@ -153,6 +154,7 @@ module dac_coef_subsys #(
 
     coef_bank_loader #(
         .NUM_MACS   (NUM_MACS),
+        .SPLIT_MACS (SPLIT_MACS),
         .COEF_DEPTH (16*TAPS_PER_PHASE)
     ) u_coef_loader (
         .clk             (ui_clk),
@@ -272,7 +274,7 @@ module dac_coef_subsys #(
     //    stall is a safety net only.
     // ----------------------------------------------------------------
     localparam int CW_ADDR = $clog2(16*TAPS_PER_PHASE);
-    localparam int CW_MAC  = $clog2(NUM_MACS);
+    localparam int CW_MAC  = $clog2(NUM_MACS+SPLIT_MACS+1);
     localparam int CW_W    = CW_ADDR + 18 + CW_MAC;
     localparam int CF_AW   = 5;                        // 32 entries
 

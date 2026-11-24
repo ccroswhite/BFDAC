@@ -105,6 +105,7 @@
 // =============================================================================
 module coef_bank_loader #(
     parameter int            NUM_MACS         = 80,    // production (5x16=80 DQ); taps = 16*NUM_MACS*TAPS_PER_PHASE
+    parameter int            SPLIT_MACS       = 12,    // schema 4: virtual hi/lo slots follow the outer MACs
     parameter int            COEF_WIDTH       = 18,
     parameter int            COEF_DEPTH       = 1024,  // 16 phases * 64 taps/phase
     parameter int            BANK_BITS        = 4,                // up to 16 banks
@@ -148,7 +149,8 @@ module coef_bank_loader #(
     output logic                          coef_we,
     output logic [$clog2(COEF_DEPTH)-1:0]    coef_waddr,
     output logic signed [COEF_WIDTH-1:0]     coef_wdata,
-    output logic [$clog2(NUM_MACS)-1:0]      coef_wmac
+    // schema 4 virtual slots: outer MACs + 2*SPLIT_MACS hi/lo + 1 exponent slot
+    output logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0] coef_wmac
 );
 
     // -------------------------------------------------------------------------
@@ -169,6 +171,20 @@ module coef_bank_loader #(
     localparam logic [31:0] PK_BYTES       = 32'(PK_TOTAL_BEATS * (AXI_DATA_WIDTH / 8));
     localparam longint      PK_BURSTS      = (PK_TOTAL_BEATS + BEATS_PER_BURST - 1) / BEATS_PER_BURST;
     localparam int          PK_LAST_BEATS  = int'(PK_TOTAL_BEATS - (PK_BURSTS - 1) * BEATS_PER_BURST);
+
+    // Schema-4 geometry (packing = 2): the packed stream carries
+    // (NUM_MACS + SPLIT_MACS) full COEF_DEPTH virtual slots — 68 outer MACs +
+    // 24 hi/lo slots — followed by NUM_MACS exponent words in a final short
+    // slot. The drain walk is identical; the last slot terminates early.
+    localparam int          COEF_SLOTS     = NUM_MACS + SPLIT_MACS;   // 92
+    localparam int          EXP_WORDS      = NUM_MACS;                // 80
+    localparam int          EXP_SLOT       = COEF_SLOTS;              // slot 92
+    localparam int          NUM_V_SLOTS    = COEF_SLOTS + 1;          // 93
+    localparam longint      PK4_TOTAL_COEFS = longint'(COEF_SLOTS) * COEF_DEPTH + EXP_WORDS;
+    localparam longint      PK4_TOTAL_BEATS = (PK4_TOTAL_COEFS + PK_PER_BEAT - 1) / PK_PER_BEAT;
+    localparam logic [31:0] PK4_BYTES       = 32'(PK4_TOTAL_BEATS * (AXI_DATA_WIDTH / 8));
+    localparam longint      PK4_BURSTS      = (PK4_TOTAL_BEATS + BEATS_PER_BURST - 1) / BEATS_PER_BURST;
+    localparam int          PK4_LAST_BEATS  = int'(PK4_TOTAL_BEATS - (PK4_BURSTS - 1) * BEATS_PER_BURST);
 
     initial begin
         assert (COEF_DEPTH % COEFS_PER_BURST == 0)
@@ -285,12 +301,13 @@ module coef_bank_loader #(
         stream_rate_ui2 <= stream_rate_ui1;
     end
     logic                        packed_r;      // current load uses the packed payload
+    logic                        packed2_r;     // current load uses schema-4 geometry
     logic [31:0]                 pk_burst;      // packed: burst number (0..PK_BURSTS-1)
     logic [8:0]                  pk_burst_beats;// packed: beats in the current burst
     logic [8:0]                  pk_beat;       // packed: beats drained in this burst
-    logic [$clog2(COEF_DEPTH)-1:0] pk_waddr;    // packed: running coef address within MAC
+    logic [$clog2(COEF_DEPTH)-1:0] pk_waddr;    // packed: running coef address within slot
     logic [31:0]                 pk_left;       // packed: coefficients still to write
-    logic [$clog2(NUM_MACS)-1:0] mac_idx;
+    logic [$clog2(NUM_V_SLOTS)-1:0] mac_idx;
     logic                        axi_read_error;
     logic [BIDX_W-1:0]           burst_idx;     // burst within MAC (0..BURSTS_PER_MAC-1)
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
@@ -315,8 +332,13 @@ module coef_bank_loader #(
     wire [31:0] dir_payload_bytes = dir_beat0[127:96];
     wire        dir_terminator    = (dir_beat0 == '0);
     wire [7:0]  dir_packing       = dir_beat1[39:32];
-    wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1);
-    wire [31:0] dir_expect_bytes  = (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
+    wire [7:0]  dir_rate_schema   = dir_beat1[55:48];
+    // packing=2 (schema 4 hybrid stream) requires schema=4 in the same entry —
+    // a legacy schema=3 image can never be interpreted as a hybrid stream.
+    wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1) ||
+                                    ((dir_packing == 8'd2) && (dir_rate_schema == 8'd4));
+    wire [31:0] dir_expect_bytes  = (dir_packing == 8'd2) ? PK4_BYTES :
+                                    (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
     // bank_base must leave room for the whole payload inside the 32-bit AXI
     // space: start_byte + payload_bytes <= 2^32 (end-exclusive, so a payload
     // ending exactly at 2^32 is legal). dir_ddr4_offset is in 16-B units, so
@@ -335,12 +357,11 @@ module coef_bank_loader #(
         (dir_end_byte <= 36'h1_0000_0000);          // payload does not wrap
     wire [7:0] dir_rate_code = dir_beat0[31:24];
     wire [1:0] dir_rate_shift = dir_rate_code[2:1];
-    wire [7:0] dir_rate_schema = dir_beat1[55:48];
     wire [7:0] dir_rate_shift_mirror = dir_beat1[47:40];
     wire dir_rate_version_ok =
         ((dir_rate_schema == 8'd0) && (rate_r[2:1] == 0) &&
          (dir_rate_shift == 0) && (dir_rate_shift_mirror == 0)) ||
-        ((dir_rate_schema == 8'd3) &&
+        (((dir_rate_schema == 8'd3) || (dir_rate_schema == 8'd4)) &&
          (dir_rate_shift == rate_r[2:1]) &&
          (dir_rate_shift_mirror == {6'd0, rate_r[2:1]}));
     // NOTE (intentional inversion): the directory rate_code byte encodes the
@@ -354,8 +375,18 @@ module coef_bank_loader #(
     // Packed burst address: beats issued so far x 16 B
     wire [AXI_ADDR_WIDTH-1:0] pk_burst_addr =
         bank_base + AXI_ADDR_WIDTH'(pk_burst * BEATS_PER_BURST * (AXI_DATA_WIDTH / 8));
-    wire        pk_last_burst = (pk_burst == 32'(PK_BURSTS - 1));
-    wire [8:0]  pk_this_beats = pk_last_burst ? 9'(PK_LAST_BEATS) : 9'(BEATS_PER_BURST);
+    wire        pk_last_burst = packed2_r
+                                  ? (pk_burst == 32'(PK4_BURSTS - 1))
+                                  : (pk_burst == 32'(PK_BURSTS - 1));
+    wire [8:0]  pk_this_beats = pk_last_burst
+                                  ? (packed2_r ? 9'(PK4_LAST_BEATS) : 9'(PK_LAST_BEATS))
+                                  : 9'(BEATS_PER_BURST);
+    // Schema 4: the exponent slot is a short slot (EXP_WORDS entries); all
+    // coefficient slots wrap at COEF_DEPTH-1 exactly as before.
+    wire [$clog2(COEF_DEPTH)-1:0] pk_waddr_last =
+        (packed2_r && (mac_idx == $clog2(NUM_V_SLOTS)'(EXP_SLOT)))
+            ? $clog2(COEF_DEPTH)'(EXP_WORDS - 1)
+            : $clog2(COEF_DEPTH)'(COEF_DEPTH - 1);
 
     // -------------------------------------------------------------------------
     //  Drain-side: each FIFO beat carries 4 coefs. We slice them out one at
@@ -384,6 +415,7 @@ module coef_bank_loader #(
             rate_r         <= 0;
             enforce_rate_r <= 0;
             packed_r       <= 1'b0;
+            packed2_r      <= 1'b0;
             pk_burst       <= '0;
             pk_burst_beats <= '0;
             pk_beat        <= '0;
@@ -428,6 +460,7 @@ module coef_bank_loader #(
                         burst_idx     <= '0;
                         axi_read_error <= 1'b0;
                         packed_r      <= 1'b0;          // legacy slot path is always v1
+                        packed2_r     <= 1'b0;
                         pk_burst      <= '0;
                         pk_waddr      <= '0;
                         pk_left       <= 32'(PK_TOTAL_COEFS);
@@ -507,7 +540,10 @@ module coef_bank_loader #(
                             state         <= ST_ERR;
                         end else begin
                             bank_base <= AXI_ADDR_WIDTH'({dir_ddr4_offset, 4'b0000});
-                            packed_r  <= (dir_packing == 8'd1);
+                            packed_r  <= (dir_packing == 8'd1) || (dir_packing == 8'd2);
+                            packed2_r <= (dir_packing == 8'd2);
+                            pk_left   <= (dir_packing == 8'd2) ? 32'(PK4_TOTAL_COEFS)
+                                                             : 32'(PK_TOTAL_COEFS);
                             state     <= ST_ISSUE_AR;
                         end
                     end else if (32'(dir_idx) == DIR_MAX_ENTRIES - 1) begin
@@ -625,7 +661,7 @@ module coef_bank_loader #(
                         coef_waddr <= pk_waddr;
                         coef_wdata <= slice_coef;
                         pk_left    <= pk_left - 32'd1;
-                        if (pk_waddr == $clog2(COEF_DEPTH)'(COEF_DEPTH - 1)) begin
+                        if (pk_waddr == pk_waddr_last) begin
                             pk_waddr <= '0;
                             if (pk_left != 32'd1)
                                 mac_idx <= mac_idx + 1'b1;

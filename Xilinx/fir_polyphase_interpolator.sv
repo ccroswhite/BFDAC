@@ -21,6 +21,7 @@ module fir_polyphase_interpolator #(
     parameter int TAPS_PER_PHASE = 256,  // production
     parameter bit SYM_FOLD_EN    = 1'b0,
     parameter bit WIN_BRAM_EN    = 1'b1,
+    parameter int SPLIT_MACS     = 0,    // schema 4: last SPLIT_MACS engines get hi/lo coef
     parameter bit RATE_SCALE_TPP = (NUM_PHASES == 2),
     parameter int EMIT_SPACING   = (NUM_PHASES == 2) ? 4 : 16
 )(
@@ -40,6 +41,10 @@ module fir_polyphase_interpolator #(
 
     // Coefficient input from shared URAMs (one value per MAC per cycle)
     input  logic signed [COEF_WIDTH-1:0]        coef_in [0:NUM_MACS-1],
+
+    // Schema 4: C_lo stream for split MACs + per-MAC block exponent for outer MACs
+    input  logic signed [COEF_WIDTH-1:0]        coef_lo_in [0:NUM_MACS-1],
+    input  logic [4:0]                          exp_in     [0:NUM_MACS-1],
 
     // Coefficient address output (to drive shared URAM read port)
     output logic [$clog2(NUM_PHASES*TAPS_PER_PHASE)-1:0] coef_addr_out
@@ -504,12 +509,15 @@ module fir_polyphase_interpolator #(
                 .COEF_WIDTH (COEF_WIDTH),
                 .ACC_WIDTH  (ACC_WIDTH),
                 .MAC_ID     (i),
-                .SYM_FOLD_EN(SYM_FOLD_EN)
+                .SYM_FOLD_EN(SYM_FOLD_EN),
+                .SPLIT_HI_LO(bit'(i >= NUM_MACS - SPLIT_MACS))
             ) u_mac (
                 .clk          (clk),
                 .rst_n        (rst_n),
                 .phase_sync   (ps_s3[i / GROUP_SZ]),
                 .coef_in      (coef_in[i]),
+                .coef_lo_in   (coef_lo_in[i]),
+                .exp_in       (exp_in[i]),
                 .audio_in     (win_q2[i]),
                 .audio_rev_in (win_rev_q2[i]),
                 .preg_out     (mac_preg[i]),
@@ -521,7 +529,7 @@ module fir_polyphase_interpolator #(
     // =========================================================================
     // 5. Phase-End Snapshot Trigger & Time-Multiplexed Adder Tree(s)
     // =========================================================================
-    localparam int SNAP_PIPE_DELAY = 8;
+    localparam int SNAP_PIPE_DELAY = 9;  // +1 for schema-4 merge register at engine output
     localparam int TREE_G1 = (EFF_MIN_TPP >= 64) ? 32 :
                              (EFF_MIN_TPP >= 32) ? 8  : 4;
     localparam int TREE_G2 = (EFF_MIN_TPP >= 64) ? 8  :

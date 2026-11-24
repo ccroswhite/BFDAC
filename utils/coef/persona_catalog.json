@@ -2,10 +2,11 @@
   "schema_version": 1,
   "description": "BFDAC Layer-1 (Stage 1A FIR) + Layer-2 (dac_voicing_shaper) Persona & Filter Catalog",
   "target_defaults": {
-    "num_macs": 128,
+    "num_macs": 80,
     "taps_per_phase": 256,
     "sym_fold": true,
-    "packing": 1,
+    "packing": 2,
+    "split_macs": 12,
     "ddr4_base_addr": "0x00000000",
     "dir_base_addr": "0x3FFF0000",
     "dir_max_entries": 1024

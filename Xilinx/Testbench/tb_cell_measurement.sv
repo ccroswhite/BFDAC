@@ -79,7 +79,7 @@ module tb_cell_measurement;
         end
     end
 
-    dac_dsp_core #(.NUM_MACS(4), .TAPS_PER_PHASE(16), .CELL_TEST_MUTE_CYCLES(4096)) core (
+    dac_dsp_core #(.NUM_MACS(4), .SPLIT_MACS(0), .TAPS_PER_PHASE(16), .CELL_TEST_MUTE_CYCLES(4096)) core (
         .dsp_clk(dsp_clk), .cell_clk(cell_clk), .sys_rst_n(rst_n), .fir_rst_n(rst_n),
         .audio_l(24'd0), .audio_r(24'd0), .new_sample(1'b0), .force_zero(1'b1),
         .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0),

@@ -52,6 +52,8 @@ module tb_fir_interp_m2;
         .interpolated_valid (interpolated_valid),
         .input_frame_done   (input_frame_done),
         .coef_in            (coef_in),
+        .coef_lo_in         ('{default: '0}),
+        .exp_in             ('{default: '0}),
         .coef_addr_out      (coef_addr_out)
     );
 

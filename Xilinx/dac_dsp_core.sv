@@ -18,6 +18,7 @@
 // =============================================================================
 module dac_dsp_core #(
     parameter int NUM_MACS = 80,  // production geometry (5x16=80 DQ)
+    parameter int SPLIT_MACS = 12, // schema 4: hi/lo split MACs (NUM_MACS-SPLIT_MACS..NUM_MACS-1)
     parameter int TAPS_PER_PHASE = 256,  // production
     parameter int CELL_TEST_MUTE_CYCLES = 4000000,
     parameter bit SYM_FOLD_EN  = 1'b1,
@@ -40,7 +41,7 @@ module dac_dsp_core #(
     input  logic                               coef_we,
     input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,
     input  logic signed [17:0]                 coef_wdata,
-    input  logic [$clog2(NUM_MACS)-1:0]        coef_wmac,
+    input  logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0] coef_wmac,
 
     // Bank switching (from dac_coef_subsys, dsp_clk domain)
     input  logic        bank_select,
@@ -109,7 +110,8 @@ module dac_dsp_core #(
         .COEF_WIDTH     (18),
         .ACC_WIDTH      (48),
         .SYM_FOLD_EN    (SYM_FOLD_EN),
-        .QUAD_URAM_EN   (QUAD_URAM_EN)
+        .QUAD_URAM_EN   (QUAD_URAM_EN),
+        .SPLIT_MACS     (SPLIT_MACS)
     ) u_stereo_fir (
         .clk                  (dsp_clk),
         .rst_n                (fir_rst_n),

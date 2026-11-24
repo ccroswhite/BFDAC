@@ -23,6 +23,11 @@ import numpy as np
 Q17_SCALE = 1 << 17          # 131,072 (unity gain per polyphase branch)
 Q17_MIN   = -(1 << 17)       # -131,072
 Q17_MAX   = (1 << 17) - 1    # +131,071
+
+# Schema 4 (hybrid block-exponent outer MACs + Q1.35 hi/lo split main-lobe MACs)
+Q35_SCALE = 1 << 35          # split-MAC quantization grid (Q1.35)
+EXP_MAX   = 31               # 5-bit per-MAC block exponent (e_m in [0, 31])
+L1_LIMIT  = 31.5             # per-phase l1 guard -> post-round sum|C| < 32*2^17, |dsp_preg| < 2^46
 Q25_SCALE = 1 << 25          # 33,554,432 (dac_voicing_shaper k2/k3 scale)
 SPI_K_MIN = -(1 << 23)       # -8,388,608 (-0.25 in Q(-1).25 sign-ext to Q2.25)
 SPI_K_MAX = (1 << 23) - 1    # +8,388,607 (+0.25 - 2^-25)
@@ -291,6 +296,112 @@ def map_to_uram_table(
     return uram
 
 
+def compute_mac_exponents(
+    h: np.ndarray,
+    num_macs: int,
+    act_tpp: int,
+    num_outer: int,
+) -> np.ndarray:
+    """e_m = max(0, min(e_tap, e_l1_phase, EXP_MAX)) for m < num_outer; 0 on split MACs."""
+    e = np.zeros(num_macs, dtype=np.int64)
+    for m in range(num_outer):
+        seg = h[m * 2 * act_tpp:(m + 1) * 2 * act_tpp]
+        mx = float(np.abs(seg).max())
+        e_tap = int(math.floor(-math.log2(mx))) - 1 if mx > 0 else EXP_MAX
+        l1 = max(float(np.abs(seg[0::2]).sum()), float(np.abs(seg[1::2]).sum()))
+        e_l1 = int(math.floor(math.log2(L1_LIMIT / l1))) if l1 > 0 else EXP_MAX
+        e[m] = max(0, min(e_tap, e_l1, EXP_MAX))
+    return e
+
+
+def split_hi_lo(c_q35: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Borrow-compensated signed 18b + 18b split: (c_hi << 18) + c_lo == c_q35 exactly."""
+    c_lo = ((c_q35 + (1 << 17)) & 0x3FFFF) - (1 << 17)
+    c_hi = (c_q35 - c_lo) >> 18
+    assert np.all(c_hi >= Q17_MIN) and np.all(c_hi <= Q17_MAX), \
+        "split C_hi exceeds signed 18-bit range (|h| ~ 1.0)"
+    assert np.array_equal((c_hi << 18) + c_lo, c_q35)
+    return c_hi, c_lo
+
+
+def quantize_hybrid_schema4(
+    h: np.ndarray,
+    num_macs: int,
+    act_tpp: int,
+    split_macs: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Schema-4 hybrid quantization.
+
+    Returns (slot_words, e, q_eff):
+      slot_words : [num_outer + 2*split_macs, 2*act_tpp] int64 — virtual slot rows
+                   (outer mantissas, then per split MAC the {hi, lo} pair)
+      e          : [num_macs] int64 exponents (0 on split MACs)
+      q_eff      : effective quantized prototype in units of 2^-17 (float64) for
+                   the cascade audit / .mem comparison
+    """
+    num_outer = num_macs - split_macs
+    e = compute_mac_exponents(h, num_macs, act_tpp, num_outer)
+
+    q_out = np.zeros((num_outer, 2 * act_tpp), dtype=np.int64)
+    outer_dc = 0.0                    # exact dyadic: sum C_m * 2^(18-e_m) on the 2^35 grid
+    for m in range(num_outer):
+        seg = h[m * 2 * act_tpp:(m + 1) * 2 * act_tpp]
+        q_out[m] = np.clip(np.rint(seg * float(Q17_SCALE << int(e[m]))), Q17_MIN, Q17_MAX)
+        l1_int = max(int(np.abs(q_out[m][0::2]).sum()), int(np.abs(q_out[m][1::2]).sum()))
+        assert l1_int < 32 * Q17_SCALE, f"MAC {m}: post-round l1 {l1_int} would wrap dsp_preg"
+        # e_m can exceed 18 -> 2^(18-e_m) is fractional; dyadic float64 stays exact.
+        outer_dc += int(q_out[m].sum()) * (2.0 ** (18 - int(e[m])))
+
+    q35 = np.zeros((split_macs, 2 * act_tpp), dtype=np.int64)
+    for i, m in enumerate(range(num_outer, num_macs)):
+        seg = h[m * 2 * act_tpp:(m + 1) * 2 * act_tpp]
+        q35[i] = np.rint(seg * float(Q35_SCALE)).astype(np.int64)
+
+    # DC closure on the 2^35 grid: distribute the integer residual across the
+    # last (center) split MAC's taps — per-tap perturbation ~|delta|/2*act_tpp
+    # LSBs is quantization-invisible. Sub-LSB remainder (<0.5 on the 2^35 grid)
+    # is an irreducible -216 dB DC error from fractional outer contributions.
+    residual = float(Q35_SCALE) - outer_dc - float(q35.sum())
+    delta = int(round(residual))
+    if delta:
+        seg_last = q35[-1]
+        n = seg_last.size
+        seg_last += delta // n
+        for idx in np.argsort(-np.abs(seg_last))[: abs(delta - (delta // n) * n)]:
+            seg_last[idx] += 1 if delta > 0 else -1
+
+    rows = [q_out[m] for m in range(num_outer)]
+    for i, m in enumerate(range(num_outer, num_macs)):
+        c_hi, c_lo = split_hi_lo(q35[i])
+        rows += [c_hi, c_lo]
+    slot_words = np.stack(rows).astype(np.int64)
+
+    q_eff = np.empty(h.size, dtype=np.float64)
+    for m in range(num_outer):
+        q_eff[m * 2 * act_tpp:(m + 1) * 2 * act_tpp] = q_out[m] * (2.0 ** -int(e[m]))
+    for i, m in enumerate(range(num_outer, num_macs)):
+        q_eff[m * 2 * act_tpp:(m + 1) * 2 * act_tpp] = q35[i] * (2.0 ** -18)
+    return slot_words, e, q_eff
+
+
+def map_to_uram_schema4(
+    slot_words: np.ndarray,
+    taps_per_phase: int,
+    rate_shift: int = 0,
+) -> np.ndarray:
+    """Maps [n_slots, 2*act_tpp] schema-4 slot rows into [n_slots, COEF_DEPTH]."""
+    coef_depth = 16 * taps_per_phase
+    act_tpp = (8 * taps_per_phase) >> rate_shift
+    n_slots = slot_words.shape[0]
+    uram = np.zeros((n_slots, coef_depth), dtype=np.int32)
+    uram[:, : 2 * act_tpp] = (
+        slot_words.reshape(n_slots, act_tpp, 2)
+        .transpose(0, 2, 1)
+        .reshape(n_slots, 2 * act_tpp)
+    )
+    return uram
+
+
 def pack_ddr4_18b(uram_table: np.ndarray) -> bytes:
     """Packs [NUM_MACS, COEF_DEPTH] into 7 x 18-bit words per 128-bit AXI4 beat (packing=1)."""
     flat_u18 = (uram_table.reshape(-1).astype(np.int64) & 0x3FFFF).astype(np.uint64)
@@ -333,15 +444,25 @@ def build_directory_entry(
     packing: int = 1,
     phase_type: int = 0,
     sym_fold: bool = True,
+    split_macs: int = 0,
 ) -> bytes:
-    """Builds 32-byte DDR4 directory entry matching coef_bank_loader.sv (schema=3)."""
+    """Builds 32-byte DDR4 directory entry (schema=3 for packing 0/1, schema=4 for packing 2)."""
     if ddr4_byte_addr % 16 != 0:
         raise ValueError(f"ddr4_byte_addr (0x{ddr4_byte_addr:X}) must be 16-byte aligned")
 
     coef_depth = 16 * taps_per_phase
     total_coefs = num_macs * coef_depth
-    pk_bytes = ((total_coefs + 6) // 7) * 16
-    payload_bytes = pk_bytes if packing == 1 else (total_coefs * 4)
+    if packing == 2:
+        # Schema 4: (NUM_MACS + SPLIT_MACS) URAM slots + NUM_MACS exponent words
+        n_words = (num_macs + split_macs) * coef_depth + num_macs
+        payload_bytes = ((n_words + 6) // 7) * 16
+        schema = 4
+    elif packing == 1:
+        payload_bytes = ((total_coefs + 6) // 7) * 16
+        schema = 3
+    else:
+        payload_bytes = total_coefs * 4
+        schema = 3
 
     rate_code = ((rate_shift & 0x3) << 1) | (0 if is_48k_family else 1)
     tap_count_field = total_coefs >> rate_shift
@@ -361,7 +482,7 @@ def build_directory_entry(
         ddr4_offset_16b,
         payload_bytes,
     )
-    beat1 = struct.pack("<IBBB9x", latency_us, packing & 0xFF, rate_shift & 0xFF, 3)
+    beat1 = struct.pack("<IBBB9x", latency_us, packing & 0xFF, rate_shift & 0xFF, schema)
     return beat0 + beat1
 
 
@@ -515,12 +636,24 @@ def build_from_catalog(
     shape_q17: bool,
     emit_individual: bool,
     emit_mem: bool,
+    split_macs_override: int | None = None,
 ) -> None:
     cat = json.loads(catalog_path.read_text(encoding="utf-8"))
     defaults = cat["target_defaults"]
     num_macs = num_macs_override if num_macs_override is not None else int(defaults["num_macs"])
     tpp = tpp_override if tpp_override is not None else int(defaults["taps_per_phase"])
     packing = int(defaults.get("packing", 1))
+    split_macs = (split_macs_override if split_macs_override is not None
+                  else int(defaults.get("split_macs", 0))) if packing == 2 else 0
+    if packing == 2:
+        num_outer = num_macs - split_macs
+        if split_macs <= 0 or num_outer < 2 or num_outer % 2:
+            raise ValueError(
+                f"packing=2 requires even NUM_OUTER = num_macs - split_macs >= 2 "
+                f"(got num_macs={num_macs}, split_macs={split_macs})"
+            )
+        if shape_q17:
+            print("[VOICING-GEN] note: --shape-q17 ignored for packing=2 (hybrid grid supersedes it)")
     sym_fold = bool(defaults.get("sym_fold", True))
     ddr4_base = int(str(defaults.get("ddr4_base_addr", "0x0")), 0)
     if ddr4_base % 4096 != 0:
@@ -621,10 +754,27 @@ def build_from_catalog(
                     hf_roll_hz=flt.get("hf_roll_hz"),
                     extra_hf_db_20k=float(flt.get("extra_hf_db_20k", 0.0)),
                 )
-                q_half = quantize_q17_exact_dc(h_half, sym_fold=sym_fold, shape_stopband=shape_q17)
-                assert int(np.sum(q_half)) == Q17_SCALE, "Exact 2^17 DC invariant violated!"
+                act_tpp = (8 * tpp) >> rs
+                if packing == 2:
+                    slot_words, exp_words, q_meas = quantize_hybrid_schema4(
+                        h_half, num_macs, act_tpp, split_macs
+                    )
+                    low_e = np.flatnonzero(exp_words[: num_macs - split_macs] < 6)
+                    if low_e.size:
+                        print(
+                            f"[EXP WARN] {p['key']}/{flt['key']} @ {fs_hz} Hz: outer MACs "
+                            f"{list(low_e)} have e<6 — check split-set coverage for this contour"
+                        )
+                    uram = map_to_uram_schema4(slot_words, tpp, rs)
+                    blob = pack_ddr4_18b(np.concatenate([uram.reshape(-1).astype(np.int64), exp_words]))
+                else:
+                    exp_words = None
+                    q_meas = quantize_q17_exact_dc(h_half, sym_fold=sym_fold, shape_stopband=shape_q17)
+                    assert int(np.sum(q_meas)) == Q17_SCALE, "Exact 2^17 DC invariant violated!"
+                    uram = map_to_uram_table(q_meas, num_macs, tpp, rs)
+                    blob = pack_ddr4_18b(uram) if packing == 1 else pack_ddr4_v1_32b(uram)
 
-                metrics = audit_cascade_response(h_half, q_half, fs_hz, rs)
+                metrics = audit_cascade_response(h_half, q_meas, fs_hz, rs)
                 if metrics["proto_max_image_dbc"] > max_img_limit:
                     raise RuntimeError(
                         f"[AUDIT FAIL] {p['key']}/{flt['key']} @ {fs_hz} Hz: "
@@ -642,8 +792,6 @@ def build_from_catalog(
                         f"{metrics['proto_max_image_dbc']:.2f} dBc)"
                     )
 
-                uram = map_to_uram_table(q_half, num_macs, tpp, rs)
-                blob = pack_ddr4_18b(uram) if packing == 1 else pack_ddr4_v1_32b(uram)
                 sha = hashlib.sha256(blob).hexdigest()[:16]
 
                 if sha in dedup_addr_by_sha:
@@ -671,13 +819,17 @@ def build_from_catalog(
                     is_48k_family=is_48k,
                     packing=packing,
                     sym_fold=sym_fold,
+                    split_macs=split_macs,
                 )
                 dir_entries.append(dir_hdr)
 
                 if emit_individual:
                     (banks_dir / f"fid_{fid:04x}_{p['key']}_{flt['key']}_{int(fs_hz)}.bin").write_bytes(blob)
                 if emit_mem:
-                    write_mem_hex(uram, banks_dir / f"fid_{fid:04x}_{p['key']}_{flt['key']}_{int(fs_hz)}.mem")
+                    mem_words = uram if exp_words is None else np.concatenate(
+                        [uram.reshape(-1).astype(np.int64), exp_words]
+                    )
+                    write_mem_hex(mem_words, banks_dir / f"fid_{fid:04x}_{p['key']}_{flt['key']}_{int(fs_hz)}.mem")
 
                 label = f"{p['key'][:14]}/{flt['key'][:22]}"
                 print(
@@ -716,6 +868,8 @@ def build_from_catalog(
         "taps_per_phase": tpp,
         "sym_fold": sym_fold,
         "packing": packing,
+        "split_macs": split_macs,
+        "dir_schema": 4 if packing == 2 else 3,
         "shape_q17": shape_q17,
         "directory_entries": len(dir_entries) - 1,
         "unique_payload_banks": len(dedup_addr_by_sha),
@@ -774,6 +928,50 @@ def run_self_test(catalog_path: Path | None = None) -> None:
         assert d_fid == fid and pack_b == 1 and pbytes == 1_198_384 and doff == (0x0020_0000 >> 4)
         assert schema == 3 and rsm == rs and ((rcode >> 1) & 0x3) == rs
         assert (rcode & 1) == ((~stream_rate) & 1) and taps == ((128 * 4096) >> rs)
+
+    print("[SELF-TEST 1b/3] Schema-4 hybrid quantizer (80 MACs, split 68..79, packing=2)...")
+    NM, SM = 80, 12
+    for rs in (0, 3):
+        fs = 48_000.0 * (1 << rs)
+        h = design_persona_half_prototype(NM, 256, rate_shift=rs, sample_rate_hz=fs, window="kaiser")
+        act_tpp = 2048 >> rs
+        sw, e, q_eff = quantize_hybrid_schema4(h, NM, act_tpp, SM)
+        n_outer = NM - SM
+        n_slots = n_outer + 2 * SM
+        assert sw.shape == (n_slots, 2 * act_tpp) and e.shape == (NM,)
+        assert np.all(e[n_outer:] == 0) and e[:n_outer].min() >= 0 and e[:n_outer].max() <= EXP_MAX
+        # Reconstruct exact dyadic DC from slot words (e can exceed 18 -> outer
+        # contribution is fractional); residual must be < 0.5 LSB on the 2^35 grid.
+        dc = 0.0
+        for m in range(n_outer):
+            dc += int(sw[m].sum()) * (2.0 ** (18 - int(e[m])))
+        for m in range(n_outer, NM):
+            c_hi = sw[n_outer + 2 * (m - n_outer)].astype(np.int64)
+            c_lo = sw[n_outer + 2 * (m - n_outer) + 1].astype(np.int64)
+            dc += float(((c_hi << 18) + c_lo).sum())
+        assert abs(dc - float(Q35_SCALE)) <= 0.5, f"schema-4 DC off grid by {dc - Q35_SCALE}"
+        # Post-round per-phase l1 on every outer MAC must stay < 32*2^17 (preg bound).
+        for m in range(n_outer):
+            l1i = max(int(np.abs(sw[m][0::2]).sum()), int(np.abs(sw[m][1::2]).sum()))
+            assert l1i < 32 * Q17_SCALE, f"MAC {m} l1 {l1i} wraps preg"
+        # q_eff DC must equal the reconstructed dyadic DC (audit units 2^-17).
+        assert abs(float(q_eff.sum()) * (2.0 ** 18) - dc) < 1e-6
+        # Flat stream = n_slots*COEF_DEPTH + NM exp words; pack & dir header checks.
+        uram = map_to_uram_schema4(sw, 256, rs)
+        assert uram.shape == (n_slots, 4096)
+        flat = np.concatenate([uram.reshape(-1).astype(np.int64), e])
+        n_words = n_slots * 4096 + NM
+        blob = pack_ddr4_18b(flat)
+        assert len(blob) == ((n_words + 6) // 7) * 16
+        hdr = build_directory_entry(
+            encode_filter_id(4, 2, rs << 1), NM, 256, 0x0020_0000,
+            rate_shift=rs, packing=2, split_macs=SM,
+        )
+        _, _, rcode, taps, doff, pbytes = struct.unpack("<HBBIII", hdr[:16])
+        _, pb, rsm, schema = struct.unpack("<IBBB9x", hdr[16:])
+        assert schema == 4 and pb == 2 and rsm == rs
+        assert pbytes == len(blob) and doff == (0x0020_0000 >> 4)
+        assert taps == ((NM * 4096) >> rs), "tap_count must be NUM_MACS*COEF_DEPTH >> rs (loader check)"
 
     print("[SELF-TEST 2/3] Verifying Stage 1B [63, 63, 31] Q1.17 ROM DC & image rejection...")
     assert int(np.sum(HB63_HALF_Q17)) == 32768 and int(np.sum(HB31_HALF_Q17)) == 32768
@@ -835,6 +1033,7 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path, default=Path("build/voicing"), help="Output directory for DDR4/AP artifacts")
     ap.add_argument("--num-macs", type=int, default=None, help="Override NUM_MACS (e.g. 128 for 8.39M, 80 for 5.24M)")
     ap.add_argument("--taps-per-phase", type=int, default=None, help="Override TAPS_PER_PHASE (default: catalog 256)")
+    ap.add_argument("--split-macs", type=int, default=None, help="Override SPLIT_MACS for packing=2 (default: catalog 12)")
     ap.add_argument("--rates", default="base", help="'base' (48k+44.1k), 'all' (0..7), or comma list e.g. '0,1'")
     ap.add_argument("--personas", default=None, help="Optional comma-separated persona keys to build")
     ap.add_argument("--shape-q17", action="store_true", help="Apply 1st-order Nyquist-zero error feedback on Q1.17 taps")
@@ -860,6 +1059,7 @@ def main() -> None:
         out_dir=args.out_dir,
         num_macs_override=args.num_macs,
         tpp_override=args.taps_per_phase,
+        split_macs_override=args.split_macs,
         rate_codes_sel=rate_codes,
         persona_keys_sel=p_keys,
         shape_q17=args.shape_q17,

@@ -64,7 +64,7 @@ module tb_system_ddr4_to_fir;
     logic                          coef_we;
     logic [$clog2(COEF_DEPTH)-1:0] coef_waddr;
     logic signed [COEF_WIDTH-1:0]  coef_wdata;
-    logic [$clog2(NUM_MACS)-1:0]   coef_wmac;
+    logic [$clog2(NUM_MACS+1)-1:0] coef_wmac;  // +1: virtual exponent slot
     wire  bank_select, bank_load_target;
     logic [3:0] current_bank_id;
     logic mgr_busy, bank_valid, coef_load_done, coef_load_err;
@@ -89,6 +89,7 @@ module tb_system_ddr4_to_fir;
     // ---- DUT: coefficient subsystem ------------------------------------------------
     dac_coef_subsys #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (0),
         .TAPS_PER_PHASE (TAPS_PER_PHASE)
     ) u_coef_subsys (
         .ui_clk             (ui_clk),
@@ -134,6 +135,7 @@ module tb_system_ddr4_to_fir;
     // ---- DUT: FIR -------------------------------------------------------------------
     fir_polyphase_stereo #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (0),
         .TAPS_PER_PHASE (TAPS_PER_PHASE),
         .DATA_WIDTH     (AUDIO_WIDTH),
         .COEF_WIDTH     (COEF_WIDTH),

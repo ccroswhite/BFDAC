@@ -24,6 +24,8 @@ module fir_polyphase_stereo #(
     parameter int ACC_WIDTH      = 48,
     parameter bit SYM_FOLD_EN    = 1'b1,  // 1: Option B 2x symmetric half-curve fold
     parameter bit QUAD_URAM_EN   = 1'b0,  // 0: Dual-bank live swap (64 URAMs @ 128 MACs); 1: 4 MACs/URAM (32 URAMs)
+    parameter int SPLIT_MACS     = 12,    // schema 4: last SPLIT_MACS engines run 36b hi/lo coefs
+    parameter bit SHARED_COEF_URAM = 1'b0, // 1: single dual-bank URAM array shared by L/R (lockstep reads)
     parameter bit TWO_STAGE_EN   = 1'b1,  // 1: Milestone 5 x2->x8 cascade; 0: Legacy single-stage x16
     parameter bit WIN_BRAM_EN    = 1'b1   // 1: Per-lane SDP Block RAM (DOB_REG=1) in Stage 1A
 )(
@@ -48,7 +50,9 @@ module fir_polyphase_stereo #(
     input  logic                                 coef_we,
     input  logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr,
     input  logic signed [COEF_WIDTH-1:0]         coef_wdata,
-    input  logic [$clog2(NUM_MACS)-1:0]          coef_wmac,
+    // schema 4 virtual slots: 0..NUM_MACS-1 outer, NUM_MACS..+2*SPLIT_MACS-1 split hi/lo,
+    // last slot (NUM_MACS+SPLIT_MACS) is the per-MAC exponent file
+    input  logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0] coef_wmac,
 
     // Dual-bank gapless switching control
     input  logic                          bank_select,
@@ -62,8 +66,15 @@ module fir_polyphase_stereo #(
     localparam int S1A_PHASES  = TWO_STAGE_EN ? 2 : 16;
     localparam int S1A_TPP     = TWO_STAGE_EN ? (8 * TAPS_PER_PHASE) : TAPS_PER_PHASE;
 
+    localparam int NUM_OUTER   = NUM_MACS - SPLIT_MACS;   // outer (18b + block-exp) MACs
+    localparam int EXP_SLOT    = NUM_MACS + SPLIT_MACS;   // virtual slot carrying 80 exponents
+    localparam int NUM_SLOTS   = EXP_SLOT + 1;            // total virtual write slots
+
     localparam int MACS_PER_U  = QUAD_URAM_EN ? 4 : 2;
-    localparam int NUM_URAMS   = NUM_MACS / MACS_PER_U;
+    // Dual-bank: NUM_OUTER/2 paired URAMs + one dedicated URAM per split MAC.
+    localparam int OUTER_URAMS = QUAD_URAM_EN ? 0 : (NUM_OUTER / 2);
+    localparam int NUM_URAMS   = QUAD_URAM_EN ? (NUM_MACS / MACS_PER_U)
+                                              : (OUTER_URAMS + SPLIT_MACS);
     localparam int URAM_AW     = 12;   // URAM288 address is always 12-bit (4096 deep)
     localparam int URAM_DW     = 72;   // URAM288 data width in SDP mode
 
@@ -73,7 +84,7 @@ module fir_polyphase_stereo #(
     logic [URAM_AW-1:0]              coef_waddr_r;
     logic signed [COEF_WIDTH-1:0]    coef_wdata_r;
     logic                            bank_load_target_r;
-    logic [$clog2(NUM_MACS)-1:0]     coef_wmac_r;
+    logic [$clog2(NUM_SLOTS)-1:0]    coef_wmac_r;
     logic                            coef_we_r;
 
     always_ff @(posedge clk) begin
@@ -109,8 +120,12 @@ module fir_polyphase_stereo #(
     localparam int UGRP_PER_SUP = NUM_UGROUPS / NUM_USUPER;
 
     initial begin
-        assert (NUM_MACS % MACS_PER_U == 0)
-            else $fatal(1, "NUM_MACS (%0d) must be a multiple of %0d", NUM_MACS, MACS_PER_U);
+        assert (!(QUAD_URAM_EN && (SPLIT_MACS != 0)))
+            else $fatal(1, "SPLIT_MACS (%0d) requires QUAD_URAM_EN = 0 (dual-bank)", SPLIT_MACS);
+        assert (QUAD_URAM_EN || (NUM_OUTER % MACS_PER_U == 0))
+            else $fatal(1, "NUM_OUTER (%0d) must be a multiple of %0d", NUM_OUTER, MACS_PER_U);
+        assert (QUAD_URAM_EN || ((SPLIT_MACS % 2) == 0) || (SPLIT_MACS == 0))
+            else $fatal(1, "SPLIT_MACS (%0d) must be even (hi/lo slot pairs)", SPLIT_MACS);
         assert (NUM_URAMS % URAM_GRP_SZ == 0)
             else $fatal(1, "NUM_URAMS (%0d) not divisible by URAM_GRP_SZ (%0d)", NUM_URAMS, URAM_GRP_SZ);
         assert (COEF_DEPTH <= 4096)
@@ -121,10 +136,19 @@ module fir_polyphase_stereo #(
     //  Coefficient output to Stage 1A FIR engines: [channel][MAC]
     // -------------------------------------------------------------------------
     logic                            bank_select_r1;
-    logic signed [COEF_WIDTH-1:0]    coef_out [0:1][0:NUM_MACS-1];
+    logic signed [COEF_WIDTH-1:0]    coef_out    [0:1][0:NUM_MACS-1];
+    logic signed [COEF_WIDTH-1:0]    coef_lo_out [0:1][0:NUM_MACS-1];
+
+    // Per-MAC block exponents (schema 4): dual-banked so an EXP_SLOT stream
+    // loads the inactive bank and swaps atomically with the URAMs.
+    logic [4:0]                      exp_mem    [0:1][0:NUM_MACS-1];
+    logic [4:0]                      exp_active [0:NUM_MACS-1];
 
     always_ff @(posedge clk)
         bank_select_r1 <= bank_select;
+
+    for (genvar em = 0; em < NUM_MACS; em++)
+        assign exp_active[em] = exp_mem[bank_select_r1][em];
 
     // -------------------------------------------------------------------------
     //  Per-channel broadcast trees + URAM288 coefficient storage.
@@ -132,9 +156,11 @@ module fir_polyphase_stereo #(
     //  inside its channel's pblock SLR so all URAM -> DSP_B routes stay local.
     //  Latency is identical to the old shared bank (s2 -> s3 -> OREG_B).
     // -------------------------------------------------------------------------
+    localparam int N_COEF_CH = SHARED_COEF_URAM ? 1 : 2;
+
     genvar ch;
     generate
-    for (ch = 0; ch < 2; ch++) begin : gen_ch
+    for (ch = 0; ch < N_COEF_CH; ch++) begin : gen_ch
         wire [$clog2(COEF_DEPTH)-1:0] coef_addr =
                                        (ch == 0) ? coef_addr_l : coef_addr_r;
 
@@ -154,8 +180,8 @@ module fir_polyphase_stereo #(
         (* dont_touch = "true" *) logic signed [COEF_WIDTH-1:0] coef_wdata_s3       [0:NUM_UGROUPS-1];
         (* dont_touch = "true" *) logic                         bank_load_target_s2 [0:NUM_USUPER-1];
         (* dont_touch = "true" *) logic                         bank_load_target_s3 [0:NUM_UGROUPS-1];
-        (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s2        [0:NUM_USUPER-1];
-        (* dont_touch = "true" *) logic [$clog2(NUM_MACS)-1:0]  coef_wmac_s3        [0:NUM_UGROUPS-1];
+        (* dont_touch = "true" *) logic [$clog2(NUM_SLOTS)-1:0] coef_wmac_s2        [0:NUM_USUPER-1];
+        (* dont_touch = "true" *) logic [$clog2(NUM_SLOTS)-1:0] coef_wmac_s3        [0:NUM_UGROUPS-1];
         (* dont_touch = "true" *) logic                         coef_we_s2          [0:NUM_USUPER-1];
         (* dont_touch = "true" *) logic                         coef_we_s3          [0:NUM_UGROUPS-1];
         (* dont_touch = "true" *) logic                         bank_select_s2      [0:NUM_USUPER-1];
@@ -184,14 +210,23 @@ module fir_polyphase_stereo #(
         for (genvar u = 0; u < NUM_URAMS; u++) begin : gen_uram_coef
             localparam int UGRP = u / URAM_GRP_SZ;
 
+            // Slot decode: outer slots 0..NUM_OUTER-1 and split hi/lo slots
+            // NUM_OUTER..NUM_OUTER+2*SPLIT_MACS-1 all map via wmac>>1 — outer
+            // pairs land on u = 0..OUTER_URAMS-1, split slot pairs land on the
+            // dedicated URAMs u = OUTER_URAMS..NUM_URAMS-1.  The exponent slot
+            // (EXP_SLOT) maps above NUM_URAMS-1 and never selects a URAM.
             wire uram_sel = QUAD_URAM_EN
                             ? ((int'(coef_wmac_s3[UGRP]) >> 2) == u)
                             : ((int'(coef_wmac_s3[UGRP]) >> 1) == u);
             wire uram_we  = coef_we_s3[UGRP] && uram_sel;
 
+            // Lane pick: outer pairs use wmac[0] (even/odd MAC); dedicated
+            // split URAMs use ~wmac[0] (hi on lanes 2/3, lo on lanes 0/1).
             wire [1:0] lane_k = QUAD_URAM_EN
                                 ? coef_wmac_s3[UGRP][1:0]
-                                : {coef_wmac_s3[UGRP][0], bank_load_target_s3[UGRP]};
+                                : {(u < OUTER_URAMS) ? coef_wmac_s3[UGRP][0]
+                                                    : ~coef_wmac_s3[UGRP][0],
+                                   bank_load_target_s3[UGRP]};
 
             wire [7:0] uram_wen = !uram_we ? 8'h00 :
                                   (lane_k == 2'd0) ? 8'h03 :
@@ -321,17 +356,48 @@ module fir_polyphase_stereo #(
                 assign coef_out[ch][4*u + 1] = signed'({uram_dout[67:66], uram_dout[31:16]});
                 assign coef_out[ch][4*u + 2] = signed'({uram_dout[69:68], uram_dout[47:32]});
                 assign coef_out[ch][4*u + 3] = signed'({uram_dout[71:70], uram_dout[63:48]});
-            end else begin : gen_dual_dout
+            end else if (u < OUTER_URAMS) begin : gen_dual_dout
                 assign coef_out[ch][2*u]   = bank_select_s3[UGRP]
                                          ? signed'({uram_dout[67:66], uram_dout[31:16]})
                                          : signed'({uram_dout[65:64], uram_dout[15: 0]});
                 assign coef_out[ch][2*u+1] = bank_select_s3[UGRP]
                                          ? signed'({uram_dout[71:70], uram_dout[63:48]})
                                          : signed'({uram_dout[69:68], uram_dout[47:32]});
+                assign coef_lo_out[ch][2*u]   = '0;
+                assign coef_lo_out[ch][2*u+1] = '0;
+            end else begin : gen_split_dout
+                // Dedicated split URAM: word = {B1_hi, B0_hi, B1_lo, B0_lo} for
+                // MAC m = NUM_OUTER + (u - OUTER_URAMS).  lo rides the even lane
+                // pair, hi the odd pair — identical bank_select muxing.
+                localparam int M = NUM_OUTER + (u - OUTER_URAMS);
+                assign coef_lo_out[ch][M] = bank_select_s3[UGRP]
+                                         ? signed'({uram_dout[67:66], uram_dout[31:16]})
+                                         : signed'({uram_dout[65:64], uram_dout[15: 0]});
+                assign coef_out[ch][M]    = bank_select_s3[UGRP]
+                                         ? signed'({uram_dout[71:70], uram_dout[63:48]})
+                                         : signed'({uram_dout[69:68], uram_dout[47:32]});
             end
         end
     end
     endgenerate
+
+    // -------------------------------------------------------------------------
+    //  Exponent-file write (schema 4): the EXP_SLOT never selects a URAM;
+    //  decode once at the stage-1 write regs into the inactive bank.
+    // -------------------------------------------------------------------------
+    always_ff @(posedge clk) begin
+        if (coef_we_r && (int'(coef_wmac_r) == EXP_SLOT))
+            exp_mem[bank_load_target_r][coef_waddr_r[$clog2(NUM_MACS)-1:0]] <= coef_wdata_r[4:0];
+    end
+
+    // Shared-array mirror: with SHARED_COEF_URAM the single array's outputs fan
+    // out to both channels (reads are identical by construction).
+    if (SHARED_COEF_URAM) begin : gen_shared_mirror
+        for (genvar m = 0; m < NUM_MACS; m++) begin : gen_mirror
+            assign coef_out[1][m]    = coef_out[0][m];
+            assign coef_lo_out[1][m] = coef_lo_out[0][m];
+        end
+    end
 
     // -------------------------------------------------------------------------
     //  Stage 1A: Left & Right Brickwall Polyphase FIR Engines
@@ -350,6 +416,7 @@ module fir_polyphase_stereo #(
         .TAPS_PER_PHASE (S1A_TPP),
         .SYM_FOLD_EN    (SYM_FOLD_EN),
         .WIN_BRAM_EN    (WIN_BRAM_EN),
+        .SPLIT_MACS     (SPLIT_MACS),
         .RATE_SCALE_TPP (TWO_STAGE_EN),
         .EMIT_SPACING   (TWO_STAGE_EN ? 4 : 16)
     ) u_l_fir (
@@ -363,6 +430,8 @@ module fir_polyphase_stereo #(
         .interpolated_valid (s1a_valid_l),
         .input_frame_done   (s1a_frame_done_l),
         .coef_in            (coef_out[0]),
+        .coef_lo_in         (coef_lo_out[0]),
+        .exp_in             (exp_active),
         .coef_addr_out      (coef_addr_l)
     );
 
@@ -375,6 +444,7 @@ module fir_polyphase_stereo #(
         .TAPS_PER_PHASE (S1A_TPP),
         .SYM_FOLD_EN    (SYM_FOLD_EN),
         .WIN_BRAM_EN    (WIN_BRAM_EN),
+        .SPLIT_MACS     (SPLIT_MACS),
         .RATE_SCALE_TPP (TWO_STAGE_EN),
         .EMIT_SPACING   (TWO_STAGE_EN ? 4 : 16)
     ) u_r_fir (
@@ -388,6 +458,8 @@ module fir_polyphase_stereo #(
         .interpolated_valid (s1a_valid_r),
         .input_frame_done   (s1a_frame_done_r),
         .coef_in            (coef_out[1]),
+        .coef_lo_in         (coef_lo_out[1]),
+        .exp_in             (exp_active),
         .coef_addr_out      (coef_addr_r)
     );
 

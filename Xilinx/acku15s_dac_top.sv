@@ -58,6 +58,7 @@ module acku15s_dac_top #(
     // 31 filters on the 128 MiB coefficient flash unpacked. 1280 x 256 (5.24M)
     // is the proven upper bound (f15b P&R closed). Synth scripts may override.
     parameter int NUM_MACS = 80,    // NUM_MACS % MACS_PER_U == 0; taps = 16*NUM_MACS*TAPS_PER_PHASE (80 -> 5.24M @ TPP=256)
+    parameter int SPLIT_MACS = 12,  // schema 4: main-lobe MACs {NUM_MACS-SPLIT_MACS..NUM_MACS-1} run 36b hi/lo coefs
     parameter int TAPS_PER_PHASE = 256, // Power of 2, <=256; taps = 16*NUM_MACS*TAPS_PER_PHASE
     parameter int CFLASH_DEVICE_ADDR_BITS = 28, // 28 for four 2-Gb devices; 27 for four 1-Gb devices
     parameter int MUTE_DELAY_CYCLES = 4_000_000  // 20 ms @ 200 MHz: automute relay
@@ -385,7 +386,7 @@ module acku15s_dac_top #(
     logic        coef_we;
     logic [$clog2(16*TAPS_PER_PHASE)-1:0] coef_waddr;  // coef index within MAC (16 phases * TAPS_PER_PHASE)
     logic signed [17:0]          coef_wdata;
-    logic [$clog2(NUM_MACS)-1:0] coef_wmac;    // 12 bits for 4096 MACs
+    logic [$clog2(NUM_MACS+SPLIT_MACS+1)-1:0] coef_wmac;  // virtual slots: MACs + hi/lo + exponent
 
     // Bank switching (dsp_clk domain)
     logic        bank_select;
@@ -776,6 +777,7 @@ module acku15s_dac_top #(
     // ==============================================================
     dac_coef_subsys #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (SPLIT_MACS),
         .TAPS_PER_PHASE (TAPS_PER_PHASE)
     ) u_coef_subsys (
         .ui_clk                 (ddr4_ui_clk),
@@ -1122,6 +1124,7 @@ module acku15s_dac_top #(
     // ==============================================================
     dac_dsp_core #(
         .NUM_MACS               (NUM_MACS),
+        .SPLIT_MACS             (SPLIT_MACS),
         .TAPS_PER_PHASE         (TAPS_PER_PHASE)
     ) u_dsp_core (
         .dsp_clk                (dsp_clk),
