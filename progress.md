@@ -6615,3 +6615,19 @@ Fresh synth on post-R8 RTL (build/5m/post_synth.dcp). Findings + fixes:
 - Verified on dcp: all new exceptions resolve objects + cover the violations;
   remaining clk_200m->dsp_clk fails are bench paths that the new RTL sync
   cuts (needs re-synth to confirm).
+
+## 2026-11-23 post-synth VERIFY: CDC repair confirmed clean (synth_postr8_v2)
+Re-synth on 61f14bc (XDC scope fixes + test_active 2-FF syncs):
+
+- ALL inter-clock setup groups now CLEAN: dsp_clk->cell_clk +3.261 (was
+  -5.615 hold/128ep), clk_200m->dsp_clk +3.304 (was -1.678/38ep),
+  dsp_clk->clk_200m +4.623 (was -0.452/2ep), mmcm_clkout0->dsp_clk +2.533
+  (was -1.006/1ep). bench_ctrl->u_automute paths gone — the dsync chain
+  cut them as designed.
+- Overall WNS -1.678 -> -0.476. Remaining negatives are non-actionable:
+  mmcm_clkout0 intra -0.476/17ep = MIG-internal axi_dwc->bid_fifo (IP
+  territory); cf_sck_ext->clk_200m hold -2.543/6ep = cf_dq input holds,
+  pre-route noise (was +3.211 clean post-route); dsp_clk intra 118K hold
+  = pre-route noise (was +0.007 post-route).
+- Net: all constraint drift repaired, zero logic-level CDC crossings left
+  unsynchronized or unconstrained.
