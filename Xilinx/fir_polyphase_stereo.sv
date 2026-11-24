@@ -386,7 +386,9 @@ module fir_polyphase_stereo #(
     //  decode once at the stage-1 write regs into the inactive bank.
     // -------------------------------------------------------------------------
     always_ff @(posedge clk) begin
-        if (coef_we_r && (int'(coef_wmac_r) == EXP_SLOT))
+        if (!rst_n)
+            exp_mem <= '{default: '0};
+        else if (coef_we_r && (int'(coef_wmac_r) == EXP_SLOT))
             exp_mem[bank_load_target_r][coef_waddr_r[$clog2(NUM_MACS)-1:0]] <= coef_wdata_r[4:0];
     end
 

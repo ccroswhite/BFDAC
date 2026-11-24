@@ -104,7 +104,7 @@ module tb_coef_bank_loader;
         return {payload, offset_bytes >> 4, 32'd0, 8'd0, 8'd0, fid};
     endfunction
     function automatic logic [AXI_DATA_WIDTH-1:0] mk_dir_beat1(input logic [7:0] packing);
-        return {88'd0, packing, 32'd0};
+        return {72'd0, 8'd4, 8'd0, packing, 32'd0};   // schema=4, rate_shift=0
     endfunction
 
     // Packed beat b of the stream: slot s holds coefficient g = 7b+s, value
@@ -140,13 +140,14 @@ module tb_coef_bank_loader;
     logic                         coef_we;
     logic [$clog2(COEF_DEPTH)-1:0] coef_waddr;  // matches DUT port width
     logic signed [COEF_WIDTH-1:0] coef_wdata;
-    logic [7:0]                   coef_wmac;
+    logic [8:0]                   coef_wmac;  // +1: virtual exponent slot
 
     // -------------------------------------------------------------------------
     //  DUT instantiation
     // -------------------------------------------------------------------------
     coef_bank_loader #(
         .NUM_MACS       (NUM_MACS),
+        .SPLIT_MACS     (0),
         .COEF_WIDTH     (COEF_WIDTH),
         .COEF_DEPTH     (COEF_DEPTH),
         .BANK_BITS      (BANK_BITS),
@@ -526,6 +527,7 @@ module tb_coef_bank_loader;
         dir_beat0[0] = mk_dir_entry(16'h0101, DIR_IMG_A, BANK_SZ);
         dir_beat0[1] = mk_dir_entry(16'h0202, DIR_IMG_B, BANK_SZ);
         dir_beat0[2] = mk_dir_entry(16'h0303, DIR_IMG_C, BANK_SZ);
+        for (int i = 0; i < 3; i++) dir_beat1[i] = mk_dir_beat1(8'd0);
         // dir_beat0[3] stays all-zero = terminator
     endtask
 
@@ -902,7 +904,7 @@ module tb_coef_bank_loader;
             dir_beat0[0][31:24] = {5'd0, 2'd3, ~family[0]};
             dir_beat0[0][63:32] = (NUM_MACS * COEF_DEPTH) >> 3;
             dir_beat1[0][47:40] = 8'd3;
-            dir_beat1[0][55:48] = 8'd3;
+            dir_beat1[0][55:48] = 8'd4;
             pulse_load_by_id(16'h0101, DIR_IMG_A);
             wait_for_load_done(LOAD_TIMEOUT);
             if (load_err || total_writes != NUM_MACS * COEF_DEPTH) begin

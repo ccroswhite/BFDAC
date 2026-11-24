@@ -172,6 +172,7 @@ module tb_system_ddr4_to_fir;
     //  rate_family, phase_type, filter_id}; beat 1 = 0. Entry 2 = terminator.
     function automatic logic [AXI_DATA_WIDTH-1:0] dir_beat(input int entry, input int beat);
         logic [AXI_DATA_WIDTH-1:0] d = '0;
+        if (beat == 1) begin d[55:48] = 8'd4; d[39:32] = 8'd0; return d; end   // schema=4, packing=0
         if (beat != 0) return '0;
         case (entry)
             0: d = {BANK_SIZE, 32'((2 * BANK_SIZE) >> 4), 32'(16 * NUM_MACS * TAPS_PER_PHASE),
@@ -253,7 +254,9 @@ module tb_system_ddr4_to_fir;
     int  coef_data_errors  = 0;
     always @(posedge dsp_clk) if (coef_we) begin
         total_coef_writes++;
-        if (coef_wdata !== 18'((int'(coef_wmac) * COEF_DEPTH + int'(coef_waddr)) & 32'h3FFFF)) begin
+        if (coef_wdata !== 18'(int'(coef_wmac) == NUM_MACS
+                                 ? 0
+                                 : (int'(coef_wmac) * COEF_DEPTH + int'(coef_waddr)) & 32'h3FFFF)) begin
             coef_data_errors++;
             if (coef_data_errors <= 5)
                 $display("[%0t] COEF DATA MISMATCH mac=%0d addr=%0d got=%0h",
@@ -360,13 +363,13 @@ module tb_system_ddr4_to_fir;
         $display("\n--- T2: boot_ok -> queued load runs ---");
         @(posedge dsp_clk); boot_ok_tb <= 1'b1;
         wait_load_done("T2");
-        check("T2 coef writes",       total_coef_writes, NUM_MACS * COEF_DEPTH);
+        check("T2 coef writes",       total_coef_writes, NUM_MACS * COEF_DEPTH + NUM_MACS);
         check("T2 coef data errors",  coef_data_errors, 0);
         check("T2 AXI bursts",        ar_burst_count, NUM_MACS * (COEF_DEPTH / 1024));
         check("T2 bank_select -> B",  bank_select, 1);
         check("T2 bank_valid",        bank_valid, 1);
         check("T2 current_bank_id",   current_bank_id, 1);
-        check("T2 no load_err",       coef_load_err, 0);
+        check("T2 no load_err",       u_coef_subsys.loader_err_ui, 0);
 
         // T3: boot fade-in starts only now
         $display("\n--- T3: boot fade-in after first good load ---");
@@ -399,10 +402,10 @@ module tb_system_ddr4_to_fir;
                 end
             join
             @(posedge dsp_clk); new_sample <= 1'b0;
-            check("T5 coef writes",      total_coef_writes - writes_before, NUM_MACS * COEF_DEPTH);
+            check("T5 coef writes",      total_coef_writes - writes_before, NUM_MACS * COEF_DEPTH + NUM_MACS);
             check("T5 coef data errors", coef_data_errors, 0);
             check("T5 bank_select -> A", bank_select, 0);
-            check("T5 no load_err",      coef_load_err, 0);
+            check("T5 no load_err",      u_coef_subsys.loader_err_ui, 0);
             check("T5 bank_valid",       bank_valid, 1);
             fir_x_seen = 1'b0;
             run_fir_samples(20, 1);
@@ -415,7 +418,7 @@ module tb_system_ddr4_to_fir;
             automatic int writes_before = total_coef_writes;
             filter_load(FILT_MISSING);
             wait_load_done("T6");
-            check("T6 load_err",        coef_load_err, 1);
+            check("T6 load_err",        u_coef_subsys.loader_err_ui, 1);
             check("T6 err code",        coef_load_err_code, 1);
             check("T6 no coef writes",  total_coef_writes - writes_before, 0);
             check("T6 bank unchanged",  bank_select, 0);
@@ -428,7 +431,7 @@ module tb_system_ddr4_to_fir;
             automatic int writes_before = total_coef_writes;
             filter_load(FILT_BAD_SZ);
             wait_load_done("T7");
-            check("T7 load_err",        coef_load_err, 1);
+            check("T7 load_err",        u_coef_subsys.loader_err_ui, 1);
             check("T7 err code",        coef_load_err_code, 2);
             check("T7 no coef writes",  total_coef_writes - writes_before, 0);
             check("T7 bank unchanged",  bank_select, 0);

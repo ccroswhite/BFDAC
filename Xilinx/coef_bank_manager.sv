@@ -95,6 +95,11 @@ module coef_bank_manager #(
     logic                    bank_load_target_r; // Which bank loader should write to
     logic                    load_start_r;
     logic                    bank_valid_r;
+    // load_done is a stretched level (~8 clks) for the clk_200m consumer, so a
+    // grant landing inside the previous attempt's done tail sees a stale
+    // high. Require one low observation after entering ST_LOADING before the
+    // level counts as THIS attempt's completion.
+    logic                    ld_armed;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -107,6 +112,7 @@ module coef_bank_manager #(
             bank_load_target_r <= 1'b1;      // First load goes into Bank B
             load_start_r       <= 1'b0;
             bank_valid_r       <= 1'b0;
+            ld_armed           <= 1'b0;
         end else begin
             // Default: pulses deassert each cycle
             load_start_r <= 1'b0;
@@ -133,6 +139,7 @@ module coef_bank_manager #(
                         queued_valid       <= 1'b0;
                         bank_load_target_r <= ~bank_select_r;  // Load into inactive bank
                         load_start_r       <= 1'b1;
+                        ld_armed           <= 1'b0;
                         state              <= ST_LOADING;
                     end else if (queued_valid) begin
                         // Same bank requested -- silently consume.
@@ -144,7 +151,9 @@ module coef_bank_manager #(
                 //  ST_LOADING: Waiting for loader to fill the shadow bank.
                 // -------------------------------------------------------------
                 ST_LOADING: begin
-                    if (load_done) begin
+                    if (!load_done)
+                        ld_armed <= 1'b1;
+                    else if (ld_armed) begin
                         // Failed lookup: keep the active bank, report via ctrl plane
                         state <= load_failed ? ST_IDLE : ST_WAIT_BOUNDARY;
                     end

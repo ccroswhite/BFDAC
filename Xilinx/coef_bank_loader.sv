@@ -180,6 +180,7 @@ module coef_bank_loader #(
     localparam int          EXP_WORDS      = NUM_MACS;                // 80
     localparam int          EXP_SLOT       = COEF_SLOTS;              // slot 92
     localparam int          NUM_V_SLOTS    = COEF_SLOTS + 1;          // 93
+    localparam int          NUM_OUTER      = NUM_MACS - SPLIT_MACS;   // 68 outer MACs
     localparam longint      PK4_TOTAL_COEFS = longint'(COEF_SLOTS) * COEF_DEPTH + EXP_WORDS;
     localparam longint      PK4_TOTAL_BEATS = (PK4_TOTAL_COEFS + PK_PER_BEAT - 1) / PK_PER_BEAT;
     localparam logic [31:0] PK4_BYTES       = 32'(PK4_TOTAL_BEATS * (AXI_DATA_WIDTH / 8));
@@ -273,7 +274,8 @@ module coef_bank_loader #(
         ST_DIR_R     = 4'd7,   // directory: capture beat 0
         ST_DIR_CHECK = 4'd8,   // directory: match / terminator / advance
         ST_ERR       = 4'd9,   // lookup/load failed: flag and finish
-        ST_RECV_WAIT = 4'd10   // retire the registered FIFO write before first pop
+        ST_RECV_WAIT = 4'd10,  // retire the registered FIFO write before first pop
+        ST_EXPZ      = 4'd11   // non-packed2 tail: zero the shadow exp file
     } state_t;
 
     localparam int DIR_ENTRY_BYTES = 32;
@@ -307,7 +309,18 @@ module coef_bank_loader #(
     logic [8:0]                  pk_beat;       // packed: beats drained in this burst
     logic [$clog2(COEF_DEPTH)-1:0] pk_waddr;    // packed: running coef address within slot
     logic [31:0]                 pk_left;       // packed: coefficients still to write
+    logic [$clog2(NUM_MACS)-1:0] expz_cnt;      // ST_EXPZ exp-zero emit counter
     logic [$clog2(NUM_V_SLOTS)-1:0] mac_idx;
+    // Schema 4 slot remap: the stereo's virtual map interleaves {hi, lo}
+    // slots for split MACs starting at NUM_OUTER, while legacy streams
+    // (v1 boot slots, packing 0/1) carry one MAC-indexed slot per MAC.
+    // Remap MAC indices >= NUM_OUTER onto that MAC's hi slot so a legacy
+    // stream can never write an lo lane (lo stays 0 -> 18b-equivalent
+    // split MACs). packing=2 streams already carry virtual slot indices.
+    wire [$clog2(NUM_V_SLOTS)-1:0] mac_slot =
+        (!packed2_r && int'(mac_idx) >= NUM_OUTER)
+            ? $clog2(NUM_V_SLOTS)'(NUM_OUTER + 2 * (int'(mac_idx) - NUM_OUTER))
+            : mac_idx;
     logic                        axi_read_error;
     logic [BIDX_W-1:0]           burst_idx;     // burst within MAC (0..BURSTS_PER_MAC-1)
     logic [9:0]                  beat_count;    // 0..255 (one extra bit for safety)
@@ -333,10 +346,12 @@ module coef_bank_loader #(
     wire        dir_terminator    = (dir_beat0 == '0);
     wire [7:0]  dir_packing       = dir_beat1[39:32];
     wire [7:0]  dir_rate_schema   = dir_beat1[55:48];
-    // packing=2 (schema 4 hybrid stream) requires schema=4 in the same entry —
-    // a legacy schema=3 image can never be interpreted as a hybrid stream.
-    wire        dir_packing_ok    = (dir_packing == 8'd0) || (dir_packing == 8'd1) ||
-                                    ((dir_packing == 8'd2) && (dir_rate_schema == 8'd4));
+    // Schema 4 hardware requires schema=4 on EVERY directory entry: a legacy
+    // schema=3/0 image must never run on hybrid silicon — its MAC-indexed
+    // slots would silently mis-decode into split-MAC hi/lo lanes.
+    wire        dir_packing_ok    = (dir_rate_schema == 8'd4) &&
+                                    ((dir_packing == 8'd0) || (dir_packing == 8'd1) ||
+                                     (dir_packing == 8'd2));
     wire [31:0] dir_expect_bytes  = (dir_packing == 8'd2) ? PK4_BYTES :
                                     (dir_packing == 8'd1) ? PK_BYTES : BANK_SIZE_BYTES;
     // bank_base must leave room for the whole payload inside the 32-bit AXI
@@ -421,6 +436,7 @@ module coef_bank_loader #(
             pk_beat        <= '0;
             pk_waddr       <= '0;
             pk_left        <= '0;
+            expz_cnt       <= '0;
             load_err       <= 1'b0;
             load_err_code  <= 3'd0;
             mac_idx        <= '0;
@@ -657,7 +673,7 @@ module coef_bank_loader #(
                         // Packed: (mac_idx, pk_waddr) walk the whole bank; beat
                         // boundaries are independent of MAC boundaries.
                         coef_we    <= 1'b1;
-                        coef_wmac  <= mac_idx;
+                        coef_wmac  <= mac_slot;
                         coef_waddr <= pk_waddr;
                         coef_wdata <= slice_coef;
                         pk_left    <= pk_left - 32'd1;
@@ -682,7 +698,7 @@ module coef_bank_loader #(
                     end else if (beat_loaded && !coef_stall) begin
                         // Drive write to current MAC at the current depth address
                         coef_we    <= 1'b1;
-                        coef_wmac  <= mac_idx;
+                        coef_wmac  <= mac_slot;
                         coef_waddr <= $clog2(COEF_DEPTH)'(32'(burst_idx) * COEFS_PER_BURST + 32'(drain_count));
                         coef_wdata <= slice_coef;
                         `ifdef SIM_DEBUG
@@ -715,7 +731,8 @@ module coef_bank_loader #(
                 ST_NEXT: begin
                     if (packed_r) begin
                         if (pk_last_burst || pk_left == 32'd0) begin
-                            state <= ST_DONE;
+                            state    <= packed2_r ? ST_DONE : ST_EXPZ;
+                            expz_cnt <= '0;
                         end else begin
                             pk_burst <= pk_burst + 32'd1;
                             state    <= ST_ISSUE_AR;
@@ -724,11 +741,30 @@ module coef_bank_loader #(
                         burst_idx <= burst_idx + 1'b1;
                         state     <= ST_ISSUE_AR;
                     end else if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS - 1)) begin
-                        state <= ST_DONE;
+                        state    <= ST_EXPZ;
+                        expz_cnt <= '0;
                     end else begin
                         burst_idx <= '0;
                         mac_idx   <= mac_idx + 1'b1;
                         state     <= ST_ISSUE_AR;
+                    end
+                end
+
+                // ----- EXP-ZERO TAIL (non-packed2 images only) -----
+                // The stream carries no exponent words; e_m=0 is exactly the
+                // legacy Q1.17 semantic. Zeroing the shadow bank's exp file
+                // also prevents stale schema-4 exponents from a previous
+                // load of the same bank silently corrupting a legacy image.
+                ST_EXPZ: begin
+                    if (!coef_stall) begin
+                        coef_we    <= 1'b1;
+                        coef_wmac  <= $clog2(NUM_V_SLOTS)'(EXP_SLOT);
+                        coef_waddr <= $clog2(COEF_DEPTH)'(32'(expz_cnt));
+                        coef_wdata <= '0;
+                        if (expz_cnt == $clog2(NUM_MACS)'(NUM_MACS - 1))
+                            state <= ST_DONE;
+                        else
+                            expz_cnt <= expz_cnt + 1'b1;
                     end
                 end
 
