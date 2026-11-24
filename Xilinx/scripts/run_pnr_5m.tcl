@@ -6,6 +6,10 @@ set OUT_DIR   [expr {[info exists ::env(OUT_DIR)]   ? $::env(OUT_DIR)   : "build
 
 set_param general.maxThreads 8
 
+# Scoped message pruning (string-matched known-benign instances only; MIG
+# phys_opt DONT_TOUCH noise added 2026-11-23).
+source scripts/suppress_warnings.tcl
+
 if {![file exists "$OUT_DIR/post_synth.dcp"]} {
     error "ERROR: $OUT_DIR/post_synth.dcp not found. Run run_synth_5m.tcl first."
 }

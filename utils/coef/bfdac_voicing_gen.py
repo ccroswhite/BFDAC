@@ -523,6 +523,11 @@ def build_from_catalog(
     packing = int(defaults.get("packing", 1))
     sym_fold = bool(defaults.get("sym_fold", True))
     ddr4_base = int(str(defaults.get("ddr4_base_addr", "0x0")), 0)
+    if ddr4_base % 4096 != 0:
+        raise ValueError(
+            f"ddr4_base_addr (0x{ddr4_base:X}) must be 4 KiB aligned — "
+            "loader bursts are 256-beat INCR and must not cross page boundaries"
+        )
     dir_max = int(defaults.get("dir_max_entries", 1024))
 
     rate_map = {int(r["rate_code"]): r for r in cat["rates"]}
@@ -626,6 +631,16 @@ def build_from_catalog(
                         f"prototype image {metrics['proto_max_image_dbc']:.2f} dBc > "
                         f"ceiling {max_img_limit:.2f} dBc"
                     )
+                if metrics["q17_max_image_dbc"] > max_img_limit:
+                    # Hardware response is the QUANTIZED one — warn when Q1.17
+                    # tail underflow pushes image rejection past the proto
+                    # ceiling (candidate for --shape-q17 or a longer tail).
+                    print(
+                        f"[AUDIT WARN] {p['key']}/{flt['key']} @ {fs_hz} Hz: "
+                        f"q17 image {metrics['q17_max_image_dbc']:.2f} dBc exceeds "
+                        f"ceiling {max_img_limit:.2f} dBc (proto "
+                        f"{metrics['proto_max_image_dbc']:.2f} dBc)"
+                    )
 
                 uram = map_to_uram_table(q_half, num_macs, tpp, rs)
                 blob = pack_ddr4_18b(uram) if packing == 1 else pack_ddr4_v1_32b(uram)
@@ -637,9 +652,15 @@ def build_from_catalog(
                     bank_addr = cur_ddr4_addr
                     dedup_addr_by_sha[sha] = bank_addr
                     payload_chunks.append(blob)
-                    cur_ddr4_addr += (len(blob) + 15) & ~15
-                    if len(blob) % 16 != 0:
-                        payload_chunks.append(b"\x00" * (16 - (len(blob) % 16)))
+                    # 4 KiB bank alignment: coef_bank_loader issues 256-beat
+                    # (4096 B) INCR bursts and AXI4 forbids a burst crossing a
+                    # 4 KiB boundary — a 16 B-aligned bank start would make
+                    # every burst a protocol violation (SLVERR on the dwc).
+                    # Costs <0.3% padding at ~1.2 MB/bank.
+                    aligned_len = (len(blob) + 4095) & ~4095
+                    cur_ddr4_addr += aligned_len
+                    if aligned_len > len(blob):
+                        payload_chunks.append(b"\x00" * (aligned_len - len(blob)))
 
                 dir_hdr = build_directory_entry(
                     filter_id=fid,
@@ -765,6 +786,7 @@ def run_self_test(catalog_path: Path | None = None) -> None:
         print(f"[SELF-TEST 3/3] Auditing all Personas & Filters in {cat_file} @ 48 kHz...")
         cat = json.loads(cat_file.read_text(encoding="utf-8"))
         checked = 0
+        q17_over = 0
         for p in cat["personas"]:
             pid = int(p["persona_id"])
             for flt in p["filters"]:
@@ -790,8 +812,16 @@ def run_self_test(catalog_path: Path | None = None) -> None:
                 assert m["proto_max_image_dbc"] <= float(flt["max_image_dbc"]), (
                     f"{p['key']}/{flt['key']} failed ceiling: {m['proto_max_image_dbc']} > {flt['max_image_dbc']}"
                 )
+                if m["q17_max_image_dbc"] > float(flt["max_image_dbc"]):
+                    q17_over += 1
+                    print(
+                        f"  [WARN] {p['key']}/{flt['key']}: q17 image "
+                        f"{m['q17_max_image_dbc']} > ceiling {flt['max_image_dbc']} "
+                        f"(proto {m['proto_max_image_dbc']})"
+                    )
                 checked += 1
-        print(f"  -> Audited {checked} filters across {len(cat['personas'])} Personas: 0 ceiling violations.")
+        print(f"  -> Audited {checked} filters across {len(cat['personas'])} Personas: 0 ceiling violations"
+              + (f" ({q17_over} q17-level warnings)" if q17_over else ""))
     else:
         print("[SELF-TEST 3/3] (persona_catalog.json not found in cwd; skipped full catalog sweep)")
 

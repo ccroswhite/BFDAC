@@ -49,6 +49,18 @@ set_msg_config -id {Synth 8-3332} -string {pre_add_reg}  -suppress
 # <const1> multi-term driver: internal tool net, no real netlist conflict.
 set_msg_config -id {Netlist 29-1115} -string {const1} -suppress
 
+# --- MIG phys_opt noise (P&R stage) -------------------------------------------
+# u_mig_ddr4_phy carries Xilinx's DONT_TOUCH (hand-tuned PHY — must NOT be
+# removed). phys_opt correctly refuses netlist edits/replication across that
+# boundary; the warnings are the tool reporting it did the right thing.
+# String-scoped to the MIG hierarchy so dont-touch violations in OUR RTL
+# still fire.  Sources: run_pnr_5m.tcl (sourced 2026-11-23).
+set_msg_config -id {Netlist 29-47}   -string {u_mig_ddr4_phy} -suppress
+set_msg_config -id {Physopt 32-780}  -string {u_mig_ddr4_phy} -suppress
+set_msg_config -id {Physopt 32-1483} -string {u_mig_ddr4_phy} -suppress
+# "Net ... was not replicated" for the mcal_*_dly calibration-reg fanins.
+set_msg_config -id {Physopt 32-782}  -string {mcal_}          -suppress
+
 # --- Broad classes: demote, don't hide ----------------------------------------
 # Remaining pruning/dead-element reports stay in the log at INFO severity so
 # new dead logic is still visible when grepping, without WARNING noise.
