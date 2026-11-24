@@ -19,24 +19,33 @@ open_checkpoint "$OUT_DIR/post_synth.dcp"
 set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {clk_200m_p clk_200m_n}]
 set_property CLOCK_DEDICATED_ROUTE ANY_CMT_COLUMN [get_nets mclk]
 
-# Constraint staleness fixes (post-route audit): the dcp embeds pre-fix XDC.
-# level_target sync chain lost its -from (cmd_level_reg renamed) -> clock scope.
-set_max_delay -datapath_only 5.0 \
-    -from [get_clocks clk_200m] \
-    -to   [get_cells {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
+# Constraint staleness fixes (post-route audit): belt-and-suspenders only —
+# post-61f14bc the dcp embeds the repaired XDC, so each block skips silently
+# when its objects were renamed post-synth (level_target_sync_chain is gone).
+set ltc_cells [get_cells -quiet {level_target_sync_chain_reg[0] level_target_sync_chain_reg[1] level_target_sync_chain_reg[2]}]
+if {[llength $ltc_cells] > 0} {
+    set_max_delay -datapath_only 5.0 \
+        -from [get_clocks clk_200m] \
+        -to   $ltc_cells
+}
 # Reset tree: 8439 endpoints sat outside the u_l_fir/u_r_fir buckets.
-set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst_tree_n_reg*}]
-set_max_delay 6.6 -from $rst_src_cells
-# pace reset pins carry CLR not R.
-set_false_path \
-    -from $rst_src_cells \
-    -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
+set rst_src_cells [get_cells -hierarchical -filter {NAME =~ *dsp_rst*tree_n_reg*}]
+if {[llength $rst_src_cells] > 0} {
+    set_max_delay 6.6 -from $rst_src_cells
+    # pace reset pins carry CLR not R.
+    set_false_path \
+        -from $rst_src_cells \
+        -to   [get_pins -quiet -hierarchical -filter {NAME =~ u_dsp_core/pace_*_reg* && (REF_PIN_NAME == R || REF_PIN_NAME == CLR || REF_PIN_NAME == PRE)}]
+}
 # rate_shift_q: u_r copy trimmed post-synth; one tolerant pattern covers both.
-set_max_delay 6.6 -from [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/*/rate_shift_q_reg*}]
+set rsq_cells [get_cells -quiet -hierarchical -filter {NAME =~ u_dsp_core/u_stereo_fir/*/rate_shift_q_reg*}]
+if {[llength $rsq_cells] > 0} { set_max_delay 6.6 -from $rsq_cells }
 # job bus -from pattern (job_words renamed post-synth).
-set_max_delay -datapath_only 3.3 \
-    -from [get_cells -quiet -hierarchical -filter {NAME =~ u_boot_loader/job_addr* || NAME =~ u_boot_loader/job_words* || NAME =~ u_boot_loader/rec_len*}] \
-    -to   [get_cells {u_boot_loader/w_addr_reg[*] u_boot_loader/w_words_left_reg[*]}]
+set job_src [get_cells -quiet -hierarchical -filter {NAME =~ u_boot_loader/job_addr* || NAME =~ u_boot_loader/job_words* || NAME =~ u_boot_loader/rec_len*}]
+set job_dst [get_cells -quiet {u_boot_loader/w_addr_reg[*] u_boot_loader/w_words_left_reg[*]}]
+if {[llength $job_src] > 0 && [llength $job_dst] > 0} {
+    set_max_delay -datapath_only 3.3 -from $job_src -to $job_dst
+}
 
 # Pre-place cross-clock sanity audit (verifies zero sub-ns un-excepted beat paths)
 foreach {src dst} {
