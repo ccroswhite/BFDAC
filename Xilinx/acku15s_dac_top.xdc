@@ -253,9 +253,12 @@ set_false_path -to [get_pins {u_stream_rate/lock_sync_reg[0]/D stream_fault_sync
 # arrive on D or S depending on flop flavor, so filter on pin name rather than
 # listing /D explicitly (post-synth 2026-11-23: stream_busy_dsync[0] lands on /S).
 set_false_path -to [get_pins -hierarchical -filter {(NAME =~ audio_ready_sync_reg[0]/* || NAME =~ dpd_miss_sync_reg[0]/* || NAME =~ clk_lock_dsync_reg[0]/* || NAME =~ stream_busy_dsync_reg[0]/* || NAME =~ cell_test_l_dsync_reg[0]/* || NAME =~ cell_test_r_dsync_reg[0]/* || NAME =~ bench_busy_dsync_reg[0]*) && (REF_PIN_NAME == D || REF_PIN_NAME == S)}]
+# applied_rate (clk_200m) -> loader's first ui_clk sync stage. Wave 2 added
+# stream_rate_ui1/ui2 ahead of rate_r, so -to rate_r_reg matched zero paths
+# and left this crossing timed at the synchronous beat edge (REVIEW-12).
 set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_stream_rate/applied_rate_reg[*]}] \
-    -to   [get_cells {u_coef_subsys/u_coef_loader/rate_r_reg[*]}]
+    -to   [get_cells {u_coef_subsys/u_coef_loader/stream_rate_ui1_reg[*]}]
 
 # -----------------------------------------------------------------------------
 # 7. Hardware Relay Outputs (slow, relay coil drive)
@@ -645,16 +648,13 @@ set_max_delay -datapath_only 5.0 \
     -from [get_cells {u_coef_subsys/u_coef_mgr/target_bank_reg[*]}] \
     -to   [get_cells -hierarchical -filter {NAME =~ u_coef_subsys/u_coef_loader/* && IS_SEQUENTIAL}]
 
-# 5b) failed-load flag ui_clk -> dsp_clk: level set >= 1 ui_clk before
-#     load_done toggle. Both u_coef_mgr and u_voicing_commit sample it only
-#     AT the done edge (quasi-static by then) — cover both destinations
-#     (2026-11-22: u_voicing_commit was previously unconstrained here).
-#     2026-11-23: added loader_err_lvl (subsys-level capture of loader_err_ui
-#     on the synced done edge — same quasi-static property; post-synth showed
-#     it uncovered at WNS -1.006 ns).
+# 5b) failed-load flag ui_clk -> dsp_clk: load_err_reg now crosses at a
+#     single endpoint — loader_err_lvl_reg captures it on the synced done
+#     edge, and both u_coef_mgr / u_voicing_commit sample that dsp_clk reg
+#     (REVIEW-10/12; was a broad filter covering all three destinations).
 set_max_delay -datapath_only 3.5 \
     -from [get_cells {u_coef_subsys/u_coef_loader/load_err_reg}] \
-    -to   [get_cells -hierarchical -filter {(NAME =~ u_coef_subsys/u_coef_mgr/* || NAME =~ u_coef_subsys/u_voicing_commit/* || NAME =~ u_coef_subsys/loader_err_lvl_reg*) && IS_SEQUENTIAL}]
+    -to   [get_cells {u_coef_subsys/loader_err_lvl_reg}]
 
 # 5c) failed-load event dsp_clk -> clk_200m: coef_load_err is now a dsp_clk
 #     toggle (loader_err_tog) into a 2-FF XOR sync in dac_ctrl_plane.
@@ -794,14 +794,10 @@ set_false_path -to [get_pins {calib_sync_boot_reg[0]/D eos_sync_boot_reg[0]/D}]
 # DPD enable level clk_200m -> dsp_clk (2-FF sync, Step 4D.1)
 set_false_path -to [get_pins {dpd_en_sync_ff_reg[0]/D}]
 
-# Halfband product -> accumulator is a true 2-cycle path (2026-08-24, f13d):
-# products/center_product load on valid_pipe[0], acc_filtered captures on valid_pipe[2].
-set_multicycle_path 2 -setup \
-    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* && IS_SEQUENTIAL || NAME =~ u_dsp_core/u_hb*/center_product_reg* && IS_SEQUENTIAL}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/acc_filtered_reg*}]
-set_multicycle_path 1 -hold \
-    -from [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/products_reg* && IS_SEQUENTIAL || NAME =~ u_dsp_core/u_hb*/center_product_reg* && IS_SEQUENTIAL}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ u_dsp_core/u_hb*/acc_filtered_reg*}]
+# (REVIEW-11/12: the halfband products_reg/center_product_reg multicycle was
+#  deleted — those regs no longer exist. The DSP_STAGES=4 pipeline closes
+#  every stage single-cycle at 302.5 MHz; an empty-filter MCP would only
+#  emit 12-508 warnings and mask real violations.)
 
 # -----------------------------------------------------------------------------
 # 10. User LED (debug / status indicator)

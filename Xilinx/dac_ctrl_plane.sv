@@ -1028,13 +1028,18 @@ module dac_ctrl_plane (
                             end
                         end
                         `SPI_W_FILTER_SELECT: begin // [16]=advance, [FLIST_IW-1:0]=index
-                            if (filter_list_len != '0 && !stream_busy) begin
+                            // Gate on wr_rejected itself: the blanket rejects
+                            // (voicing commit pending, swap/manager busy,
+                            // stream busy) and ERR_FILT_RANGE must also block
+                            // execution — flagging the error while still
+                            // toggling filter_load_req corrupts an active
+                            // load (REVIEW-12).
+                            if (!wr_rejected) begin
                                 logic [FLIST_IW-1:0] new_index;
                                 if (ctrl_bus_data[16])
                                     new_index = filter_adv_index;          // toggle with wrap
                                 else
-                                    new_index = filter_sel_in_range
-                                                ? ctrl_bus_data[FLIST_IW-1:0] : '0; // clamp
+                                    new_index = ctrl_bus_data[FLIST_IW-1:0]; // in-range per wr_rejected
                                 filter_cur_index <= new_index;
                                 filter_id        <= filter_list[new_index];
                                 filter_load_req  <= ~filter_load_req;
@@ -1046,7 +1051,10 @@ module dac_ctrl_plane (
                             cal_wr_ptr      <= ctrl_bus_data[8:0];
                             cal_ptr_wrapped <= 1'b0;
                         end
-                        `SPI_W_CAL_DATA: if (!stream_busy && !cal_commit_pending) begin // write word to shadow bank, auto-increment
+                        // write word to shadow bank, auto-increment. !wr_rejected
+                        // also blocks the wrapped-pointer case — a 513th write
+                        // must not wrap to addr 0 while flagging ERR_CAL_WRAP.
+                        `SPI_W_CAL_DATA: if (!wr_rejected) begin
                             cal_wr_data   <= ctrl_bus_data[23:0];
                             cal_wr_addr   <= cal_wr_ptr;   // stable for the CDC sample
                             cal_wr_toggle <= ~cal_wr_toggle;
@@ -1185,7 +1193,7 @@ module dac_ctrl_plane (
             //   (W1C via write 0x21), [5:3] rate_req_src1 — informational
             //   shadow only; it never authorizes a stream (renegotiate->declare
             //   ->arm is always required after a select).
-            `SPI_R_STREAM_EVENT: reg_read = {18'd0, rate_req_src1, stream_event};
+            `SPI_R_STREAM_EVENT: reg_read = {26'd0, rate_req_src1, stream_event};
             `SPI_R_CELL_TEST_L: reg_read = {23'd0, cell_test_busy[0], cell_test_cfg[0]};
             `SPI_R_CELL_TEST_R: reg_read = {23'd0, cell_test_busy[1], cell_test_cfg[1]};
             default: reg_read = `SPI_READ_UNMAPPED;

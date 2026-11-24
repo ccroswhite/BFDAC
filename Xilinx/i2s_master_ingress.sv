@@ -69,7 +69,13 @@ module i2s_master_ingress (
     // an SRL32 with stages 1..77 (SRLs have poor CDC characteristics and would
     // break the get_cells pattern). tag_pipe[0] is left unused.
     (* KEEP = "TRUE", shreg_extract = "no" *) logic [5:0] tag_pipe_0;
-    logic [5:0] tag_pipe [PIPE_DEPTH];
+    // Stages 1..77 live in a separate reset-free always_ff so Vivado packs
+    // them into SRLC32E (~18 LUTs) instead of 462 FDCEs (REVIEW-12). Safe:
+    // tag_pipe[i] is only read when sample_pipe[i] pulses, which requires a
+    // launch_event i cycles earlier — tag_pipe[i] holds that launch's tag
+    // by then (tag_pipe_0 -> tag_pipe[1] at +1). sample_pipe is cleared on
+    // reset/disable/trim/sel change, so a stale tag is never observable.
+    logic [5:0] tag_pipe [1:PIPE_DEPTH-1];
     logic [31:0] serial_word;
     logic [23:0] left_word;
     logic [5:0] expected_bit;
@@ -107,7 +113,6 @@ module i2s_master_ingress (
             expected_bit <= 0; frame_armed <= 0; cadence_fault <= 0;
             watchdog <= 0; audio_l <= 0; audio_r <= 0; new_sample <= 0;
             audio_frame_ready <= 0;
-            for (int i = 0; i < PIPE_DEPTH; i++) tag_pipe[i] <= 0;
         end else begin
             launch_sync <= {launch_sync[1:0], launch_toggle};
             sel_sync <= {sel_sync[0], src_sel};
@@ -120,8 +125,6 @@ module i2s_master_ingress (
             new_sample <= 0;
             sample_pipe <= {sample_pipe[PIPE_DEPTH-2:0], launch_event};
             if (launch_event) tag_pipe_0 <= launch_bit;
-            tag_pipe[1] <= tag_pipe_0;
-            for (int i = 2; i < PIPE_DEPTH; i++) tag_pipe[i] <= tag_pipe[i-1];
             if (!enable_sync[1]) begin
                 sample_pipe <= 0; frame_armed <= 0; expected_bit <= 0;
                 watchdog <= 0; cadence_fault <= 0;
@@ -166,5 +169,13 @@ module i2s_master_ingress (
                 audio_frame_ready <= 0;
             end
         end
+    end
+
+    // Tag delay line stages 1..77: no reset (SRLC32E has no reset pin — see
+    // declaration comment). Free-running shift is harmless: only the stage
+    // addressed by a live sample_pipe pulse is ever read.
+    always_ff @(posedge dsp_clk) begin
+        tag_pipe[1] <= tag_pipe_0;
+        for (int i = 2; i < PIPE_DEPTH; i++) tag_pipe[i] <= tag_pipe[i-1];
     end
 endmodule

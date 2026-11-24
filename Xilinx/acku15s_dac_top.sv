@@ -499,6 +499,7 @@ module acku15s_dac_top #(
     // SNR at the XLR follows the signal (analog floor ~1.4 uV rms is fixed):
     // 132.8 / 129.3 / 123.3 / 112.8 / 103.3 dB0 for 6 / 4 / 2 / 0.6 / 0.2 V.
     logic [16:0] level_gain;
+    logic [15:0] env_gain_r;
     logic [32:0] env_product;
     (* use_dsp = "yes" *) logic [15:0] env_level_gain;
     always_ff @(posedge dsp_clk) begin
@@ -510,9 +511,13 @@ module acku15s_dac_top #(
             3'b100:  level_gain <= 17'd2185;   // 0.2 Vrms (x1/30, -29.5 dB)
             default: level_gain <= 17'd21845;  // reserved codes -> 2 V (safe)
         endcase
-        // Product staged one cycle (DSP MREG): 16x17 at 357 MHz needs the
-        // internal pipe to make timing; env path is quasi-static anyway.
-        env_product    <= 33'(boot_envelope_gain) * 33'(level_gain);
+        // Local input regs give the DSP48E2 clean AREG=1/BREG=1/MREG=1/PREG=1
+        // absorption (DPIP-1 under -keep_equivalent_registers, REVIEW-12).
+        // +33'h8000 turns the >>16 into round-half-up: 2 Vrms lands exactly
+        // on 21845 at full envelope and 6 Vrms (0xFFFF8000>>16) still caps
+        // at 16'hFFFF.
+        env_gain_r     <= boot_envelope_gain;
+        env_product    <= 33'(env_gain_r) * 33'(level_gain) + 33'h8000;
         env_level_gain <= 16'(env_product[32:16]);
     end
 
@@ -852,10 +857,19 @@ module acku15s_dac_top #(
     logic [31:0] bench_status;
     (* ASYNC_REG = "TRUE" *) logic [2:0] bench_ctrl_meta, bench_ctrl_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] pg_all_sync;
+    // bench_ready is a combinational AND inside u_dsp_core (cell_test_ready
+    // && cell_test_safe) — registering it on dsp_clk puts a launch flop ahead
+    // of the clk_200m synchronizer instead of a 4-term LUT cone (CDC-10,
+    // REVIEW-12). Quasi-static bench flag: one dsp_clk is benign.
+    logic bench_ready_dsp;
+    always_ff @(posedge dsp_clk) begin
+        if (!sys_rst_n) bench_ready_dsp <= 1'b0;
+        else            bench_ready_dsp <= bench_ready;
+    end
     always_ff @(posedge clk_200m) begin
         if (!ext_rst_n) begin bench_ctrl_meta <= 0; bench_ctrl_sync <= 0; end
         else begin
-            bench_ctrl_meta <= {pg_all, sys_rst_n, bench_ready};
+            bench_ctrl_meta <= {pg_all, sys_rst_n, bench_ready_dsp};
             bench_ctrl_sync <= bench_ctrl_meta;
         end
     end
@@ -1011,7 +1025,7 @@ module acku15s_dac_top #(
         .cell_clk               (cell_clk),
         .rst_n                  (sys_rst_n),
         .enable                 (serial_enable),
-        .source_valid           (stream_valid_sel),
+        .source_valid           (stream_valid_sel_q), // clk_200m launch flop — comb mux would be CDC-10 (REVIEW-12)
         .rate_shift             (applied_stream_rate[2:1]),
         .rx_trim                (i2s_rx_trim_q),
         .src_sel                (i2s_src_sel),
