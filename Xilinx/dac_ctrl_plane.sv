@@ -113,6 +113,10 @@ module dac_ctrl_plane (
     input  logic           stream_clocks_ready,
     input  logic [2:0]    stream_applied_rate,
     input  logic           stream_fault,
+    // Sticky dsp_clk DPD deadline overrun, synced to ctrl_clk at top level
+    // (read-only, STREAM_STATUS[22]) — distinguishes DPD timing overrun from
+    // the i2s/FIFO faults folded into stream_fault.
+    input  logic           dpd_deadline_miss,
     input  logic           stream_audio_ready,
 
     // Voicing shaper shadow set (regs 0x1D-0x1F; Step 2 2026-11-17).
@@ -1166,7 +1170,8 @@ module dac_ctrl_plane (
             // 0x20 STREAM_STATUS: [0]busy [1]clocks_ready [2]svalid_xmos [3]bank_valid
             //   [4]fault [7:5]applied_rate [10:8]req_rate [15:11]rx_trim(sel)
             //   [16]audio_ready [17]src_sel [18]svalid_ap [21:19]rate_req_src2
-            `SPI_R_STREAM_STATUS: reg_read = {11'd0, rate_req_src2, stream_source_valid2, i2s_src_sel,
+            //   [22]dpd_deadline_miss (RO, sticky until stream teardown)
+            `SPI_R_STREAM_STATUS: reg_read = {10'd0, dpd_deadline_miss, rate_req_src2, stream_source_valid2, i2s_src_sel,
                 stream_audio_ready, i2s_rx_trim, stream_rate_request,
                 stream_applied_rate, stream_fault, bank_valid_r, stream_source_valid,
                 stream_clocks_ready, stream_busy};

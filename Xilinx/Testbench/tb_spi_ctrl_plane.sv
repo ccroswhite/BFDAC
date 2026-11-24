@@ -127,6 +127,7 @@ module tb_spi_ctrl_plane;
         .stream_busy            (1'b0),
         .stream_clocks_ready    (1'b1),
         .stream_fault           (1'b0),
+        .dpd_deadline_miss      (1'b0),
         .stream_audio_ready     (1'b1)
     );
 

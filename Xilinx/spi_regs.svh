@@ -147,7 +147,7 @@
 `define SPI_R_CELL_TEST_L      7'h1D
 `define SPI_R_CELL_TEST_R      7'h1E
 `define SPI_R_BENCH_STATUS     7'h1F
-`define SPI_R_STREAM_STATUS    7'h20
+`define SPI_R_STREAM_STATUS    7'h20  // [22] dpd_deadline_miss (RO, sticky until stream teardown)
 // 0x21: Voicing status {applied_filter_id[31:16], rsvd[15:6],
 //        commit_pending[5], swap_busy[4], load_err_seen[3],
 //        applied_en[2], fid_is_sentinel[1], sh_en[0]}

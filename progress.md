@@ -6535,3 +6535,22 @@ now also cover the IREG_PRE_B + QUAD_URAM_EN changes.
 Verified: tb_fir_polyphase_stereo all 7 PASS.
 review6_gate_v1: 27/27 PASS, 0 FAIL, first run (Xilinx/logs/review6_gate_v1).
 Residual: post-synth DSP DRC for adder-tree CREG/mac-engine packing.
+
+## cont — REVIEW-7: stereo DPD monitor split + dither seed guard (2026-11-23)
+- Stereo AND masking (REAL): single u_dpd_deadline_monitor wired
+  result_started(ns_y_l && ns_y_r) / correction_applied(corr_l && corr_r)
+  was blind to single-channel faults (silent channel never armed pending;
+  1-cycle-skewed corr_valid never cleared it -> false miss or dead monitor).
+  Now u_dpd_mon_l + u_dpd_mon_r, dpd_deadline_miss = miss_l | miss_r —
+  identical under lockstep, independent on divergence.
+- Firmware visibility: dpd_deadline_miss was ILA-only. New dpd_miss_sync
+  2-FF (sticky level -> plain level CDC) -> dac_ctrl_plane input ->
+  STREAM_STATUS[22] (RO, sticky until teardown). Distinguishes DPD timing
+  overrun from i2s/FIFO faults folded into stream_fault. spi_regs.svh +
+  SPI_BUS.md updated.
+- tpdf_dither_gen: initial assert SEED1/SEED2 != 0 + (s==64'h0)?SEED:s
+  recovery per lane (xorshift64 absorbing-0 lockup via SEU/param override).
+- Confirmed no-change: same-cycle sample_advance && correction_applied
+  boundary (matches noise_shaper_ef3 Stage-A semantics), dpd_lag_rom 39
+  terms/lag<=5/cal range 64..102, TPDF zero-mean + xs64 period/seeds.
+Verified: review7_gate_v1 27/27 PASS, 0 FAIL (Xilinx/logs/review7_gate_v1).

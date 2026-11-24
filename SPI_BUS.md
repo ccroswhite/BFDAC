@@ -88,7 +88,7 @@ Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 | 0x1D | CELL_TEST_L | busy[8], cfg[7:0] |
 | 0x1E | CELL_TEST_R | busy[8], cfg[7:0] |
 | 0x1F | BENCH_STATUS | bench controller status word |
-| 0x20 | STREAM_STATUS | busy[0], clocks_ready[1], svalid_xmos[2], bank_valid[3], fault[4], applied_rate[7:5], req_rate[10:8], rx_trim_selected[15:11], audio_ready[16], src_sel[17], svalid_ap[18], rate_req_src2[21:19] |
+| 0x20 | STREAM_STATUS | busy[0], clocks_ready[1], svalid_xmos[2], bank_valid[3], fault[4], applied_rate[7:5], req_rate[10:8], rx_trim_selected[15:11], audio_ready[16], src_sel[17], svalid_ap[18], rate_req_src2[21:19], dpd_deadline_miss[22] |
 | 0x22 | STREAM_EVENT | preempt_xmos[0], preempt_ap[1], echo_mismatch[2], rate_req_src1[5:3] (informational shadow only — never authorization) |
 
 Unmapped read → 0xDEADBEEF. Frame 40-bit {R/W, addr[7], data[24], crc8}, CRC-8/0x07.

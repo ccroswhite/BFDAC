@@ -204,14 +204,19 @@ module acku15s_dac_top #(
     logic core_dpd_busy, dpd_deadline_miss, cal_write_reject_toggle;
     (* ASYNC_REG = "TRUE" *) logic [1:0] stream_fault_sync;
     (* ASYNC_REG = "TRUE" *) logic [1:0] audio_ready_sync;
+    // dpd_deadline_miss is a sticky dsp_clk level (holds until sys_rst_n /
+    // stream teardown), so a plain 2-FF level sync is CDC-safe.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] dpd_miss_sync;
     logic audio_frame_ready;
     always_ff @(posedge clk_200m) begin
         if (!ext_rst_n) begin
             stream_fault_sync <= 0;
             audio_ready_sync  <= '0;
+            dpd_miss_sync     <= '0;
         end else begin
             stream_fault_sync <= {stream_fault_sync[0], stream_fault_dsp};
             audio_ready_sync  <= {audio_ready_sync[0], audio_frame_ready};
+            dpd_miss_sync     <= {dpd_miss_sync[0], dpd_deadline_miss};
         end
     end
     stream_rate_controller #(
@@ -954,6 +959,7 @@ module acku15s_dac_top #(
         .stream_clocks_ready    (stream_clock_ready),
         .stream_applied_rate    (applied_stream_rate),
         .stream_fault           (stream_fault_sync[1]),
+        .dpd_deadline_miss      (dpd_miss_sync[1]),
         .voicing_sh_en          (voicing_sh_en),
         .voicing_sh_k2          (voicing_sh_k2),
         .voicing_sh_k3          (voicing_sh_k3),

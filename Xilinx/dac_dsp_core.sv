@@ -502,15 +502,30 @@ module dac_dsp_core #(
     logic dpd_busy_l, dpd_busy_r;
     assign dpd_busy = dpd_busy_l || dpd_busy_r;
 
-    dpd_deadline_monitor u_dpd_deadline_monitor (
+    // Per-channel monitors: ANDing L/R into one monitor masked single-channel
+    // faults (a silent channel never armed pending; skewed corr_valid pulses
+    // never cleared it). Identical behavior under lockstep, independent
+    // tracking on any L/R divergence.
+    logic dpd_miss_l, dpd_miss_r;
+    dpd_deadline_monitor u_dpd_mon_l (
         .clk(dsp_clk),
         .rst_n(sys_rst_n),
         .dpd_enabled(dpd_enable && !bench_active),
         .sample_advance(pace_valid),
-        .result_started(ns_y_valid_l && ns_y_valid_r),
-        .correction_applied(dpd_corr_valid_l && dpd_corr_valid_r),
-        .deadline_miss(dpd_deadline_miss)
+        .result_started(ns_y_valid_l),
+        .correction_applied(dpd_corr_valid_l),
+        .deadline_miss(dpd_miss_l)
     );
+    dpd_deadline_monitor u_dpd_mon_r (
+        .clk(dsp_clk),
+        .rst_n(sys_rst_n),
+        .dpd_enabled(dpd_enable && !bench_active),
+        .sample_advance(pace_valid),
+        .result_started(ns_y_valid_r),
+        .correction_applied(dpd_corr_valid_r),
+        .deadline_miss(dpd_miss_r)
+    );
+    assign dpd_deadline_miss = dpd_miss_l | dpd_miss_r;
 
     assign dpd_cal_addr = {{1'b1, dpd_addr_r_b}, {1'b1, dpd_addr_r_a},
                            {1'b0, dpd_addr_l_b}, {1'b0, dpd_addr_l_a}};

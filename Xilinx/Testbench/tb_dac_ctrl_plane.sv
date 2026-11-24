@@ -92,6 +92,7 @@ module tb_dac_ctrl_plane;
         .stream_source_valid2(svalid2), .i2s_src_sel(src_sel), .stream_valid_sel(valid_sel),
         .stream_busy(stream_busy), .stream_clocks_ready(stream_clocks_ready),
         .stream_applied_rate(applied_rate), .stream_fault(stream_fault),
+        .dpd_deadline_miss(1'b0),
         .stream_audio_ready(stream_audio_ready),
         .cal_commit_pending(cal_commit_pending),
         .cal_write_reject_toggle(1'b0),

@@ -25,6 +25,13 @@ module tpdf_dither_gen #(
 
     localparam int UW = DITHER_WIDTH;
 
+    // xorshift64 locks up at state 0 (xs64(0) == 0): reject zero seeds at
+    // elaboration and recover a zeroed state (SEU) to the seed below.
+    initial begin
+        assert (SEED1 != 64'h0 && SEED2 != 64'h0)
+            else $fatal(1, "tpdf_dither_gen: SEED1/SEED2 must be non-zero (xorshift64 lockup)");
+    end
+
     logic [63:0] s1, s2;
 
     // xorshift64 full-state advance (Marsaglia 13/7/17)
@@ -48,8 +55,8 @@ module tpdf_dither_gen #(
             s2 <= SEED2;
             dither_out <= '0;
         end else if (enable) begin
-            s1 <= s1_next;
-            s2 <= s2_next;
+            s1 <= (s1 == 64'h0) ? SEED1 : s1_next;
+            s2 <= (s2 == 64'h0) ? SEED2 : s2_next;
             dither_out <= (DITHER_WIDTH+1)'($signed({1'b0, s1_next[UW-1:0]}) -
                                             $signed({1'b0, s2_next[UW-1:0]}));
         end

@@ -59,7 +59,7 @@ module tb_cell_measurement;
         // formerly tri0/tri1 defaults — now explicit (tri ports removed)
         .cal_write_reject_toggle(1'b0), .calibration_valid(1'b1),
         .stream_busy(1'b0), .stream_clocks_ready(1'b1),
-        .stream_fault(1'b0), .stream_audio_ready(1'b1),
+        .stream_fault(1'b0), .dpd_deadline_miss(1'b0), .stream_audio_ready(1'b1),
         .stream_applied_rate(stream_applied_rate),
         .stream_rate_request(stream_rate_request),
         .stream_rate_toggle(stream_rate_toggle)
