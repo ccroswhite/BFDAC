@@ -275,7 +275,8 @@ module coef_bank_loader #(
         ST_DIR_CHECK = 4'd8,   // directory: match / terminator / advance
         ST_ERR       = 4'd9,   // lookup/load failed: flag and finish
         ST_RECV_WAIT = 4'd10,  // retire the registered FIFO write before first pop
-        ST_EXPZ      = 4'd11   // non-packed2 tail: zero the shadow exp file
+        ST_EXPZ      = 4'd11,  // non-packed2 tail: zero the shadow exp file
+        ST_LOZ       = 4'd12   // non-packed2 tail: zero stale split-MAC lo lanes
     } state_t;
 
     localparam int DIR_ENTRY_BYTES = 32;
@@ -310,6 +311,8 @@ module coef_bank_loader #(
     logic [$clog2(COEF_DEPTH)-1:0] pk_waddr;    // packed: running coef address within slot
     logic [31:0]                 pk_left;       // packed: coefficients still to write
     logic [$clog2(NUM_MACS)-1:0] expz_cnt;      // ST_EXPZ exp-zero emit counter
+    logic [$clog2(SPLIT_MACS+1)-1:0] loz_mac;   // ST_LOZ split-MAC sweep index
+    logic [$clog2(COEF_DEPTH)-1:0] loz_addr;    // ST_LOZ depth sweep
     logic [$clog2(NUM_V_SLOTS)-1:0] mac_idx;
     // Schema 4 slot remap: the stereo's virtual map interleaves {hi, lo}
     // slots for split MACs starting at NUM_OUTER, while legacy streams
@@ -373,12 +376,13 @@ module coef_bank_loader #(
     wire [7:0] dir_rate_code = dir_beat0[31:24];
     wire [1:0] dir_rate_shift = dir_rate_code[2:1];
     wire [7:0] dir_rate_shift_mirror = dir_beat1[47:40];
+    // dir_packing_ok above already requires schema=4 on every entry, so the
+    // schema=0/3 rate variants can never produce a successful load —
+    // collapsed to the only reachable case.
     wire dir_rate_version_ok =
-        ((dir_rate_schema == 8'd0) && (rate_r[2:1] == 0) &&
-         (dir_rate_shift == 0) && (dir_rate_shift_mirror == 0)) ||
-        (((dir_rate_schema == 8'd3) || (dir_rate_schema == 8'd4)) &&
-         (dir_rate_shift == rate_r[2:1]) &&
-         (dir_rate_shift_mirror == {6'd0, rate_r[2:1]}));
+        (dir_rate_schema == 8'd4) &&
+        (dir_rate_shift == rate_r[2:1]) &&
+        (dir_rate_shift_mirror == {6'd0, rate_r[2:1]});
     // NOTE (intentional inversion): the directory rate_code byte encodes the
     // family bit with OPPOSITE polarity to stream_rate/filter_id (dir bit0:
     // 0=48k/1=44.1k per bfd_staging.py; rate_r[0]: 1=48k/0=44.1k), hence ~.
@@ -437,6 +441,8 @@ module coef_bank_loader #(
             pk_waddr       <= '0;
             pk_left        <= '0;
             expz_cnt       <= '0;
+            loz_mac        <= '0;
+            loz_addr       <= '0;
             load_err       <= 1'b0;
             load_err_code  <= 3'd0;
             mac_idx        <= '0;
@@ -702,7 +708,7 @@ module coef_bank_loader #(
                         coef_waddr <= $clog2(COEF_DEPTH)'(32'(burst_idx) * COEFS_PER_BURST + 32'(drain_count));
                         coef_wdata <= slice_coef;
                         `ifdef SIM_DEBUG
-                        if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS-1) && drain_count < 4)
+                        if (mac_idx == $bits(mac_idx)'(NUM_MACS-1) && drain_count < 4)
                             $display("[DRAIN255 @%0t] burst=%0d drain=%0d wdata=%0h",
                                 $time, burst_idx, drain_count, slice_coef);
                         `endif
@@ -740,7 +746,7 @@ module coef_bank_loader #(
                     end else if (BURSTS_PER_MAC > 1 && 32'(burst_idx) != BURSTS_PER_MAC - 1) begin
                         burst_idx <= burst_idx + 1'b1;
                         state     <= ST_ISSUE_AR;
-                    end else if (mac_idx == $clog2(NUM_MACS)'(NUM_MACS - 1)) begin
+                    end else if (mac_idx == $bits(mac_idx)'(NUM_MACS - 1)) begin
                         state    <= ST_EXPZ;
                         expz_cnt <= '0;
                     end else begin
@@ -761,10 +767,38 @@ module coef_bank_loader #(
                         coef_wmac  <= $clog2(NUM_V_SLOTS)'(EXP_SLOT);
                         coef_waddr <= $clog2(COEF_DEPTH)'(32'(expz_cnt));
                         coef_wdata <= '0;
-                        if (expz_cnt == $clog2(NUM_MACS)'(NUM_MACS - 1))
-                            state <= ST_DONE;
-                        else
+                        if (expz_cnt == $bits(expz_cnt)'(NUM_MACS - 1)) begin
+                            state    <= (SPLIT_MACS > 0) ? ST_LOZ : ST_DONE;
+                            loz_mac  <= '0;
+                            loz_addr <= '0;
+                        end else begin
                             expz_cnt <= expz_cnt + 1'b1;
+                        end
+                    end
+                end
+
+                // ----- LO-LANE ZERO TAIL (non-packed2 images only) -----
+                // The mac_slot remap sends split-MAC coefficients to the even
+                // (hi) virtual slots only, so a bank previously loaded with a
+                // packed2 image keeps its stale C_lo residues in the odd
+                // slots — the engine's SPLIT_HI_LO sum would add the old
+                // filter's low halves into every tap. Sweep odd slots
+                // NUM_OUTER+1, +3, ... and clear them.
+                ST_LOZ: begin
+                    if (!coef_stall) begin
+                        coef_we    <= 1'b1;
+                        coef_wmac  <= $clog2(NUM_V_SLOTS)'(NUM_OUTER + 2*int'(loz_mac) + 1);
+                        coef_waddr <= loz_addr;
+                        coef_wdata <= '0;
+                        if (loz_addr == $bits(loz_addr)'(COEF_DEPTH - 1)) begin
+                            loz_addr <= '0;
+                            if (loz_mac == $bits(loz_mac)'(SPLIT_MACS - 1))
+                                state <= ST_DONE;
+                            else
+                                loz_mac <= loz_mac + 1'b1;
+                        end else begin
+                            loz_addr <= loz_addr + 1'b1;
+                        end
                     end
                 end
 

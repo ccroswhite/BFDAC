@@ -28,7 +28,7 @@ module tb_halfband_x2;
     localparam int  DATA_WIDTH = 24;
     localparam int  COEF_WIDTH = 18;
     localparam int  ACC_WIDTH  = 48;
-    localparam int  DSP_STAGES = 3;
+    localparam int  DSP_STAGES = 4;   // REVIEW-11: +1 retime stage (MREG->PREG->grp-sum->final)
     localparam int  CENTER_TAP = (NUM_TAPS - 1) / 2;  // 31 (kernel centre; passthru position is NUM_NONZERO)
     localparam int  NUM_NONZERO = (NUM_TAPS + 1) / 4; // 16
     localparam int  FAST_NUM_NONZERO = (15 + 1) / 4;  // 4 — 15-tap passthru index
@@ -347,7 +347,7 @@ module tb_halfband_x2;
         //  events later (shreg[NUM_NONZERO] is the NUM_NONZERO-th oldest sample).
         // ==================================================================
         $display("\n--- TEST 5: Pass-through (phase=1) correctness ---");
-        //   acc_passthru captures shreg[NUM_NONZERO] when valid_pipe[2] is high.
+        //   acc_passthru captures shreg[NUM_NONZERO] when valid_pipe[3] is high.
         //   shreg[NUM_NONZERO] = marker requires NUM_NONZERO more in_valid
         //   pulses after the marker is loaded into shreg[0].
         do_reset(NUM_TAPS + DSP_STAGES);

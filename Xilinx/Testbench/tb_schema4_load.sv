@@ -16,7 +16,9 @@
 //        pattern, wmac walk 0..19 then EXP slot 20 (waddr 0..15)
 //    T2  packing=2 but schema=3 entry -> err code 2, zero writes
 //    T3  packing=1/schema=4 legacy image: hi-slot remap means wmac
-//        for MACs 12..15 lands on slots 12,14,16,18 (never an lo lane)
+//        for MACs 12..15 lands on slots 12,14,16,18; the loader then
+//        zero-sweeps the exp slot AND odd lo slots 13,15,17,19 (ST_EXPZ +
+//        ST_LOZ tails) so no stale packed2 residue survives the reload
 //    T4  exp_mem[bank][m] holds the flat-pattern low 5 bits; exp_active
 //        follows bank_select after the atomic swap
 //    T5  FIR output valid and X-free with the loaded pattern coefs
@@ -280,8 +282,19 @@ module tb_schema4_load;
             exp_wmac = (flat_cnt < COEF_SLOTS * COEF_DEPTH)
                      ? flat_cnt / COEF_DEPTH : EXP_SLOT;
         end else begin
-            slot_i = flat_cnt / COEF_DEPTH;
-            exp_wmac = (slot_i < NUM_OUTER) ? slot_i : NUM_OUTER + 2 * (slot_i - NUM_OUTER);
+            if (flat_cnt < NUM_MACS * COEF_DEPTH) begin
+                slot_i   = flat_cnt / COEF_DEPTH;
+                exp_wmac = (slot_i < NUM_OUTER) ? slot_i
+                                                : NUM_OUTER + 2 * (slot_i - NUM_OUTER);
+            end else if (flat_cnt < NUM_MACS * COEF_DEPTH + NUM_MACS) begin
+                exp_wmac = EXP_SLOT;                        // ST_EXPZ exp-zero tail
+            end else begin
+                // ST_LOZ: odd (lo) slots NUM_OUTER+1,+3,... zero-swept so a
+                // prior packed2 bank's stale C_lo can't contaminate this image
+                slot_i   = (flat_cnt - NUM_MACS * COEF_DEPTH - NUM_MACS)
+                           / COEF_DEPTH;
+                exp_wmac = NUM_OUTER + 2 * slot_i + 1;
+            end
         end
         if (int'(coef_wmac) !== exp_wmac) begin
             wmac_errors++;
@@ -291,7 +304,7 @@ module tb_schema4_load;
         end
         begin
             automatic logic [17:0] exp_data =
-                (remapped_mode && int'(coef_wmac) == EXP_SLOT)
+                (remapped_mode && (flat_cnt >= NUM_MACS * COEF_DEPTH))
                     ? 18'd0 : 18'(flat_cnt & 32'h3FFFF);
             if (coef_wdata !== exp_data) begin
                 data_errors++;
@@ -493,7 +506,8 @@ module tb_schema4_load;
             flat_cnt = 0; remapped_mode = 1;
             filter_load(FID_PK1);
             wait_load_done("T3");
-            check("T3 coef writes",    total_coef_writes - writes_before, PK1_WORDS + NUM_MACS);
+            check("T3 coef writes",    total_coef_writes - writes_before,
+                  PK1_WORDS + NUM_MACS + SPLIT_MACS * COEF_DEPTH);
             check("T3 data errors",    data_errors, 0);
             check("T3 wmac errors",    wmac_errors, 0);
             // coef_load_err is a toggle-parity EVENT (flips once per failed

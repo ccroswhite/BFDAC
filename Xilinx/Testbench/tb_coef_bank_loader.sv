@@ -47,6 +47,15 @@ module tb_coef_bank_loader;
     localparam logic [31:0] DIR_BASE = 32'h3FFF_0000;              // filter directory
     localparam int          DIR_MAX  = 256;
 
+    // Schema-4 virtual slot map: this TB runs SPLIT_MACS=0, so the only
+    // extra slot is the exponent file. EXP_TAIL counts the post-drain
+    // ST_EXPZ (NUM_MACS exp zeros) + ST_LOZ (SPLIT_MACS*COEF_DEPTH lo-lane
+    // zeros; 0 here) writes every non-packed2 load appends.
+    localparam int SPLIT_MACS  = 0;
+    localparam int NUM_V_SLOTS = NUM_MACS + SPLIT_MACS + 1;
+    localparam int EXP_SLOT    = NUM_MACS + SPLIT_MACS;
+    localparam int EXP_TAIL    = NUM_MACS + SPLIT_MACS * COEF_DEPTH;
+
     localparam int COEFS_PER_BEAT    = AXI_DATA_WIDTH / 32;       // 4
     localparam int BEATS_PER_BURST   = 256;
     localparam int COEFS_PER_BURST   = COEFS_PER_BEAT * BEATS_PER_BURST; // 1024
@@ -147,7 +156,7 @@ module tb_coef_bank_loader;
     // -------------------------------------------------------------------------
     coef_bank_loader #(
         .NUM_MACS       (NUM_MACS),
-        .SPLIT_MACS     (0),
+        .SPLIT_MACS     (SPLIT_MACS),
         .COEF_WIDTH     (COEF_WIDTH),
         .COEF_DEPTH     (COEF_DEPTH),
         .BANK_BITS      (BANK_BITS),
@@ -413,9 +422,15 @@ module tb_coef_bank_loader;
                 error_count = error_count + 1;
             end
 
-            // MAC index must always be in [0 .. NUM_MACS-1]
-            if (int'(coef_wmac) >= NUM_MACS) begin
+            // Slot index must stay inside the virtual map (outer MACs +
+            // split hi/lo + exponent slot); tail writes past the MAC range
+            // (ST_EXPZ/ST_LOZ) are legal but must carry zeros.
+            if (int'(coef_wmac) >= NUM_V_SLOTS) begin
                 $display("ERROR @ %0t : coef_wmac=%0d out of range", $time, coef_wmac);
+                error_count = error_count + 1;
+            end else if (int'(coef_wmac) >= NUM_MACS && coef_wdata !== '0) begin
+                $display("ERROR @ %0t : tail write wmac=%0d nonzero wdata=%0h",
+                         $time, coef_wmac, coef_wdata);
                 error_count = error_count + 1;
             end
         end
@@ -573,7 +588,7 @@ module tb_coef_bank_loader;
 
         // Total writes must equal NUM_MACS * COEF_DEPTH
         repeat(4) @(posedge clk);
-        if (total_writes !== NUM_MACS * COEF_DEPTH) begin
+        if (total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d",
                      total_writes, NUM_MACS * COEF_DEPTH);
             error_count = error_count + 1;
@@ -603,7 +618,7 @@ module tb_coef_bank_loader;
         wait_for_load_done(2 * LOAD_TIMEOUT);
 
         repeat(4) @(posedge clk);
-        if (total_writes !== NUM_MACS * COEF_DEPTH) begin
+        if (total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d",
                      total_writes, NUM_MACS * COEF_DEPTH);
             error_count = error_count + 1;
@@ -634,7 +649,7 @@ module tb_coef_bank_loader;
         wait_for_load_done(LOAD_TIMEOUT);
 
         repeat(4) @(posedge clk);
-        if (total_writes !== NUM_MACS * COEF_DEPTH) begin
+        if (total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d",
                      total_writes, NUM_MACS * COEF_DEPTH);
             error_count = error_count + 1;
@@ -666,7 +681,7 @@ module tb_coef_bank_loader;
         wait_for_load_done(LOAD_TIMEOUT);
 
         repeat(4) @(posedge clk);
-        if (total_writes !== NUM_MACS * COEF_DEPTH) begin
+        if (total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d",
                      total_writes, NUM_MACS * COEF_DEPTH);
             error_count = error_count + 1;
@@ -699,7 +714,7 @@ module tb_coef_bank_loader;
             $display("ERROR: directory reads = %0d, expected 3 (entries 0..2)", dir_reads);
             error_count = error_count + 1;
         end
-        if (total_writes !== NUM_MACS * COEF_DEPTH) begin
+        if (total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d",
                      total_writes, NUM_MACS * COEF_DEPTH);
             error_count = error_count + 1;
@@ -784,7 +799,7 @@ module tb_coef_bank_loader;
         end
         wait_for_load_done(LOAD_TIMEOUT);
         repeat(4) @(posedge clk);
-        if (load_err !== 1'b0 || total_writes !== NUM_MACS * COEF_DEPTH || dir_reads !== 0) begin
+        if (load_err !== 1'b0 || total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL || dir_reads !== 0) begin
             $display("ERROR: follow-up load err=%0b writes=%0d dir_reads=%0d",
                      load_err, total_writes, dir_reads);
             error_count = error_count + 1;
@@ -816,7 +831,7 @@ module tb_coef_bank_loader;
             $display("ERROR: load_err asserted on a valid packed lookup (code=%0d)", load_err_code);
             error_count = error_count + 1;
         end
-        if (total_writes !== PK_COEFS) begin
+        if (total_writes !== PK_COEFS + EXP_TAIL) begin
             $display("ERROR: total coef writes = %0d, expected %0d", total_writes, PK_COEFS);
             error_count = error_count + 1;
         end
@@ -907,7 +922,7 @@ module tb_coef_bank_loader;
             dir_beat1[0][55:48] = 8'd4;
             pulse_load_by_id(16'h0101, DIR_IMG_A);
             wait_for_load_done(LOAD_TIMEOUT);
-            if (load_err || total_writes != NUM_MACS * COEF_DEPTH) begin
+            if (load_err || total_writes != NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
                 $display("ERROR: matching native-rate filter rejected");
                 error_count++;
             end
@@ -948,7 +963,7 @@ module tb_coef_bank_loader;
         wait_for_load_done(LOAD_TIMEOUT);
         repeat(4) @(posedge clk);
         if (load_err || load_err_code !== 3'd0 ||
-            total_writes !== NUM_MACS * COEF_DEPTH) begin
+            total_writes !== NUM_MACS * COEF_DEPTH + EXP_TAIL) begin
             $display("ERROR: clean retry after AXI failure failed err=%0b code=%0d writes=%0d",
                      load_err,load_err_code,total_writes);
             error_count++;

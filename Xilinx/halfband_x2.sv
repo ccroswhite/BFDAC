@@ -13,7 +13,8 @@
 //   - Two output phases per input sample (polyphase decomposition):
 //       Phase 0 (even): center tap contribution + non-zero symmetric pairs
 //       Phase 1 (odd):  input sample passed through directly (gain=1 half-band)
-//   - Pipelined DSP48E2 inference (3-stage: pre-add → multiply → post-add)
+//   - Pipelined DSP48E2 inference (4 register stages: MREG → PREG →
+//     group-sum → final-sum, REVIEW-11)
 //
 // Latency: pass-through delay = NUM_NONZERO input samples + DSP_STAGES+1
 //          clocks; the midpoint lands a half input sample later.
@@ -63,8 +64,11 @@ module halfband_x2 #(
     // Parameters
     // -------------------------------------------------------------------------
     localparam int NUM_NONZERO = (NUM_TAPS + 1) / 4;    // Non-zero coef pairs each side
-    // DSP pipeline depth: pre-add(1) + multiply(1) + accumulate(1) = 3 stages
-    localparam int DSP_STAGES  = 3;
+    // DSP pipeline depth: pre-add + mult(MREG) + retime(PREG) + group-sum +
+    // final-sum = 4 register stages. REVIEW-11: collapsing the retime and the
+    // 16-term reduction into one stage left a >5 ns combinational cone off
+    // DSP48E2.M with PREG=0 (DPOP-1) at 302 MHz.
+    localparam int DSP_STAGES  = 4;
 
     // -------------------------------------------------------------------------
     // Half-band FIR coefficient ROM
@@ -198,83 +202,132 @@ module halfband_x2 #(
         end
     end
 
-    // Stage 1: multiply each pre-add by its coefficient.
+    // Stage 1 (valid_pipe[0]): multiply each pre-add by its coefficient.
     // use_dsp (f9wc route review 2026-08-15): coef_rom is constant after
     // synthesis, so Vivado lowered these multiplies to fabric shift-add
     // CARRY8 chains (14 logic levels, -0.41 ns at dsp_clk). Force DSP48E2.
     // When pre_add exceeds the native 25-bit multiplier A input
     // (DATA_WIDTH > 24), split it into a 24-bit unsigned lo slice and a
-    // signed hi slice — two 25x18 DSP48E2 slices per pair, recombined in
-    // the accumulator (REVIEW-9.5).
+    // signed hi slice — two 25x18 DSP48E2 slices per pair (REVIEW-9.5).
+    // Stage 2 (valid_pipe[1]): product retime — absorbs as DSP48E2 PREG=1
+    // (clears DPOP-1, takes the fast P clock-to-out). REVIEW-11: the old
+    // M -> (hi<<24)+lo -> 16-term-sum -> round -> acc single-cycle cone
+    // exceeded 5 ns at 302 MHz while this pipe stage sat idle.
     localparam int PRODUCT_WIDTH = DATA_WIDTH + COEF_WIDTH + 1;
     logic signed [PRODUCT_WIDTH-1:0] products [0:NUM_NONZERO-1];
 
     if (DATA_WIDTH + 1 <= 25) begin : gen_direct_mult
-        (* use_dsp = "yes" *) logic signed [PRODUCT_WIDTH-1:0] mult_r [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [PRODUCT_WIDTH-1:0] mult_m [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [PRODUCT_WIDTH-1:0] mult_p [0:NUM_NONZERO-1];
 
         always_ff @(posedge clk) begin
             if (!rst_n) begin
-                for (int k = 0; k < NUM_NONZERO; k++)
-                    mult_r[k] <= '0;
-            end else if (valid_pipe[0]) begin
-                for (int k = 0; k < NUM_NONZERO; k++)
-                    mult_r[k] <= pre_add[k] * $signed(coef_rom[k]);
+                for (int k = 0; k < NUM_NONZERO; k++) begin
+                    mult_m[k] <= '0;
+                    mult_p[k] <= '0;
+                end
+            end else begin
+                if (valid_pipe[0])
+                    for (int k = 0; k < NUM_NONZERO; k++)
+                        mult_m[k] <= pre_add[k] * $signed(coef_rom[k]);
+                if (valid_pipe[1])
+                    for (int k = 0; k < NUM_NONZERO; k++)
+                        mult_p[k] <= mult_m[k];
             end
         end
 
         always_comb begin
             for (int k = 0; k < NUM_NONZERO; k++)
-                products[k] = mult_r[k];
+                products[k] = mult_p[k];
         end
     end else begin : gen_split_mult
-        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_lo [0:NUM_NONZERO-1];
-        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_hi [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_lo_m [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_hi_m [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_lo_p [0:NUM_NONZERO-1];
+        (* use_dsp = "yes" *) logic signed [COEF_WIDTH+24:0] prod_hi_p [0:NUM_NONZERO-1];
 
         always_ff @(posedge clk) begin
             if (!rst_n) begin
                 for (int k = 0; k < NUM_NONZERO; k++) begin
-                    prod_lo[k] <= '0;
-                    prod_hi[k] <= '0;
+                    prod_lo_m[k] <= '0;
+                    prod_hi_m[k] <= '0;
+                    prod_lo_p[k] <= '0;
+                    prod_hi_p[k] <= '0;
                 end
-            end else if (valid_pipe[0]) begin
-                for (int k = 0; k < NUM_NONZERO; k++) begin
-                    prod_lo[k] <= $signed({1'b0, pre_add[k][23:0]}) * $signed(coef_rom[k]);
-                    prod_hi[k] <= $signed(pre_add[k][DATA_WIDTH:24]) * $signed(coef_rom[k]);
+            end else begin
+                if (valid_pipe[0]) begin
+                    for (int k = 0; k < NUM_NONZERO; k++) begin
+                        prod_lo_m[k] <= $signed({1'b0, pre_add[k][23:0]}) * $signed(coef_rom[k]);
+                        prod_hi_m[k] <= $signed(pre_add[k][DATA_WIDTH:24]) * $signed(coef_rom[k]);
+                    end
+                end
+                if (valid_pipe[1]) begin
+                    for (int k = 0; k < NUM_NONZERO; k++) begin
+                        prod_lo_p[k] <= prod_lo_m[k];
+                        prod_hi_p[k] <= prod_hi_m[k];
+                    end
                 end
             end
         end
 
         always_comb begin
             for (int k = 0; k < NUM_NONZERO; k++)
-                products[k] = (PRODUCT_WIDTH'($signed(prod_hi[k])) <<< 24) +
-                              PRODUCT_WIDTH'($signed(prod_lo[k]));
+                products[k] = (PRODUCT_WIDTH'($signed(prod_hi_p[k])) <<< 24) +
+                              PRODUCT_WIDTH'($signed(prod_lo_p[k]));
         end
     end
 
     // Pass-through phase: the integer-time sample NUM_NONZERO deep (just
     // before this input's midpoint at the half-sample offset), carried
     // through the same pipe stages as the filtered path.
-    logic signed [DATA_WIDTH:0] pass_sample_s1, pass_sample_s2;
+    logic signed [DATA_WIDTH-1:0] pass_s1, pass_s2, pass_s3, pass_s4;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            pass_sample_s1 <= '0;
-            pass_sample_s2 <= '0;
+            pass_s1 <= '0;
+            pass_s2 <= '0;
+            pass_s3 <= '0;
+            pass_s4 <= '0;
         end else begin
-            if (in_valid)
-                pass_sample_s1 <= $signed({shreg[NUM_NONZERO][DATA_WIDTH-1],
-                                           shreg[NUM_NONZERO]});
-            if (valid_pipe[0])
-                pass_sample_s2 <= pass_sample_s1;
+            if (in_valid)      pass_s1 <= shreg[NUM_NONZERO];
+            if (valid_pipe[0]) pass_s2 <= pass_s1;
+            if (valid_pipe[1]) pass_s3 <= pass_s2;
+            if (valid_pipe[2]) pass_s4 <= pass_s3;
         end
     end
 
-    // Keep product precision through the sum; shift once to output scale.
+    // Stage 3 (valid_pipe[2]): group partial sums — <=4 products per group
+    // bounds each group adder to ~2 CARRY8 levels. Keep product precision
+    // through the sum; shift once to output scale.
+    localparam int SUM_WIDTH = PRODUCT_WIDTH + $clog2(NUM_NONZERO + 1);
+    localparam int NUM_GRPS  = (NUM_NONZERO + 3) / 4;
+    logic signed [SUM_WIDTH-1:0] grp_sum_comb [0:NUM_GRPS-1];
+    logic signed [SUM_WIDTH-1:0] grp_sum_r    [0:NUM_GRPS-1];
+
+    always_comb begin
+        for (int g = 0; g < NUM_GRPS; g++) begin
+            grp_sum_comb[g] = '0;
+            for (int i = 0; i < 4; i++) begin
+                if (4*g + i < NUM_NONZERO)
+                    grp_sum_comb[g] = grp_sum_comb[g] +
+                                      SUM_WIDTH'($signed(products[4*g + i]));
+            end
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int g = 0; g < NUM_GRPS; g++) grp_sum_r[g] <= '0;
+        end else if (valid_pipe[2]) begin
+            for (int g = 0; g < NUM_GRPS; g++) grp_sum_r[g] <= grp_sum_comb[g];
+        end
+    end
+
+    // Stage 4 (valid_pipe[3]): final group sum + round-half-up + rescale.
     // Midpoint phase = sum of symmetric-pair products only — the centre tap
     // belongs to the pass-through phase (folding it in here was the ZOH bug,
     // -27.8 dB image). The odd taps sum to 0.5, so the x2 interpolator's
     // midpoint carries a gain of 2: divide by 2^(COEF_WIDTH-2).
-    localparam int SUM_WIDTH = PRODUCT_WIDTH + $clog2(NUM_NONZERO + 1);
     logic signed [SUM_WIDTH-1:0] full_sum_comb, rounded_sum, scaled_sum;
     logic signed [ACC_WIDTH-1:0] acc_filtered;
     logic signed [ACC_WIDTH-1:0] acc_passthru;
@@ -282,8 +335,8 @@ module halfband_x2 #(
 
     always_comb begin
         full_sum_comb = '0;
-        for (int j = 0; j < NUM_NONZERO; j++)
-            full_sum_comb = full_sum_comb + SUM_WIDTH'($signed(products[j]));
+        for (int g = 0; g < NUM_GRPS; g++)
+            full_sum_comb = full_sum_comb + grp_sum_r[g];
 
         rounded_sum = full_sum_comb + (SUM_WIDTH'(1) <<< (COEF_WIDTH - 3));
         scaled_sum = rounded_sum >>> (COEF_WIDTH - 2);
@@ -294,9 +347,9 @@ module halfband_x2 #(
         if (!rst_n) begin
             acc_filtered <= '0;
             acc_passthru <= '0;
-        end else if (valid_pipe[2]) begin
+        end else if (valid_pipe[3]) begin
             acc_filtered <= acc_sum_comb;
-            acc_passthru <= ACC_WIDTH'($signed(pass_sample_s2[DATA_WIDTH-1:0]))
+            acc_passthru <= ACC_WIDTH'($signed(pass_s4))
                             <<< (ACC_WIDTH - DATA_WIDTH);
         end
     end

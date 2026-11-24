@@ -124,7 +124,7 @@ module dac_coef_subsys #(
     // Toggle sync converts the pulse to an edge that ui_clk can reliably catch.
     logic mgr_load_start_dsp;
     logic load_start_toggle_dsp = 1'b0;   // free-running (init 0 for sim; FPGA bitstream init)
-    logic [2:0] load_start_sync_ui;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] load_start_sync_ui;
 
     // FREE-RUNNING toggle (asymmetric-reset fix 2026-11-22): ui_clk stays
     // alive across stream-rate changes while sys_rst_n asserts. Clearing only
@@ -192,7 +192,7 @@ module dac_coef_subsys #(
     // 2. CDC: loader_done ui_clk -> dsp_clk (toggle synchronizer)
     // ----------------------------------------------------------------
     logic load_done_toggle_ui;
-    logic [2:0] load_done_sync_dsp = '0;  // free-running (init 0 for sim)
+    (* ASYNC_REG = "TRUE" *) logic [2:0] load_done_sync_dsp = '0;  // free-running (init 0 for sim)
 
     always_ff @(posedge ui_clk) begin
         if (ui_clk_sync_rst)
@@ -215,6 +215,11 @@ module dac_coef_subsys #(
     logic load_done_pend;
     logic [3:0] load_done_stretch;
     logic cf_empty_dsp;     // driven in section 3
+    // Single-cycle event: the synced load_done edge has been deferred until
+    // the coef CDC FIFO drained and the final coef_we issued. The stretched
+    // coef_load_done level fans out from this same point.
+    logic load_done_fire;
+    assign load_done_fire = load_done_pend && cf_empty_dsp && !coef_we;
     always_ff @(posedge dsp_clk) begin
         if (!sys_rst_n) begin
             load_done_pend    <= 1'b0;
@@ -224,7 +229,7 @@ module dac_coef_subsys #(
             coef_load_done <= 1'b0;
             if (load_done_sync_dsp[2] ^ load_done_sync_dsp[1])
                 load_done_pend <= 1'b1;
-            else if (load_done_pend && cf_empty_dsp && !coef_we) begin
+            else if (load_done_fire) begin
                 load_done_pend    <= 1'b0;
                 coef_load_done    <= 1'b1;
                 load_done_stretch <= 4'd8;
@@ -240,25 +245,28 @@ module dac_coef_subsys #(
     end
 
     // Failed-load EVENT for the control plane: loader_err_ui is a ui_clk
-    // level held until the next load attempt, so a raw level crossing
-    // cannot distinguish consecutive failures (and is a raw async crossing
-    // into clk_200m besides). This toggle flips exactly once per failed
-    // load — a clean dsp_clk source the clk_200m side XOR-detects.
-    // FREE-RUNNING (asymmetric-reset fix): resetting on sys_rst_n while
-    // clk_200m held the old parity would fire a phantom error event on
-    // every rate change following any earlier failure.
-    // NOTE: u_coef_mgr / u_voicing_commit keep consuming loader_err_ui
-    // directly — both sample it only AT the load_done edge where the level
-    // has been stable for microseconds (quasi-static, XDC max-delay
-    // covered). Registering it here on the same edge would present the
-    // PREVIOUS load's result to their same-edge sample.
-    logic loader_err_lvl = 1'b0;
-    logic loader_err_tog = 1'b0;   // free-running (init 0 for sim)
+    // level held until the next load attempt. loader_err_lvl captures it at
+    // the synced load_done edge — at least one dsp_clk BEFORE load_done_fire
+    // (pend must first be set, then the FIFO-drain condition met), so the
+    // level is settled when u_coef_mgr / u_voicing_commit sample it with the
+    // stretched coef_load_done. The toggle flips exactly once per failed
+    // load AT load_done_fire — not on the 9-cycle stretched coef_load_done,
+    // which would emit a ~150 MHz burst the 5 ns clk_200m XOR detector could
+    // register as 0..2 spurious error events.
+    // ext_rst_n (not sys_rst_n): resets together with the clk_200m
+    // load_err_sync/load_err_d parity chain; survives rate-switch resets.
+    (* ASYNC_REG = "TRUE" *) logic loader_err_lvl = 1'b0;
+    logic loader_err_tog = 1'b0;
     always_ff @(posedge dsp_clk) begin
-        if (load_done_sync_dsp[2] ^ load_done_sync_dsp[1])
-            loader_err_lvl <= loader_err_ui;
-        if (coef_load_done && loader_err_lvl)
-            loader_err_tog <= ~loader_err_tog;
+        if (!ext_rst_n) begin
+            loader_err_lvl <= 1'b0;
+            loader_err_tog <= 1'b0;
+        end else begin
+            if (load_done_sync_dsp[2] ^ load_done_sync_dsp[1])
+                loader_err_lvl <= loader_err_ui;
+            if (sys_rst_n && load_done_fire && loader_err_lvl)
+                loader_err_tog <= ~loader_err_tog;
+        end
     end
     assign coef_load_err  = loader_err_tog;
 
@@ -337,14 +345,18 @@ module dac_coef_subsys #(
                 coef_we      <= 1'b1;
             end
         end
-        // Read pointers are FREE-RUNNING (asymmetric-reset fix): the ui_clk
-        // write side never resets across stream-rate changes, so clearing
-        // only cf_rptr_* here would corrupt the Gray-pointer bookkeeping —
-        // cf_used_ui would jump toward full and wedge the loader stalled.
-        // They hold position during reset and resume draining after release;
-        // stale entries are harmless since a post-relock reload overwrites
-        // the shadow banks anyway.
-        if (sys_rst_n && !cf_empty_dsp) begin
+        // Read pointers are FREE-RUNNING across sys_rst_n (asymmetric-reset
+        // fix): the ui_clk write side never resets across stream-rate
+        // changes, so clearing only cf_rptr_* there would corrupt the
+        // Gray-pointer bookkeeping — cf_used_ui would jump toward full and
+        // wedge the loader stalled. They DO reset on ext_rst_n: that same
+        // edge resets the MIG (ui_clk_sync_rst clears cf_wptr_*), so both
+        // sides restart from 0 together — without it a MIG re-init would
+        // leave wptr=0 vs rptr!=0 and pop stale entries as phantom coefs.
+        if (!ext_rst_n) begin
+            cf_rptr_bin  <= '0;
+            cf_rptr_gray <= '0;
+        end else if (sys_rst_n && !cf_empty_dsp) begin
             cf_rptr_bin  <= cf_rptr_bin + 1'b1;
             cf_rptr_gray <= cf_bin2gray(cf_rptr_bin + 1'b1);
         end
@@ -450,7 +462,7 @@ module dac_coef_subsys #(
         .load_start         (mgr_load_start_dsp),
         .load_bank_id       (mgr_load_req_dsp),
         .load_done          (coef_load_done),
-        .load_failed        (loader_err_ui),
+        .load_failed        (loader_err_lvl),
         .current_bank_id    (mgr_current_req),
         .bank_valid         (bank_valid),
         .busy               (mgr_busy)
@@ -490,7 +502,7 @@ module dac_coef_subsys #(
         .bank_valid        (bank_valid),
         .mgr_busy          (mgr_busy),
         .coef_load_done    (coef_load_done),
-        .coef_load_failed  (loader_err_ui),
+        .coef_load_failed  (loader_err_lvl),
         .mgr_current_bank  (mgr_current_req),
         .spi_req_active    (req_pulse_dsp),
         .err_seen_in       (voicing_err_seen),

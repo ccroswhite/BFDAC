@@ -39,7 +39,7 @@ module cal_coef_store #(
     input  logic        dsp_clk,
     input  logic        dsp_rst_n,
     input  logic        sample_tick,     // commit alignment (768k sample tick)
-    input  tri0         dpd_busy,        // hold bank constant through each DPD calculation
+    input  logic        dpd_busy = 1'b0, // hold bank constant through each DPD calculation
 
     // DPD datapath ports — active bank, 1-cycle registered reads
     input  logic [NUM_DPD_PORTS-1:0][8:0]  dpd_rd_addr,
@@ -138,10 +138,12 @@ module cal_coef_store #(
 
     // Reject-event phase is reset only by the external control reset, not by
     // an audio-rate DSP reset; a rate switch must not fabricate a host error.
-    always_ff @(posedge dsp_clk or negedge ctrl_rst_n) begin
-        if (!ctrl_rst_n)
+    // Synchronous reset on dsp_hard_rst_n (the dsp_clk-synced ctrl_rst_n)
+    // avoids an async-reset recovery arc into this domain.
+    always_ff @(posedge dsp_clk) begin
+        if (!dsp_hard_rst_n)
             write_reject_toggle <= 1'b0;
-        else if (dsp_hard_rst_n && write_rejected_dsp)
+        else if (write_rejected_dsp)
             write_reject_toggle <= ~write_reject_toggle;
     end
 
