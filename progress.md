@@ -6777,3 +6777,20 @@ codes (0x0-0xF) covered. Four doc bugs fixed:
   ~0.113 Nm. Variscite caveat: heatsink "mainly used for CPU/GPU intensive
   applications" — our job list (SPI master + 1 I2S lane + Ethernet) is light;
   heatsink likely optional, evaluate at bench.
+
+## 2026-11-24 todo #6: connector X/Y datum register — docs/CONNECTOR_DATUMS.md written
+
+Harvested every J-connector across all sheets (references, values, footprints,
+MPNs, descriptions) and wrote a per-connector datum register covering:
+- Rear panel (J601/J602 XLR NC3MD-H-B, J852 USB-C, J856 RJ45, J900 DD12-PEM):
+  datums = panel cutout centres / shell centrelines on board edge.
+- SoM (J1-J4 Samtec ADM6-60): pin A01 + alignment NPTH datum known from the
+  Samtec print (footprint done); **X/Y still BLOCKED on Alinx STEP (item #10)**.
+- PCIe interboards (J506 x16, J603/J604 x4 <-> Tub-1 J7705/J7703/J7704):
+  pin-1 datum, shared datum plane required between the two boards.
+- Host SoM socket (J855 TE 1612618-4 SODIMM-200): socket datum + Variscite
+  4-hole standoff pattern (62.52 mm span) must register; MAC8 TH-1.6-3.0-M2-B.
+- Phoenix harness landings (J854, J910, J92x, J93x): pin-1 datum, land verified
+  2026-11-24; plug exits parallel to board -> keep near edges.
+- Open items listed: Alinx STEP, Variscite standoff XY, J852/J856 edge offsets,
+  J851 proposed MPN.
