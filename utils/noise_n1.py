@@ -9,6 +9,7 @@ import numpy as np
 import sys
 import os
 sys.path.insert(0, r"C:\Users\ccros\src\BFDAC")
+sys.path.insert(0, r"C:\Users\ccros\src\BFDAC\analysis_archive")
 from ns_ef3_gen import run, FRAC, LSB, FS
 
 N = int(os.environ.get("N", str(1 << 20)))
@@ -19,8 +20,8 @@ n = np.arange(N)
 freqs = np.fft.rfftfreq(N, 1 / FS)
 band = (freqs >= 20) & (freqs <= 20e3)
 
-for ampdb in (-1.0, -60.0):
-    amp = 28.0 * 10 ** (ampdb / 20)
+for ampdb in (-1.0, -60.0, None):              # None = digital silence (L1)
+    amp = 28.0 * 10 ** (ampdb / 20) if ampdb is not None else 0.0
     BIN = int(round(997.0 / FS * N))          # ~997 Hz, non-round bin
     u = (amp * np.sin(2 * np.pi * BIN * n / N) * LSB).astype(np.int64)
     fund_ref = 28.0 * 10 ** (-1 / 20)         # SNR always re -1dBFS fund
@@ -44,8 +45,10 @@ for ampdb in (-1.0, -60.0):
         snr = 10 * np.log10((fund_ref ** 2 / 2) / pn)
         snrs.append(snr)
         nv = VRMS_FUND_M1DB * 10 ** (-snr / 20) * 1e9
-        print(f"drive {ampdb:6.1f} dB  seed {sd}: in-band SNR (re -1dBFS fund) "
+        print(f"drive {('silence' if ampdb is None else f'{ampdb:6.1f} dB')}  "
+              f"seed {sd}: in-band SNR (re -1dBFS fund) "
               f"= {snr:6.1f} dB  -> {nv:7.1f} nVrms")
     m = np.mean(snrs)
-    print(f"drive {ampdb:6.1f} dB  MEAN over {len(SEEDS)} seeds: {m:6.1f} dB "
+    tag = " silence" if ampdb is None else f"{ampdb:6.1f} dB"
+    print(f"drive {tag}  MEAN over {len(SEEDS)} seeds: {m:6.1f} dB "
           f"({VRMS_FUND_M1DB*10**(-m/20)*1e9:.1f} nVrms; budget total 245 nV)\n")

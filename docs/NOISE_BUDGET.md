@@ -53,6 +53,7 @@ part was vetoed for ~140 mW/cell and is the documented fallback only).
 | Clock tree common jitter | ≈87 fs (√(82²+20²+20²)) | bom.md §1.1 (post-LMK00304 removal) |
 | Jitter→noise sensitivity | 171 nV/ps per-FF (0.155× common); RTZ formula → ~−130 dBFS @150 fs common | bom.md gate 98; RTZ SNR_j ≈ −20log(√2πf_RTZ·σ·√(2·20k/f_RTZ)) |
 | NS in-band SNDR | 136.0 dB (EF3, verified integer-exact) | `noise_shaper_ef3` + `ns_ef3_gen.py`, Round-30 entry progress.md |
+| RTL D1 waterfall | P1–P4 −157/−157/−193/−157 dBFS; P5 dem_cmd **−136.3 settled** (−128.6 during post-reset wander); P6 popcount == 6·dem_cmd frame-exact | `tb_noise_waterfall` + `utils/noise_waterfall.py`, 131k-word capture @ −60 dBFS |
 | HB3 chain SNDR | 163.7 dB (e2e, bit-identical across REVIEW-10/11) | `tb_e2e_sine` + `e2e_final_fft.py` |
 | LDO cascade | TPS7A4501→LT3041 analytical stack | `utils/ldo_cascade_noise.py` + docs/LDO_CASCADE_NOISE.md |
 
@@ -85,6 +86,34 @@ part was vetoed for ~140 mW/cell and is the documented fallback only).
 
 P6 check is a **sequence correlation** (per-frame popcount == dem_cmd), not
 just an SNR comparison — a frame slip shows as a deterministic mismatch.
+
+### D1 waterfall measured result (131,072-word capture, −60 dBFS coherent tone)
+
+| P | Measured | Verdict |
+|---|----------|---------|
+| P1–P4 | −157 / −157 / −193 / −157 dBFS, SNR 82.7 dB consistent | clean, no truncation growth |
+| P5 `dem_cmd` | −128.6 dBFS with 20–200 Hz wander **during first ~130–260k samples after stream start**; −136.3 dBFS settled, no spur >−149.7, median bin −174 | see below |
+| P6 | `pop[k+3] = 6·countones(dem_out[k])` frame-exact (count all 8 `pace_div` written at div==0) | CDC path exact |
+
+**P5 pedestal — root-caused, not a defect.** Replaying `ns_ef3_gen` on the
+RTL's *own captured* `(u_off_r, dith_a)` register streams reproduces the
+pedestal exactly (in-band 5.31e-11 both) — same dynamical system, not an
+arithmetic divergence. The wander is a post-reset attractor basin the EF3
+relaxes out of within ~21–43 ms; across 786k continued model samples it
+never returns (settled limit-cycle orbit, floor −136.3, 20–200 Hz energy
+7.2e-13). Bit-level model↔RTL mismatch (~46% at ±1 during tone) is chaotic
+error-feedback divergence — statistically identical. EF3 golden match
+(`tb_ns_ef3` T1–T3) passes with `ns_ef3_golden.mem` in the sim dir.
+
+**Gate bookkeeping**: settled P5 = −136.3 dBFS ≈ 0.92 µV vs 0.75 µV
+allocation — over by ~1.6 dB on the line item, but RSS impact is ~0.03 µV
+against the −123.3 ship gate (D3 dominates). The −128.6 transient precedes
+any real unmute (boot envelope covers it). D1 verdict: **pass** — no spur
+candidate, no defect; allocation margin to be re-checked at bench A5.
+
+Probes added: `nw_dither` (dither_l at EF3 pin — verified white ±1-LSB
+TPDF), `nw_ef3in` (stage-A `u_off_r`/`dith_a`). Plusargs: `+SILENCE`,
+`+SHORT` (N_CAP 8192).
 
 ## 6. Bench isolation ladder (back-to-front, XLR domain)
 
