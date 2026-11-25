@@ -58,25 +58,51 @@ r["P3 hb3"]    = waterfall("hb3",    load_hex(CAP / "nw_hb3.txt", 48),    6.144e
 r["P4 paced"]  = waterfall("paced",  load_hex(CAP / "nw_paced.txt", 48),  6.144e6, 28.0 * 2.0 ** 42)
 r["P5 demcmd"] = waterfall("demcmd", load_hex(CAP / "nw_demcmd.txt", 7),  6.144e6, 28.0)
 
-# P6 correlation: pop/6 == countones(dem_out); search small frame offsets for
-# the best alignment (cap latches a frame after dem_valid in some configs)
-pop = np.loadtxt(CAP / "nw_pop.txt", dtype=np.int64) // 6
+# P6 correlation: pop frames are per pace_div wrap (includes stall frames
+# where the accelerated TB cell_clk underruns the pace FIFO -> cell_alive
+# drops -> cascode 0). dem_out is per dem_valid — a different index space.
+# Check: dedup'd nonzero pops must be an in-order subsequence of 6*dem_out
+# (a shadow/cap frame slip breaks the subsequence); partial frames
+# (pop%6 != 0) are alive-drop transitions, reported not scored.
+pop = np.loadtxt(CAP / "nw_pop.txt", dtype=np.int64)
 dem_out = popcount_file(CAP / "nw_demout.txt")
-best = None
-for sh in range(-3, 4):
-    if sh >= 0:
-        a, b = pop[sh:], dem_out[:len(pop) - sh]
-    else:
-        a, b = pop[:sh], dem_out[-sh:len(pop)]
-    n = min(len(a), len(b))
-    mm = int((a[:n] != b[:n]).sum())
-    if best is None or mm < best[1]:
-        best = (sh, mm, n)
-sh, mm, n = best
-print(f"\nP6 correlation: best frame offset {sh:+d}: {n} frames, {mm} mismatches"
-      + (" — cell_shadow path CLEAN" if mm == 0 else f" (first at frame {np.flatnonzero(pop[max(sh,0):max(sh,0)+n] != dem_out[max(-sh,0):max(-sh,0)+n])[0]})"))
+exp = 6 * dem_out
+stall = int((pop == 0).sum())
+partial = int((((pop % 6) != 0) & (pop != 0)).sum())
+full = pop[(pop != 0) & (pop % 6 == 0)]
+nz_dedup = full[np.concatenate(([True], np.diff(full) != 0))]
+j = 0
+mism = 0
+for v in nz_dedup:
+    while j < len(exp) and exp[j] != v:
+        j += 1
+    if j >= len(exp):
+        mism += 1
+        break
+print(f"\nP6: {len(pop)} frames ({stall} stall / {partial} partial — TB clock "
+      f"artifact, cell_clk/8 > 6.144 MHz fill) | dedup'd words {len(nz_dedup)} "
+      f"vs dem_out seq: {mism} subsequence breaks"
+      + (" — cell_shadow path CLEAN" if mism == 0 else ""))
 r["P6 cascode"] = waterfall("cascode", pop.astype(np.float64), 6.144e6, 28.0)
 
 print("\n--- floor progression (SNR should hold ~P1 level through P5/P6) ---")
 for k, (s, fl) in r.items():
     print(f"{k:12s} SNR {s:7.1f} dB   floor {fl:7.1f} dBFS")
+
+# basin-decay check: dem_cmd in-band floor per quarter-capture — the
+# post-reset EF3 wandering basin (-60dBFS: ~130-260k samples) shows as an
+# elevated early-quarter floor with a 20-200 Hz excess
+print("\n--- dem_cmd quarter floors (basin-decay check) ---")
+cmd = load_hex(CAP / "nw_demcmd.txt", 7)
+q = cmd.size // 4
+for i in range(4):
+    seg = cmd[i * q:(i + 1) * q] - cmd[i * q:(i + 1) * q].mean()
+    wq = np.kaiser(q, BETA)
+    Xq = np.abs(np.fft.rfft(seg * wq)) ** 2 / (q / 2) / q / ((wq ** 2).sum() / q)
+    fq = np.fft.rfftfreq(q, 1 / 6.144e6)
+    bq = (fq >= F_LO) & (fq <= F_HI)
+    biq = np.argmax(Xq * bq)
+    mq = bq.copy(); mq[max(biq - K, 0):biq + K + 1] = False
+    lf = Xq[(fq >= 20) & (fq <= 200) & mq].sum()
+    print(f"Q{i}: floor {10 * np.log10(Xq[mq].sum() / (28.0 ** 2 / 2)):7.1f} dBFS   "
+          f"20-200Hz {lf:.2e}")

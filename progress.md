@@ -6631,3 +6631,47 @@ Re-synth on 61f14bc (XDC scope fixes + test_active 2-FF syncs):
   = pre-route noise (was +0.007 post-route).
 - Net: all constraint drift repaired, zero logic-level CDC crossings left
   unsynchronized or unconstrained.
+
+## 2026-11-24 noise floor: D1 measured end-to-end + D2 re-run (post-LMK00304)
+First direct measurement of the RTL digital noise floor (N1 spec >-120 dB0)
+plus clock-domain re-analysis. Net: consolidated estimate ~2.4 uV XLR ~ -128
+dB0, ~8 dB under spec. No defects found; one TB artifact explained.
+
+- **D1 waterfall** (new tb_noise_waterfall.sv + utils/noise_waterfall.py,
+  131k-word captures, -60 dBFS coherent tone AND +SILENCE, 6 Vrms unity):
+  P1-P4 clean at -157/-157/-193/-157 dBFS (SNR 82.7 dB consistent, no
+  truncation growth through interp->vox->hb3->paced).
+- **P5 dem_cmd** showed -128.6 dBFS with a 20-200 Hz wander. Long root-cause
+  hunt resolved it WITHOUT finding a bug: replaying ns_ef3_gen on the EF3's
+  own captured (u_off_r, dith_a) register streams reproduces the pedestal
+  exactly (5.31e-11 in-band, both) — same dynamical system. The wander is a
+  post-reset attractor basin, signal-dependent (absent at u=0), decaying
+  over ~21-43 ms; model ran 786k continued samples, never returns. Settled
+  orbit floor -136.3 dBFS, no spur >-149.7, median bin -174.
+- **Silence**: RTL dem_cmd -147.2 dBFS == model u=0 prediction to 0.1 dB
+  (codes 29-35, clean quarters). L1: idle ~11 dB quieter than the tone
+  orbit (limit cycles need signal) — favorable direction.
+- Forensics notes: bit-level model-vs-RTL mismatch (~46% +/-1 at tone) is
+  chaotic error-feedback divergence, statistically identical. EF3 golden
+  T1-T3 passes only WITH ns_ef3_golden.mem in the sim dir (missing file
+  loaded X -> vacuous T2 "pass" + poisoned T3 — earlier "T3 fail" was that
+  artifact). dither_l is signed[42:0] -> decode hex with v-2^43 (wrong
+  widths produce fake asymmetric dither + false pedestal).
+- **P6 artifact explained**: nw_pop has 166,749 frames vs 131,072 dem_valids
+  — TB cell_clk runs 62.5 MHz (CLK_PERIOD*40/7 from tb_e2e_sine) so
+  pace_tick=7.8125 MHz outdrains the 6.144 MHz fill -> ~21% stall frames,
+  cell_alive watchdog drops, cascode legitimately zeroes (33561 stalls,
+  deterministic, identical both runs). Real hw cell_clk=49.152 MHz,
+  fill/drain XO-locked -> no underrun. Analyzer now reports stalls and
+  checks dedup'd nonzero pops as an in-order subsequence of 6*dem_out.
+- **D2**: pn_n2b.py TREE_FS still carried the removed LMK00304 (51 fs) —
+  corrected to two LMK1C1108 levels (28 fs). Common width-jitter 85 fs ->
+  93.9 nV; per-FF 0.6 ps -> ~139 nV ~1.20 uV XLR vs 1.9 uV gate.
+  cell_clk->ff_clk on Nov-22 route: 128/128 endpoints, WNS 7.56/WHS 5.65.
+  Flagged allocation inconsistency: pn_n2b self-gate 100 nV vs the 150 nV
+  line in flicker_n6/iv_n5 — reconcile when the bench number lands.
+- **Open**: per-FF additive jitter still the #1 bench number (<=0.8 ps
+  required, 0.6 comfortable). pnr_postr8 died in physopt — re-verify
+  cell_clk->ff_clk on the next completed route (todo #12).
+- Commits: 3ee7ef3 (D1 waterfall+analyzer), 032be53 (D2 + consolidated),
+  plus this doc update.

@@ -24,7 +24,7 @@ module tb_noise_waterfall;
     localparam int N_WARM    = 300;
     localparam int N_SKIP    = N_WARM * 128;
     localparam int N_CAP_DEF = 131072; // pace/DEM words = 21.3 ms @6.144 MHz
-    int N_CAP;                         // +NCAP=<n> plusarg overrides
+    int N_CAP;                         // +SHORT plusarg -> 8192 (smoke runs)
     localparam int K_CYC     = 11;     // sine cycles over N_IN inputs
     localparam real PI       = 3.14159265358979;
     localparam real DRIVE    = 1.0e-3; // -60 dBFS (EIAJ DNR tone); 0 = silence

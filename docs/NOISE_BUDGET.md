@@ -58,7 +58,7 @@ required) and the A3/A4 cascode+RTZ measured floor (D3).
 
 | Line item | Value | Source of truth |
 |-----------|-------|-----------------|
-| Code-domain quant+dither floor | 26 nV analytic; `noise_n1.py` measures in-band SNR at −1/−60 dBFS, multi-seed | `utils/noise_n1.py` + `ns_ef3_gen.py` (integer-exact vs `noise_shaper_ef3.sv`) |
+| Code-domain quant+dither floor | 26 nV analytic; `noise_n1.py` measures in-band SNR at −1/−60 dBFS, multi-seed. Silence: constant midscale at ±0.5-LSB dither; **−147.2 dBFS at the RTL's ±1-LSB TPDF** (model, real captured dither) | `utils/noise_n1.py` + `ns_ef3_gen.py` (integer-exact vs `noise_shaper_ef3.sv`) |
 | Full-plant `.noise` (28R domain) | plant+I/V+rails 193–213 nV; ⊕jitter 150 ⊕quant 26 = **246–261 nV = 128.1–127.6 dB0** | `utils/gen_noise100.py` (docs/schematic.html noise row) |
 | Biggest plant lines | tails 144 static-ON (~125–130 at RTZ duty), OPA e_n 73, R_off 67, Qpad base shot 65 (→0 w/ MOSFET pad), THAT tails 55, steering 45, R_f 45, Rpad 43, Rg5 27 (→3 at 10 Ω) | same `.noise` gate |
 | Clock tree common jitter | ≈87 fs (√(82²+20²+20²)) | bom.md §1.1 (post-LMK00304 removal) |
@@ -107,6 +107,7 @@ just an SNR comparison — a frame slip shows as a deterministic mismatch.
 | P1–P4 | −157 / −157 / −193 / −157 dBFS, SNR 82.7 dB consistent | clean, no truncation growth |
 | P5 `dem_cmd` | −128.6 dBFS with 20–200 Hz wander **during first ~130–260k samples after stream start**; −136.3 dBFS settled, no spur >−149.7, median bin −174 | see below |
 | P6 | `pop[k+3] = 6·countones(dem_out[k])` frame-exact (count all 8 `pace_div` written at div==0) | CDC path exact |
+| P5 `dem_cmd` **silence** | **−147.2 dBFS**, codes 29–35, zero 20–200 Hz content in all quarters | matches model u=0 to 0.1 dB |
 
 **P5 pedestal — root-caused, not a defect.** Replaying `ns_ef3_gen` on the
 RTL's *own captured* `(u_off_r, dith_a)` register streams reproduces the
@@ -114,15 +115,30 @@ pedestal exactly (in-band 5.31e-11 both) — same dynamical system, not an
 arithmetic divergence. The wander is a post-reset attractor basin the EF3
 relaxes out of within ~21–43 ms; across 786k continued model samples it
 never returns (settled limit-cycle orbit, floor −136.3, 20–200 Hz energy
-7.2e-13). Bit-level model↔RTL mismatch (~46% at ±1 during tone) is chaotic
+7.2e-13). It is **signal-dependent**: at u=0 the model and RTL both idle
+clean at −147.2 dBFS from sample 0 — no basin entry without a tone.
+Bit-level model↔RTL mismatch (~46% at ±1 during tone) is chaotic
 error-feedback divergence — statistically identical. EF3 golden match
 (`tb_ns_ef3` T1–T3) passes with `ns_ef3_golden.mem` in the sim dir.
+
+**P6 stall frames are a TB clock artifact.** The TB's `cell_clk` runs at
+62.5 MHz (`CLK_PERIOD×40/7`, inherited from `tb_e2e_sine`) so `pace_tick` =
+7.8125 MHz drains the pace FIFO faster than `volumed_valid` fills it at
+6.144 MHz → ~21 % of `pace_div` wraps have no `dem_valid`; the `cell_alive`
+watchdog then drops and `cascode` legitimately zeroes (33,561 stall frames,
+deterministic, identical at tone and silence). Real hardware runs
+`cell_clk` = 49.152 MHz with fill/drain frequency-locked to the same XO —
+no underrun. The analyzer reports stalls/partials and verifies the dedup'd
+nonzero pops as an in-order subsequence of `6·dem_out` (1 boundary break).
 
 **Gate bookkeeping**: settled P5 = −136.3 dBFS ≈ 0.92 µV vs 0.75 µV
 allocation — over by ~1.6 dB on the line item, but RSS impact is ~0.03 µV
 against the −123.3 ship gate (D3 dominates). The −128.6 transient precedes
-any real unmute (boot envelope covers it). D1 verdict: **pass** — no spur
-candidate, no defect; allocation margin to be re-checked at bench A5.
+any real unmute (boot envelope covers it). **L1**: silence floor −147.2 vs
+−60 dBFS settled −136.3 — idle is ~11 dB *quieter* than the tone orbit
+(limit cycles only engage with signal), favorable direction. D1 verdict:
+**pass** — no spur candidate, no defect; allocation margin to be
+re-checked at bench A5.
 
 Probes added: `nw_dither` (dither_l at EF3 pin — verified white ±1-LSB
 TPDF), `nw_ef3in` (stage-A `u_off_r`/`dith_a`). Plusargs: `+SILENCE`,
