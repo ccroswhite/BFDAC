@@ -136,9 +136,17 @@ allocation — over by ~1.6 dB on the line item, but RSS impact is ~0.03 µV
 against the −123.3 ship gate (D3 dominates). The −128.6 transient precedes
 any real unmute (boot envelope covers it). **L1**: silence floor −147.2 vs
 −60 dBFS settled −136.3 — idle is ~11 dB *quieter* than the tone orbit
-(limit cycles only engage with signal), favorable direction. D1 verdict:
-**pass** — no spur candidate, no defect; allocation margin to be
-re-checked at bench A5.
+(limit cycles only engage with signal), favorable direction.
+
+**Orbit dependence caveat**: the settled in-band floor is chaotic — observed
+−136.3 (RTL capture), −143.9 and −146.6 (model, other realizations) on
+statistically identical input, a ~10 dB spread set by which limit-cycle
+orbit the shaper lands in (input residue content kicks it between orbits;
+the input's own 20–200 Hz content is −158 dBFS, 864× below the measured
+pedestal — wander is output-created, not passthrough). A bench AP read at
+−60 dBFS will land somewhere in that window; budget against **−136** as the
+conservative case. D1 verdict: **pass** — no spur candidate, no defect;
+allocation margin to be re-checked at bench A5.
 
 Probes added: `nw_dither` (dither_l at EF3 pin — verified white ±1-LSB
 TPDF), `nw_ef3in` (stage-A `u_off_r`/`dith_a`). Plusargs: `+SILENCE`,
