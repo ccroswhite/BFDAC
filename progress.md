@@ -6759,3 +6759,21 @@ codes (0x0-0xF) covered. Four doc bugs fixed:
   constraint is the 30-bit aperture, not the DIMM.
 - Doc fix: `IMPLEMENTATION_REVIEW.md` L403 still said "physical capacity is 8 GB"
   (ACVU13P-era) — corrected to 4 GB with the ECC-byte note.
+
+## 2026-11-24 todo #7: VAR-SOM-AM62P CPU-die face — CONFIRMED, closed
+
+- AM62Px die is on the module **top/component side** — the face shown in datasheet
+  Figure 5 (mechanical drawing, edge fingers at bottom, 4 plated mounting holes at
+  the far corners). Source: Variscite VHP-AM62P heat sink kit datasheet —
+  "attach the thermal pad on top of the AM62Px processor ... assemble the heat
+  sink on top side of the VAR-SOM-AM62P."
+- Orientation on the carrier: in a standard SODIMM-200 right-angle socket the
+  module lies parallel to the carrier, component side UP (away from carrier) —
+  die has free air / heatsink access from above; the plated mounting holes double
+  as the heatsink anchors.
+- Bonus finding (feeds the #20 host-SoM power/thermal item): the heatsink kit is
+  **VHP-AM62P** (datasheet §12.2 still says "PN: TBD"). Kit = heatsink + TG-A6200
+  thermal pad precut 20x20 mm x 2 mm (6.0 W/mK) + 4x M2x10 DIN965 screws, torque
+  ~0.113 Nm. Variscite caveat: heatsink "mainly used for CPU/GPU intensive
+  applications" — our job list (SPI master + 1 I2S lane + Ethernet) is light;
+  heatsink likely optional, evaluate at bench.
