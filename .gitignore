@@ -86,3 +86,9 @@ dfx_runtime.txt
 Thumbs.db
 Desktop.ini
 Xilinx/build/
+
+# Persona-projection sim artifacts
+Xilinx/Testbench/proj.hex
+Xilinx/Testbench/cap_*.txt
+Xilinx/Testbench/persona_args*.f
+build/voicing_sim4/

@@ -670,6 +670,7 @@ def build_from_catalog(
     emit_mem: bool,
     split_macs_override: int | None = None,
     emit_sim_hex: Path | None = None,
+    skip_audit_fail: bool = False,
 ) -> None:
     cat = json.loads(catalog_path.read_text(encoding="utf-8"))
     defaults = cat["target_defaults"]
@@ -812,6 +813,13 @@ def build_from_catalog(
 
                 metrics = audit_cascade_response(h_half, q_meas, fs_hz, rs)
                 if metrics["proto_max_image_dbc"] > max_img_limit:
+                    if skip_audit_fail:
+                        print(
+                            f"[AUDIT SKIP] {p['key']}/{flt['key']} @ {fs_hz} Hz: "
+                            f"prototype image {metrics['proto_max_image_dbc']:.2f} dBc > "
+                            f"ceiling {max_img_limit:.2f} dBc — excluded (sim geometry)"
+                        )
+                        continue
                     raise RuntimeError(
                         f"[AUDIT FAIL] {p['key']}/{flt['key']} @ {fs_hz} Hz: "
                         f"prototype image {metrics['proto_max_image_dbc']:.2f} dBc > "
@@ -1095,6 +1103,9 @@ def main() -> None:
     ap.add_argument("--emit-sim-hex", type=Path, default=None, metavar="HEX",
                     help="Also write a unified 128-bit word-addressed DDR4 image "
                          "(payload + directory) for associative-array $readmemh TBs")
+    ap.add_argument("--skip-audit-fail", action="store_true",
+                    help="Exclude persona/rate variants whose prototype image exceeds "
+                         "the ceiling instead of aborting (sim-geometry subset builds)")
     args = ap.parse_args()
 
     if args.self_test:
@@ -1122,6 +1133,7 @@ def main() -> None:
         emit_individual=args.emit_individual,
         emit_mem=args.emit_mem,
         emit_sim_hex=args.emit_sim_hex,
+        skip_audit_fail=args.skip_audit_fail,
     )
 
 
