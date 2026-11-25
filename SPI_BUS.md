@@ -76,9 +76,9 @@ Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 | 0x11 | STICKY_ERR | sticky bits below |
 | 0x12 | CTRL_STATE | last_wr_src[6], clk_source_sel[5], base_rate_sel[4], rsvd[3]=0, level[2:0] |
 | 0x13 | COEF_STATUS | bank_valid[12], mgr_busy[11], load_done[10], clk_src[9], base_rate[8], cur_bank[7:4], bank_id[3:0] |
-| 0x14 | MUTE_STATUS | i2s_err[4], switch_busy[3], rsvd[2]=0, line_mute[1], unmute[0] |
+| 0x14 | MUTE_STATUS | i2s_err[4], switch_busy[3], rsvd[2]=0, line_mute[1], rsvd[0]=0 |
 | 0x15 | CLK_STATUS | dpd_enable, ddr4_calib, clk_locked |
-| 0x16 | FILTER_LIST_STAT | video_mode[11], list_len[10:5], cur_index[4:0] |
+| 0x16 | FILTER_LIST_STAT | rsvd[11]=0, list_len[10:5], cur_index[4:0] |
 | 0x17 | FILTER_IDS | next_in_list_id[31:16], cur_filter_id[15:0] |
 | 0x18 | CAL_STATUS | cal_valid[11], cal_wr_ptr[10:2], pending[1], active_bank[0] |
 | 0x19 | CAL_RDDATA | active-bank word at CAL_RDADDR |
@@ -89,6 +89,7 @@ Reserved: 0x06 (was clk_source_sel, merged into 0x03).
 | 0x1E | CELL_TEST_R | busy[8], cfg[7:0] |
 | 0x1F | BENCH_STATUS | bench controller status word |
 | 0x20 | STREAM_STATUS | busy[0], clocks_ready[1], svalid_xmos[2], bank_valid[3], fault[4], applied_rate[7:5], req_rate[10:8], rx_trim_selected[15:11], audio_ready[16], src_sel[17], svalid_ap[18], rate_req_src2[21:19], dpd_deadline_miss[22] |
+| 0x21 | VOICING_STATUS | applied_filter_id[31:16], rsvd[15:6]=0, commit_pending[5], swap_busy[4], load_err_seen[3], applied_en[2], fid_is_sentinel[1], sh_en[0] — APPLIED set is dsp_clk truth; requested/shadow diverges while commit_pending |
 | 0x22 | STREAM_EVENT | preempt_xmos[0], preempt_ap[1], echo_mismatch[2], rate_req_src1[5:3] (informational shadow only — never authorization) |
 
 Unmapped read → 0xDEADBEEF. Frame 40-bit {R/W, addr[7], data[24], crc8}, CRC-8/0x07.

@@ -102,7 +102,7 @@
 // ---- Voicing shaper (Layer 2, Step-2 commit contract 2026-11-17) -----------
 // Shadow + atomic commit: host writes K2, K3, then VOICING_CTRL with [8]=1.
 // All fields latch in dsp_clk at ONE fir_frame_done — no k2/k3 tearing.
-// commit_pending (VOICING_STATUS[8]) blocks further voicing writes until the
+// commit_pending (VOICING_STATUS[5]) blocks further voicing writes until the
 // applied set acks; a filter_id change runs fade-out -> DDR4 bank load ->
 // apply -> fade-in. RTL holds ZERO persona/rate convention: filter_id is an
 // opaque 16-bit directory ID ({persona[6:0], filter_idx[5:0], rate[2:0]} is
