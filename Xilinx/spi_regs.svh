@@ -165,9 +165,9 @@
 //   filter_id[15:0] = {persona_id[6:0], filter_idx[5:0], stream_rate[2:0]}
 //   persona 7'd127 is RESERVED so 16'hFFFF stays out of generated space:
 //   127 personas x 64 filters x 8 rate slots.
-//   Persona names (generator order): 0 reference_bench 1 chord_wta_hf
-//   2 dcs_apodizing 3 dcs_berkeley_fast 4 msb_ladder_contour
-//   5 nagra_pure_time 6 nagra_tube_xfmr
+//   Persona names (persona_catalog.json order): 0 reference_bench
+//   1 dcs_vivaldi_apex 2 chord_quartet 3 berkeley_alpha_3p
+//   4 nagra_reference 5 msb_cascade 6 merason_montana
 
 // ---- Sticky error bits (read 0x11, W1C via write 0x16) -----------------------
 `define SPI_STICKY_SPI_CRC     0

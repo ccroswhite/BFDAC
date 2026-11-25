@@ -33,7 +33,8 @@
   "stage1b_audit": {
     "hb_taps": [63, 63, 31],
     "hb_kaiser_beta": [16.0, 16.0, 13.5],
-    "ultrasonic_band_hz": [24000.0, 68000.0]
+    "ultrasonic_band_hz": [24000.0, 68000.0],
+    "ultrasonic_band_note": "Nominal 48 kHz band edge only — bfdac_voicing_gen.py ignores this field and clamps f_img_hi to the mirrored-passband replica onset (fs_2x - 0.505*fs) per rate; replica floor is reported as replica_floor_dbc"
   },
   "personas": [
     {

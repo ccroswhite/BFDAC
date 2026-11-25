@@ -67,7 +67,7 @@ def main():
     cat = json.load(open(Path(__file__).parent / "persona_catalog.json"))
     rates = cat["rates"]
     results = {}           # split_set -> worst (dbc, case)
-    low_e_cases = []       # (case, mac, e) where e < 6 outside {72..79}
+    low_e_cases = []       # (case, mac, e) where e < 6 outside {68..79}
     for p in cat["personas"]:
         for flt in p["filters"]:
             for r in rates:
@@ -99,7 +99,7 @@ def main():
     print(f"{'split set':>10} {'worst dBc':>10}  worst-case")
     for name, (d, case, emin, e79) in results.items():
         print(f"{name:>10} {d:>10.1f}  {case} (e_min={emin}, e79={e79})")
-    print(f"\nMACs with e<6 outside 72..79 (would need split):")
+    print(f"\nMACs with e<6 outside {{68..79}} (would need split):")
     for c in low_e_cases[:20]:
         print("  ", c)
     print(f"  total: {len(low_e_cases)}")
