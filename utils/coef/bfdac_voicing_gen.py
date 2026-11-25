@@ -515,15 +515,22 @@ def audit_cascade_response(
     fs_out = fs_2x * interp_1b
 
     f_img_lo = 0.505 * sample_rate_hz
+    # Replica-safe upper edge: the mirrored passband replica occupies
+    # [fs_2x - f_img_lo, fs_2x] and its floor (~-87 dBc) is set by the fixed
+    # Stage-1B HB63/31 ROMs — identical for every persona and unaffected by
+    # fc_fs_ratio. Scanning into it flags a hardware constant as a filter
+    # defect (the 12 phantom rc=1/44.1k proto-ceiling fails — the band edge
+    # 68k sits inside the replica only for the 44.1k family).
+    replica_onset = fs_2x - f_img_lo
     if rate_shift == 0:
-        f_img_hi = 68000.0
+        f_img_hi = min(68000.0, replica_onset)
     elif rate_shift in (1, 2):
-        f_img_hi = 1.42 * sample_rate_hz
+        f_img_hi = min(1.42 * sample_rate_hz, replica_onset)
     else:
-        f_img_hi = 0.98 * sample_rate_hz
+        f_img_hi = min(0.98 * sample_rate_hz, replica_onset)
 
     df = fs_2x / float(n_fft_1a)
-    max_bin = int(math.ceil(f_img_hi / df))
+    max_bin = int(math.ceil(fs_2x / df))
     bins = np.arange(0, max_bin + 1, dtype=np.int64)
     freqs = bins.astype(np.float64) * df
 
@@ -549,12 +556,16 @@ def audit_cascade_response(
     idx_1k = int(round(1000.0 / df))
     idx_20k = int(round(20000.0 / df))
     img_mask = (freqs >= f_img_lo) & (freqs <= f_img_hi)
+    # Mirrored-replica floor (fixed 1B suppression only meaningful rs<3;
+    # at rs=3 the replica is raw and HB1's job downstream — report -inf).
+    rep_mask = (freqs >= replica_onset) & (freqs <= fs_2x) & (rate_shift < 3)
 
     eps = 1e-20
     gain_1k_db = float(20.0 * math.log10(max(float(cas_q[idx_1k]), eps)))
     gain_20k_db = float(20.0 * math.log10(max(float(cas_q[idx_20k]), eps)))
     proto_img_dbc = float(20.0 * math.log10(max(float(np.max(cas_f[img_mask])), eps)))
     q17_img_dbc = float(20.0 * math.log10(max(float(np.max(cas_q[img_mask])), eps)))
+    replica_dbc = float(20.0 * math.log10(max(float(np.max(cas_q[rep_mask])), eps))) if np.any(rep_mask) else -300.0
 
     return {
         "gain_1k_db": round(gain_1k_db, 4),
@@ -562,6 +573,7 @@ def audit_cascade_response(
         "tilt_20k_vs_1k_db": round(gain_20k_db - gain_1k_db, 4),
         "proto_max_image_dbc": round(proto_img_dbc, 2),
         "q17_max_image_dbc": round(q17_img_dbc, 2),
+        "replica_floor_dbc": round(replica_dbc, 2),
         "nonzero_half_taps": int(np.count_nonzero(q_half_int)),
     }
 
