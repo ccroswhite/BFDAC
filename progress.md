@@ -6713,3 +6713,18 @@ connect, but a LABEL anchored mid-wire DOES bind - the classic silent merge.
   Rg6 stoppers; xcheck MERGE table already encodes it). 15 prereg
   candidates = scanner artifacts (sub-grid label offsets), netlist clean.
 * 0 floating labels. xcheck PASS, pre-existing annotation warning only.
+
+## 2026-11-24 todo #16 (partial): J92x Phoenix land VERIFIED vs datasheet
+Part: MSTB 2,5/x-GF-5,08 horizontal (1776524 4-pos, 1776537 5-pos;
+user ruled 2026-11-20).  KiCad stock lands used:
+PhoenixContact_MSTB_2,5_{4,5}-GF-5,08_1x0{4,5}_P5.08mm_Horizontal_
+ThreadedFlange_MountHole.
+Phoenix datasheet/drilling diagram vs land:
+  pin 1x1 mm -> drill 1.4 mm (Phoenix spec, exact match)
+  pitch 5.08, span a = 15.24 (4pos) / 20.32 (5pos)
+  mount holes NPTH 2.4 mm at +/-5.08 outboard of end pins, +2.5 mm
+    plug-side offset = Phoenix drilling diagram; fits ISO 1481/7049
+    ST 2,2x6,5 self-tappers (0.3 Nm)
+  pad 2.08x3.6 oval -> 0.34 mm annular ring (Phoenix-gen land)
+Process note for the build doc: Phoenix says flange screws go in
+BEFORE wave soldering.  STILL OPEN (bench): window-trip verify.
