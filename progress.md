@@ -6893,3 +6893,43 @@ capture-offset in i2s_master_ingress on BOTH source paths") is in place:
 
 REMAINING = bench calibration only: measure the real per-path latency at
 A5 and set the two trim values. No RTL work needed.
+
+## 2026-11-24 SCOPE RULING (user): mains power supply OUT OF SCOPE for now
+
+User direction: "the real questions are based around the RTL, retiming,
+cascode, IV and V outputs, leaving the power supplies perfect models since
+these will probably not be the dominant factor."
+
+- Window-trip verify (#16 second half): closed as analytic-only. The sense
+  ladder was fully decoded from the netlist: HVP (unfiltered rectified
+  mains, no bulk cap) -> R811/R812/R813 (3x330k) -> SENSE -> R814 (12k) ->
+  HVN; C811 100nF on SENSE => tau ~0.77 ms << half-line, so trips key on the
+  |sine| PEAK. U812 trips when LO_R ~ SENSE > 1.24 V (window bottom);
+  U813 trips when HI_R = 0.545*SENSE > 1.24 V and drags LO_R below U812's
+  threshold (window top). Thevenin of the ladder at SENSE = 990k into
+  12k||22k = 7.76k => SENSE = 7.8 mV/V of HVP peak.
+  Resulting nominal window: **~113 Vac rms bottom, ~207 Vac rms top**
+  (HVP peaks ~160 V / ~292 V). TLV431A +-1 % Vref moves each edge ~+-2 V.
+  Notes: bottom edge gives parallel-select down to ~103 Vac-equivalent
+  headroom below the 115 V -10 % corner (margin); the 207 V top edge sits
+  essentially ON the 230 V -10 % corner (207 V) - a low-tolerance 230 V
+  service selects parallel and over-volts the secondaries by ~10 %. Flag
+  for review if universal input matters; bench verify parked with the rest
+  of the supply.
+- Also de-scoped: Tub-1 ACENTRY+PREREG layout, transformers + SMPS,
+  LT3045/3094 thermal checks. All mains-domain VERIFYs parked.
+
+## 2026-11-24 17(i) leftovers launched: cb2m100 + padmis (detached)
+
+bom CASB2/pad rows asked for two variants that were written but never run:
+- `126s_cb2m100`: CASB2_P +100 mV (realistic M6p/M6m Vth spread under one
+  servoed casb2 node; mid_m unservoed).
+- `126s_padmis`: Rpad_m 286->280 R (~+1 mA p/m padding mismatch = Mpad
+  Vth spread under one gate node).
+Launched via sweep_refs.ps1 -Only (log: sweep_cb2m100.log). Gate-126
+recipe: M 16384 / BIN 3 (1.125 kHz), DCOFF 0.5, MIDCODE 32.5, kernel
+cosim125c3jw3, baseline = 126s (-1 dBFS): HD2 -128.5 / HD3 -134.6 /
+HD4 -132.3 / HD8 -150.9, per-harmonic floor -130.8 dBc.
+First launch attempt silently no-oped: -Only arrived as one string
+"cb2m100,padmis" and `$Only -contains` produced an empty name list; fixed
+by passing the list through -Command.
