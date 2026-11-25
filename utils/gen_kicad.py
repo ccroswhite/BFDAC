@@ -2957,7 +2957,7 @@ def main():
               "S": G("USB_MUX_SEL"), "OE_N": GNDAP,
               "VCC": G("VAP_IO"), "GND": GNDAP}, **k)
     k, v = ap_("rpu4k7")
-    ap.place("Device:R", "R860", v, 195, 40, {"1": G("USB_MUX_SEL"), "2": GNDAP}, **k)
+    ap.place("Device:R", "R860", v, 190, 40, {"1": G("USB_MUX_SEL"), "2": GNDAP}, **k)
     k, v = cp_("c100n")
     ap.place("Device:C", "C864", v, 195, 55, {"1": G("VAP_IO"), "2": GNDAP}, **k)
     # --- U851 XU316-QF60B, three units
@@ -4034,7 +4034,7 @@ def main():
     # ~150Vac -> CLAMPS LO_R (U_lo's REF) -> U_lo dies -> LED off.  Opto ON only inside the band.
     k, v = ac_("tlv431")
     ac.place("bfdac:TLV431", "U812", v, 520, 190, {"K": ("L", "LO_N"), "REF": ("L", "LO_R"), "A": ("L", "HVN")}, **k)
-    ac.place("bfdac:TLV431", "U813", v, 545, 190, {"K": ("L", "LO_R"), "REF": ("L", "HI_R"), "A": ("L", "HVN")}, **k)
+    ac.place("bfdac:TLV431", "U813", v, 552, 190, {"K": ("L", "LO_R"), "REF": ("L", "HI_R"), "A": ("L", "HVN")}, **k)
     # taps: LO_R = SENSE via 3.3k (+clamp); HI_R = SENSE tap 10k/12k ~0.55 -> trips ~135-150Vac VERIFY
     k, v = ac_("rmon", "3.3k", "3301")
     ac.place("Device:R", "R822", v, 520, 188, {"1": ("L", "SENSE"), "2": ("L", "LO_R")}, **k)

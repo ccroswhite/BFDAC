@@ -7,6 +7,6 @@
   (fp_rect (start -8.50 -10.00) (end 8.50 10.00) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab"))
   (fp_rect (start -8.80 -10.30) (end 8.80 10.30) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd"))
   (fp_text user "${REFERENCE}" (at 0 0 0) (layer "F.Fab") (effects (font (size 1.27 1.27))))
-  (pad "1" thru_hole circle (at -5.00 0.00) (size 2.80 2.80) (drill 1.30) (layers "*.Cu" "*.Mask") (uuid "c5b1677d-6bcb-49c3-a71b-8b0e39dea464"))
-  (pad "2" thru_hole circle (at 5.00 0.00) (size 2.80 2.80) (drill 1.30) (layers "*.Cu" "*.Mask") (uuid "31570fb2-7c80-4129-96ae-46b42703ba08"))
+  (pad "1" thru_hole circle (at -5.00 0.00) (size 2.80 2.80) (drill 1.30) (layers "*.Cu" "*.Mask") (uuid "1e417398-4f8e-42df-aa23-d5e189d2c83b"))
+  (pad "2" thru_hole circle (at 5.00 0.00) (size 2.80 2.80) (drill 1.30) (layers "*.Cu" "*.Mask") (uuid "13711973-c52f-41a9-8b1b-8372951d7e66"))
 )

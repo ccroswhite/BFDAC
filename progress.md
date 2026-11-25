@@ -6675,3 +6675,41 @@ dB0, ~8 dB under spec. No defects found; one TB artifact explained.
   cell_clk->ff_clk on the next completed route (todo #12).
 - Commits: 3ee7ef3 (D1 waterfall+analyzer), 032be53 (D2 + consolidated),
   plus this doc update.
+
+## 2026-11-24 todo #14 review: IV/V stages — "why no MOSFETs?" — closed, no action
+Device audit: MOSFETs ARE used where their physics wins (M5/M6 Si1555DL
+cascodes — high-Z gate, Vgs exploited by the casb2 servo; Mpad — kills the
+65 nV base shot line). The IV/V path itself is a pure op-amp TIA
+(OPA1612+BUF634A, Rf 270/Cf 1.3n, no discrete V-stage — superseded §5/§6),
+so there is no position for a discrete MOSFET; the only device-type choice
+is the amp input pair: BJT-input OPA1612 (1.1 nV) over FET (OPA1656 4.5 nV)
+because e_n dominates at the summing node. FET-input IS used where i_n
+dominates (casb2 servo OPA1656, 1M sense). BJTs remain in cells/tails/refs
+because matched-NPN arrays (DMMT5551 <1 mV, THAT300) beat MOSFET Vth
+matching by 10-50x, and the V_eb compensation scheme needs junction physics.
+
+## 2026-11-24 todo #15 schematic network-overlap review: TWO REAL MERGES FOUND + FIXED
+New tool utils/sch_netscan.py (sexp union-find, wires+labels per sheet).
+Cross-checked every candidate against the kicad-cli netlist (ground truth).
+KiCad semantics verified empirically: wire<->wire joins at shared endpoints
+or junction dots only; a wire ENDPOINT on another wire's interior does NOT
+connect, but a LABEL anchored mid-wire DOES bind - the classic silent merge.
+
+* BUG 1 (ap.kicad_sch, USB mux, drawn 2026-11-20): U857 TS3USB30E S-pull-down
+  R860 at x=195 put its pin-1 stub label USB_MUX_SEL anchored at
+  (195.58,33.02) - ON the pin-4 (XMOS_USB_DP) stub. Label bridged DP into
+  SEL: netlist had U851.29 (XU316 USB_DP pad!) + U857.4 inside USB_MUX_SEL,
+  no XMOS_USB_DP net. XMOS D+ was shorted to the mux select = dead USB.
+  FIX: R860 moved x 195->190 (label floats free; G() joins by name anyway).
+  Verify: XMOS_USB_DP = {U851.29, U857.4}; SEL = {J855.68, R860.1, U857.1}.
+* BUG 2 (acentry.kicad_sch, mains sense): U812/U813 TLV431s placed exactly
+  25.4 mm apart => U812.K pin and U813.A pin COINCIDE at (532.13,189.23):
+  pin-on-pin short merged LO_N into HVN. LO_N = opto LED cathode -> U812 K
+  (the ~90 Vac low-line window switch). Merged => LED cathode hard-tied to
+  the aux return = opto flag stuck = wrong 115/230 tap select possible.
+  FIX: U813 moved x 545->552. Verify: LO_N = {U812.1, U814.2} separate;
+  HVN keeps rectifier/anodes only. Both U812.1 and U814.2 off HVN.
+* refs CASB2_M/P merge = INTENTIONAL (bom 9 ruling: one servo feeds both
+  Rg6 stoppers; xcheck MERGE table already encodes it). 15 prereg
+  candidates = scanner artifacts (sub-grid label offsets), netlist clean.
+* 0 floating labels. xcheck PASS, pre-existing annotation warning only.
