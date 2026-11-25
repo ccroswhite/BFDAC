@@ -5,9 +5,9 @@ bfdac_voicing_gen.py — Standalone Stage 1A Coefficient, DDR4 Image & Persona G
 Self-contained replacement and superset of stage1a_coef_packer.py (requires only numpy):
   - Stage 1A (x2) symmetric half-curve synthesis + zero-phase Persona contours
   - Exact-DC 18-bit signed Q1.17 quantization (2^41 full-scale DC on Phase 0 & 1)
-  - RTL-exact [NUM_MACS, 16*TPP] URAM mapping & 7x18b per 128b AXI4 beat packing[cite: 1]
-  - 32-byte DDR4 directory builder (schema=3, rate_shift=0..3)[cite: 1]
-  - Multirate FFT auditor cascading Stage 1A with Stage 1B [63, 63, 31] Q1.17 ROMs[cite: 1]
+  - RTL-exact [NUM_MACS, 16*TPP] URAM mapping & 7x18b per 128b AXI4 beat packing
+  - 32-byte DDR4 directory builder (schema=3/4, rate_shift=0..3)
+  - Multirate FFT auditor cascading Stage 1A with Stage 1B [63, 63, 31] Q1.17 ROMs
 """
 
 from __future__ import annotations
@@ -494,6 +494,26 @@ def write_mem_hex(uram_table: np.ndarray, path: Path) -> None:
             f.write(f"{val:05x}\n")
 
 
+def write_sim_ddr4_hex(
+    payload_bytes: bytes,
+    dir_bytes: bytes,
+    ddr4_base_addr: int,
+    dir_base_addr: int,
+    hex_path: Path,
+) -> None:
+    """Writes a unified word-addressed DDR4 image (32-hex-digit 128-bit AXI4
+    beats with @word-address section headers) for $readmemh associative-array
+    TBs (tb_dsp_voicing_e2e). Byte 0 of each beat lands in m_axi_rdata[7:0]."""
+    assert len(payload_bytes) % 16 == 0 and len(dir_bytes) % 16 == 0
+    hex_path.parent.mkdir(parents=True, exist_ok=True)
+    with hex_path.open("w", encoding="ascii") as f:
+        for base_byte, blob in ((ddr4_base_addr, payload_bytes), (dir_base_addr, dir_bytes)):
+            f.write(f"@{base_byte >> 4:08x}\n")
+            beats = np.frombuffer(blob, dtype="<u8").reshape(-1, 2)
+            for lo64, hi64 in beats:
+                f.write(f"{int(hi64):016x}{int(lo64):016x}\n")
+
+
 def audit_cascade_response(
     h_half_float: np.ndarray,
     q_half_int: np.ndarray,
@@ -649,12 +669,14 @@ def build_from_catalog(
     emit_individual: bool,
     emit_mem: bool,
     split_macs_override: int | None = None,
+    emit_sim_hex: Path | None = None,
 ) -> None:
     cat = json.loads(catalog_path.read_text(encoding="utf-8"))
     defaults = cat["target_defaults"]
     num_macs = num_macs_override if num_macs_override is not None else int(defaults["num_macs"])
     tpp = tpp_override if tpp_override is not None else int(defaults["taps_per_phase"])
-    packing = int(defaults.get("packing", 1))
+    packing = int(defaults.get("packing", 2))   # Schema-4 is the hw contract —
+                                               # dir_packing_ok rejects schema!=4
     split_macs = (split_macs_override if split_macs_override is not None
                   else int(defaults.get("split_macs", 0))) if packing == 2 else 0
     if packing == 2:
@@ -673,6 +695,7 @@ def build_from_catalog(
             f"ddr4_base_addr (0x{ddr4_base:X}) must be 4 KiB aligned — "
             "loader bursts are 256-beat INCR and must not cross page boundaries"
         )
+    dir_base = int(str(defaults.get("dir_base_addr", "0x3FFF0000")), 0)
     dir_max = int(defaults.get("dir_max_entries", 1024))
 
     rate_map = {int(r["rate_code"]): r for r in cat["rates"]}
@@ -695,9 +718,10 @@ def build_from_catalog(
         f"({(32 if sym_fold else 16) * num_macs * tpp:,} eff 16x taps @ 1x) | "
         f"rates={[r['sample_rate_hz'] for r in selected_rates]}"
     )
+    quant_hdr = "QuantImg" if packing == 2 else "Q17Img"
     print(
         f"{'FID':<8} {'Persona / Filter':<38} {'Fs(kHz)':>7} "
-        f"{'20kTilt':>8} {'ProtoImg':>9} {'Q17Img':>8} {'Limit':>8}"
+        f"{'20kTilt':>8} {'ProtoImg':>9} {quant_hdr:>8} {'Limit':>8}"
     )
     print("-" * 92)
 
@@ -794,12 +818,12 @@ def build_from_catalog(
                         f"ceiling {max_img_limit:.2f} dBc"
                     )
                 if metrics["q17_max_image_dbc"] > max_img_limit:
-                    # Hardware response is the QUANTIZED one — warn when Q1.17
-                    # tail underflow pushes image rejection past the proto
-                    # ceiling (candidate for --shape-q17 or a longer tail).
+                    # Hardware response is the QUANTIZED one — warn when tail
+                    # underflow pushes image rejection past the proto ceiling
+                    # (candidate for --shape-q17 or a longer tail).
                     print(
                         f"[AUDIT WARN] {p['key']}/{flt['key']} @ {fs_hz} Hz: "
-                        f"q17 image {metrics['q17_max_image_dbc']:.2f} dBc exceeds "
+                        f"quantized image {metrics['q17_max_image_dbc']:.2f} dBc exceeds "
                         f"ceiling {max_img_limit:.2f} dBc (proto "
                         f"{metrics['proto_max_image_dbc']:.2f} dBc)"
                     )
@@ -870,10 +894,18 @@ def build_from_catalog(
         )
     dir_entries.append(b"\x00" * 32)
 
+    if cur_ddr4_addr > dir_base:
+        raise RuntimeError(
+            f"Payload footprint top 0x{cur_ddr4_addr:X} overruns dir_base_addr "
+            f"0x{dir_base:X} — grow dir_base_addr or shrink the catalog"
+        )
+
     payload_bytes_all = b"".join(payload_chunks)
     dir_bytes_all = b"".join(dir_entries)
     (out_dir / "ddr4_coef_payload.bin").write_bytes(payload_bytes_all)
     (out_dir / "ddr4_directory.bin").write_bytes(dir_bytes_all)
+    if emit_sim_hex is not None:
+        write_sim_ddr4_hex(payload_bytes_all, dir_bytes_all, ddr4_base, dir_base, emit_sim_hex)
 
     manifest_doc = {
         "num_macs": num_macs,
@@ -993,18 +1025,24 @@ def run_self_test(catalog_path: Path | None = None) -> None:
 
     cat_file = catalog_path if (catalog_path and catalog_path.exists()) else Path("persona_catalog.json")
     if cat_file.exists():
-        print(f"[SELF-TEST 3/3] Auditing all Personas & Filters in {cat_file} @ 48 kHz...")
         cat = json.loads(cat_file.read_text(encoding="utf-8"))
+        td = cat.get("target_defaults", {})
+        st_nm = int(td.get("num_macs", 128))
+        st_tpp = int(td.get("taps_per_phase", 256))
+        st_packing = int(td.get("packing", 2))
+        st_sm = int(td.get("split_macs", 12)) if st_packing == 2 else 0
+        print(f"[SELF-TEST 3/3] Auditing all Personas & Filters in {cat_file} @ 48 kHz "
+              f"(catalog defaults: NUM_MACS={st_nm}, packing={st_packing}, split={st_sm})...")
         checked = 0
-        q17_over = 0
+        quant_over = 0
         for p in cat["personas"]:
             pid = int(p["persona_id"])
             for flt in p["filters"]:
                 fidx = int(flt["filter_idx"])
                 _ = encode_filter_id(pid, fidx, 0)
                 h = design_persona_half_prototype(
-                    num_macs=128,
-                    taps_per_phase=256,
+                    num_macs=st_nm,
+                    taps_per_phase=st_tpp,
                     rate_shift=0,
                     sample_rate_hz=48_000.0,
                     window=str(flt["window"]),
@@ -1017,21 +1055,24 @@ def run_self_test(catalog_path: Path | None = None) -> None:
                     hf_roll_hz=flt.get("hf_roll_hz"),
                     extra_hf_db_20k=float(flt.get("extra_hf_db_20k", 0.0)),
                 )
-                q = quantize_q17_exact_dc(h, sym_fold=True)
+                if st_packing == 2:
+                    _, _, q = quantize_hybrid_schema4(h, st_nm, 8 * st_tpp, st_sm)
+                else:
+                    q = quantize_q17_exact_dc(h, sym_fold=True)
                 m = audit_cascade_response(h, q, 48_000.0, rate_shift=0)
                 assert m["proto_max_image_dbc"] <= float(flt["max_image_dbc"]), (
                     f"{p['key']}/{flt['key']} failed ceiling: {m['proto_max_image_dbc']} > {flt['max_image_dbc']}"
                 )
                 if m["q17_max_image_dbc"] > float(flt["max_image_dbc"]):
-                    q17_over += 1
+                    quant_over += 1
                     print(
-                        f"  [WARN] {p['key']}/{flt['key']}: q17 image "
+                        f"  [WARN] {p['key']}/{flt['key']}: quantized image "
                         f"{m['q17_max_image_dbc']} > ceiling {flt['max_image_dbc']} "
                         f"(proto {m['proto_max_image_dbc']})"
                     )
                 checked += 1
         print(f"  -> Audited {checked} filters across {len(cat['personas'])} Personas: 0 ceiling violations"
-              + (f" ({q17_over} q17-level warnings)" if q17_over else ""))
+              + (f" ({quant_over} quantized-level warnings)" if quant_over else ""))
     else:
         print("[SELF-TEST 3/3] (persona_catalog.json not found in cwd; skipped full catalog sweep)")
 
@@ -1051,6 +1092,9 @@ def main() -> None:
     ap.add_argument("--shape-q17", action="store_true", help="Apply 1st-order Nyquist-zero error feedback on Q1.17 taps")
     ap.add_argument("--emit-individual", action="store_true", help="Also write individual per-bank .bin files")
     ap.add_argument("--emit-mem", action="store_true", help="Also write $readmemh .mem files for xsim")
+    ap.add_argument("--emit-sim-hex", type=Path, default=None, metavar="HEX",
+                    help="Also write a unified 128-bit word-addressed DDR4 image "
+                         "(payload + directory) for associative-array $readmemh TBs")
     args = ap.parse_args()
 
     if args.self_test:
@@ -1077,6 +1121,7 @@ def main() -> None:
         shape_q17=args.shape_q17,
         emit_individual=args.emit_individual,
         emit_mem=args.emit_mem,
+        emit_sim_hex=args.emit_sim_hex,
     )
 
 
