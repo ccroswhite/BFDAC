@@ -34,14 +34,25 @@ part was vetoed for ~140 mW/cell and is the documented fallback only).
 | D4 I/V+diff V | XLR pins | ≤−130 dBFS (~1.4–1.9 µV) | R_f Johnson, I/V op-amp i_n·R_f + e_n noise-gain, rail PSRR |
 | **RSS** | XLR | **≤−123.3 dBFS (4.1 µV)** | clears −120 by 3.3 dB |
 
+**Current best estimate** (measured/predicted, not allocations): D1 0.92 µV
+settled ⊕ D2 ~1.20 µV @0.6 ps FF ⊕ D3+D4 plant ~1.66–1.83 µV → **RSS ≈ 2.4 µV
+≈ −128 dB0** — ~8 dB under spec, ~2.4 dB under the −123.3 ship gate. The two
+bench-open numbers that can move this: per-FF additive jitter (D2, ≤0.8 ps
+required) and the A3/A4 cascode+RTZ measured floor (D3).
+
 ### D2 pass criteria (split — do not conflate)
 
 - **Common path** (XO + fanout to LMK leaf): integrated broadband jitter
-  <150 fs rms. Tree estimate ≈87–100 fs (bom §1.1).
+  <150 fs rms. `pn_n2b.py` re-run post-LMK00304-removal: **85 fs width-jitter
+  → 93.9 nV** (XO 81 ⊕ tree 28). PASS with margin.
 - **Per-FF additive** (each of 128× LVC1G74, independent per cell → enters at
   0.155× common-path sensitivity = 171 nV/ps): ≤0.8 ps rms required, ≤0.6 ps
   comfortable (bom item 213 / open item 10 — **the #1 unmeasured number in
-  the budget; bench-verify gate**).
+  the budget; bench-verify gate**). At 0.6 ps the D2 total is ≈1.20 µV XLR
+  vs the 1.9 µV gate; the constraint binds the 245 nV internal stack, not
+  the domain gate. Note: `pn_n2b` uses a 100 nV jitter-line self-gate while
+  `flicker_n6.py`/`iv_n5.py` carry the line at 150 nV — reconcile the
+  allocation when the bench number lands.
 
 ## 3. Measured/simulated line items (provenance)
 
@@ -56,6 +67,8 @@ part was vetoed for ~140 mW/cell and is the documented fallback only).
 | RTL D1 waterfall | P1–P4 −157/−157/−193/−157 dBFS; P5 dem_cmd **−136.3 settled** (−128.6 during post-reset wander); P6 popcount == 6·dem_cmd frame-exact | `tb_noise_waterfall` + `utils/noise_waterfall.py`, 131k-word capture @ −60 dBFS |
 | HB3 chain SNDR | 163.7 dB (e2e, bit-identical across REVIEW-10/11) | `tb_e2e_sine` + `e2e_final_fft.py` |
 | LDO cascade | TPS7A4501→LT3041 analytical stack | `utils/ldo_cascade_noise.py` + docs/LDO_CASCADE_NOISE.md |
+| D2 clock path jitter line | common width-jitter 85 fs (XO 81 ⊕ tree 28) → **93.9 nV**; per-FF 0.6 ps → 102.5 nV → total ≈139 nV ≈ **1.20 µV XLR** vs 1.9 µV gate; 0.8 ps → 166 nV ≈ 1.42 µV | `utils/pn_n2b.py` (tree corrected post-LMK00304 removal 2026-09-28), N2 cosim sensitivity 1.1 µV/ps, FF ratio 0.155 (`jitter_n2c.py` gate 98) |
+| D2 `cell_clk→ff_clk` timing | 128/128 endpoints met, WNS 7.56 / WHS 5.65 ns | `build/5m/post_route_timing_summary.rpt` (Nov-22 baseline; pnr_postr8 died in physopt — re-verify next route) |
 
 ## 4. Measurement methodology (shared)
 
