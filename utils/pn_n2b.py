@@ -20,7 +20,7 @@ F0 = 49.152e6
 TW = 6 * (162.7604e-9 / 8)
 FNYQ = F0 / 2
 SENS_UV_PER_PS = 1.1            # N2 slope, in-band, -1 dBFS, jitter COMMON to all cells
-BUDGET_NV = 100.0               # jitter line allocation of the 245 nV budget
+BUDGET_NV = 150.0               # jitter line allocation (flicker_n6/iv_n5 stack: 150 nV of the 245 nV budget)
 # common-path additive (bom.md s1, datasheet-verified R30; LMK00304 mux
 # REMOVED 2026-09-28, user-ratified option 2 — XO enables do the select):
 TREE_FS = {"LMK1C1108 level 1": 20.0, "LMK1C1108 level 2": 20.0}

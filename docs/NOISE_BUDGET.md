@@ -46,13 +46,14 @@ required) and the A3/A4 cascode+RTZ measured floor (D3).
   <150 fs rms. `pn_n2b.py` re-run post-LMK00304-removal: **85 fs width-jitter
   → 93.9 nV** (XO 81 ⊕ tree 28). PASS with margin.
 - **Per-FF additive** (each of 128× LVC1G74, independent per cell → enters at
-  0.155× common-path sensitivity = 171 nV/ps): ≤0.8 ps rms required, ≤0.6 ps
-  comfortable (bom item 213 / open item 10 — **the #1 unmeasured number in
-  the budget; bench-verify gate**). At 0.6 ps the D2 total is ≈1.20 µV XLR
-  vs the 1.9 µV gate; the constraint binds the 245 nV internal stack, not
-  the domain gate. Note: `pn_n2b` uses a 100 nV jitter-line self-gate while
-  `flicker_n6.py`/`iv_n5.py` carry the line at 150 nV — reconcile the
-  allocation when the bench number lands.
+  0.155× common-path sensitivity = 171 nV/ps): **≤0.68 ps rms** holds the
+  ratified 150 nV jitter line (`flicker_n6`/`iv_n5` stack) — 0.6 ps → 139 nV
+  PASS, 0.8 ps → 166 nV exceeds it. bom item 213's "0.8 required" was derived
+  against a looser criterion; the 0.6 ps "comfortable" figure stands.
+  (`pn_n2b` self-gate corrected 100→150 nV 2026-11-24.) Still **the #1
+  unmeasured number in the budget; bench-verify gate**. At 0.6 ps the D2
+  total is ≈1.20 µV XLR vs the 1.9 µV gate; the constraint binds the 245 nV
+  internal stack, not the domain gate.
 
 ## 3. Measured/simulated line items (provenance)
 
