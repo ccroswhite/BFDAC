@@ -400,7 +400,7 @@ Clock-wide false paths exist between control and DSP clocks. Later per-bus max-d
 6. [coef_bank_manager](../Xilinx/coef_bank_manager.sv) swaps the bank on successful completion. A failed lookup/load retains the previous active bank.
 7. `bank_valid` starts the boot gain envelope. Host volume still resets to zero, and XLR unmute is separately commanded/interlocked.
 
-Two DDR implementations define the same module name: [dac_ddr4_if.sv](../Xilinx/dac_ddr4_if.sv) is the simulation stub; [dac_ddr4_if_mig.sv](../Xilinx/dac_ddr4_if_mig.sv) is the real MIG wrapper. Select exactly one. The SoM memory interface uses 64 DQ, not all five physical x16 devices. The described physical capacity is 8 GB, while the exposed 30-bit byte-addressed AXI interface is a **1 GB window**. Do not confuse physical capacity with the implemented address space.
+Two DDR implementations define the same module name: [dac_ddr4_if.sv](../Xilinx/dac_ddr4_if.sv) is the simulation stub; [dac_ddr4_if_mig.sv](../Xilinx/dac_ddr4_if_mig.sv) is the real MIG wrapper. Select exactly one. The SoM memory interface uses 64 DQ, not all five physical x16 devices. The described physical capacity is 4 GB (5 × 1 GB on the ACKU15S; the fifth x16 device is the unused ECC byte — 80-bit non-ECC is unsupported, option (a) ruled 2026-11-14), while the exposed 30-bit byte-addressed AXI interface is a **1 GB window**. Do not confuse physical capacity with the implemented address space.
 
 Directory base is `0x3FFF0000`, with 32-byte entries and a bounded scan. Stored coefficient layouts support either one signed 18-bit value in a 32-bit word or seven 18-bit values in each 128-bit beat. Names/UI strings remain AP-side. The 10M folded-FIR payload/phase policy is still prospective.
 

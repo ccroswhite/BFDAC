@@ -6728,3 +6728,34 @@ Phoenix datasheet/drilling diagram vs land:
   pad 2.08x3.6 oval -> 0.34 mm annular ring (Phoenix-gen land)
 Process note for the build doc: Phoenix says flange screws go in
 BEFORE wave soldering.  STILL OPEN (bench): window-trip verify.
+
+## 2026-11-24 todo #17: SPI status/error register doc audit — closed (commit 757b6f6)
+
+Verified every SPI read register in `spi_regs.svh` against `dac_ctrl_plane` `reg_read()`
+packing and `SPI_BUS.md`: all 18 addresses (0x10-0x22) and all 16 `SPI_ERR_*` reason
+codes (0x0-0xF) covered. Four doc bugs fixed:
+- `SPI_BUS.md` was missing the entire 0x21 `VOICING_STATUS` row (table jumped
+  0x20 -> 0x22). Added: `applied_filter_id[31:16]`, `commit_pending[5]`,
+  `swap_busy[4]`, `load_err_seen[3]`, `applied_en[2]`, `fid_is_sentinel[1]`, `sh_en[0]`.
+- `MUTE_STATUS[0]`: doc listed `unmute` — RTL hard-0, retired 2026-11-15.
+- `FILTER_LIST_STAT[11]`: doc listed `video_mode` — RTL rsvd-0, removed 2026-11-15.
+- `spi_regs.svh` header comment said `commit_pending = VOICING_STATUS[8]` — that's
+  the `VOICING_CTRL` commit bit; the status bit is [5].
+
+## 2026-11-24 todo #8: coefficient store @ 64-bit DDR4, 8GB -> 4GB reassessed — FITS
+
+- SoM reality (ACKU15S manual + `gen_ddr4_mig.tcl`): 5 x Nanya NT5AD512M16C4-HR
+  (1 GB each) on an 80-bit bus; MIG ruled 64-bit non-ECC 2026-11-14 (option a — the
+  fifth x16 is the ECC byte, unused since 80-bit non-ECC is unsupported).
+  **Usable = 4 GB.**
+- Exposed aperture: 30-bit AXI = **1 GB window** — the RTL can never address more
+  than 1 GB regardless of physical size, so the 8GB->4GB physical drop is free.
+- Need: filter banks are staged on demand via `coef_bank_manager` (only current +
+  preload resident, ~tens of MB); even full-library residency is 90 x 4.19 MB =
+  377 MB at the 1M-tap release geometry — inside the 1 GB window with 2.7x margin.
+  Worst-case 10M taps full residency = 90 x 21 MB = 1.9 GB would fit 4 GB physical
+  (but exceeds the 1 GB window — a window/aperture limit, not a capacity limit).
+- Verdict: **4 GB is >=4x the exposed window; no functional loss.** The binding
+  constraint is the 30-bit aperture, not the DIMM.
+- Doc fix: `IMPLEMENTATION_REVIEW.md` L403 still said "physical capacity is 8 GB"
+  (ACVU13P-era) — corrected to 4 GB with the ECC-byte note.
