@@ -6794,3 +6794,31 @@ MPNs, descriptions) and wrote a per-connector datum register covering:
   2026-11-24; plug exits parallel to board -> keep near edges.
 - Open items listed: Alinx STEP, Variscite standoff XY, J852/J856 edge offsets,
   J851 proposed MPN.
+
+## 2026-11-24 todo #13: ANALOG VERIFY all-zero cascode -> 0V XLR — DISPROVEN, it's FULL-SCALE
+
+Measured on `bfdac_cosim132` (full P5 plant, all 64 sel sources held constant,
+`.meas` over the op-point transient):
+
+| cascode state | diffout (XLR-domain) | out_p / out_m | col_p / col_m |
+|---|---|---|---|
+| all-zero (all cells -> bus_minus) | **+1.044 V** | -4.42 / +5.65 V | 4.000 / 4.000 V |
+| all-ones (all cells -> bus_plus)  | **-0.888 V** | +5.82 / -2.74 V | 3.99 / 4.01 V |
+| midscale ~32 (silence, per D1)    | ~0 V | centred | 4.0 V |
+
+- cascode bit = STEERING (cell tail -> bus_plus or bus_minus); there is no
+  "cell off" — every tail always feeds one of the two TIA sum nodes. All-zero
+  is therefore a full-scale output state (+1.04 V at the XLR-domain node,
+  ~+10 V across the TIA outputs, inside amp swing), NOT silence.
+- Consequence: any fault path that drives all-zeros to the cascode pins with
+  the relay closed = full-scale blip. Coverage check: (a) `staging` resets to
+  '0 at sys_rst_n -> all-zero at boot, but relay is open until boot_ok +
+  commanded unmute -> hidden; (b) `force_zero` live-mute drives FIR input to 0
+  -> dem emits midscale codes (~32) -> ~0 V, correct; (c) `cell_alive` gate
+  drops cascode to 0 on pace-underrun frames — a full-scale pulse IF it could
+  reach the pins with the relay closed; in hardware the pace FIFO is XO-locked
+  (underrun impossible, D1 session finding) and a genuine stream loss fires the
+  watchdog -> relay drops anyway. TB stall frames are a clock-ratio artifact.
+- The verify item as titled is therefore resolved: expectation was wrong, the
+  measured behaviour is understood, and every live-state path that can emit
+  all-zeros is already covered by the relay/watchdog. No design change needed.
