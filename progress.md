@@ -6822,3 +6822,57 @@ Measured on `bfdac_cosim132` (full P5 plant, all 64 sel sources held constant,
 - The verify item as titled is therefore resolved: expectation was wrong, the
   measured behaviour is understood, and every live-state path that can emit
   all-zeros is already covered by the relay/watchdog. No design change needed.
+
+## 2026-11-24 todo #23 (partial): repository cleanup — superseded part data + strays
+
+Removed (all recoverable from git history):
+- `datasheets/try.pdf` — a Wayback Machine bot-block HTML page saved as .pdf
+  (627 B of error text, never a real document).
+- `datasheets/ACVU13.1.stp` (35 MB) + `ACVU13_BOT.dxf` (1.7 MB) — old
+  ACVU13P SoM mechanical data; SoM is now the ACKU15S (per bom, the old
+  mapping lives in git history). Largest file in the repo by far.
+- `Alinx/ACVU13P*` pin-assignment CSVs (6) — same superseded SoM.
+- `datasheets/TI_ISO7741.pdf`, `TI_ISO7710.pdf` — isolators superseded
+  2026-10-09 by MAX2244x.
+- `datasheets/ADI_ADGM3144.pdf` (13 MB) — MEMS switch rejected 2026-10-07
+  (rejection rationale recorded in bom; reopen criteria documented there).
+
+KEPT deliberately: `tb_vu13p_top.sv`/`tb_vu13p_mig.sv` — names are stale but
+the TBs were refreshed to drive `acku15s_dac_top` and are live in the runner
+scripts; `utils/gen_cosim*.py` — one-shot generators tied to logged
+experiments (reproduce-path); `Xilinx/scripts/impl_*`/`synth_*` — milestone
+run records; `xu316_ds.pdf` — QF60A datasheet used for the pin-map
+verification note; `VARiscite-SOM-AM62_Datasheet.pdf` — VAR-SOM family
+doc; `analysis_archive/` — intentional archive.
+
+Note: .gitignore already covers all sim droppings (xsim.dir, *.rpt, Xilinx/build
+850 MB, logs, ip/**, sim_mig, clockInfo.txt) — `git status` clean, nothing
+untracked leaking into the tree.
+
+## 2026-11-24 todo #21: AP<->XMOS audit — HOST_SPI surface drafted + REAL HW GAP FOUND
+
+Netlist audit of the AP<->XMOS link (`/AP/` nets):
+- HOST_SPI (SCLK/MOSI/MISO/CS_N on J855.75/70/77/79 -> U851.40/7/47/6) +
+  HOST_IRQ_N doorbell (J855.63 -> U851.54) — wires all present.
+- USB_ATTACH = ISOUSB211 U852.23 -> U851.33 (X1D16): senses the PANEL-side
+  cable, NOT the U857 mux direction — the contract's AP-written ATTACH flag
+  is still needed for mux state.
+- XMOS_DFU_EN (J855.69, R864 pd) + USB_MUX_SEL (J855.68, R860 pd -> D1
+  default) — both AP-driven, as ruled.
+- **GAP: XMOS_RST_N = {C861, J851.10, R854, TP857, U851.21, U855.6} — no AP
+  path.** A hard-wedged XMOS (SPI+USB dead) is unrecoverable except by mains
+  power; AP09_EN is supervisor-driven, not AP-reachable.
+
+FIRMWARE_CONTRACT.md updated:
+- §5 HOST_SPI command surface PROPOSED (read set: fw_version/alive_counter/
+  state/last_error/mux_seen; write set: heartbeat_kick/soft_reset/enter_dfu
+  requiring DFU_EN pin + command; ATTACH flag semantics clarified vs the
+  U852 pin-23 attach sense).
+- New §7: hard-reset proposal — one AP GPIO joins the open-drain
+  XMOS_RST_N wired-AND (no FET, 4.7k pull-up). Candidate free J855 pads:
+  **97** (NC in EC config, zero contention — preferred), 62/64 (GPIO1_45/47,
+  +1ms holdoff rule), 80 (GPIO1_48). PIN PICK = USER RULING (one wire in
+  gen_kicad after ruling).
+- Watchdog policy + multi-DFU arbitration ladder written (exclusive
+  update-session lock; DFU sequence: DFU_EN -> enter_dfu cmd -> mux flip ->
+  attach confirm -> DFU -> restore).

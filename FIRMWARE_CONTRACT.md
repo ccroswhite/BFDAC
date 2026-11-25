@@ -177,15 +177,56 @@ never trust stored state":
 
 ## 5. HOST_SPI / ATTACH flag
 
-- `HOST_SPI` is the private AP↔XMOS link + `HOST_IRQ_N` doorbell — surface
-  undefined (todo 22). Minimum required content implied by §1/§4:
+- `HOST_SPI` is the private AP↔XMOS link (AP=master, MCSPI1 → XMOS slave:
+  `HOST_SCLK`/`HOST_MOSI`/`HOST_MISO`/`HOST_CS_N`) + `HOST_IRQ_N` doorbell
+  (XMOS→AP). Surface **PROPOSED 2026-11-24** (pending ruling):
+  - **READ** (AP polls, or reads after `HOST_IRQ_N` doorbell): `fw_version`,
+    `alive_counter` (increments on fw heartbeat, ~1 Hz), `state`
+    (boot/dfu/stream/error), `last_error`, `mux_seen` (XMOS's view of the
+    U857 position, see ATTACH below).
+  - **WRITE**: `heartbeat_kick` (watchdog feed), `soft_reset`,
+    `enter_dfu` (refused unless `XMOS_DFU_EN` pin is already armed —
+    belt-and-suspenders: pin + command both required).
   - **ATTACH flag**: XMOS-visible indication that the AP's USB is attached
     to it through U857 (AP-side mux attach sense) — AP writes on mux
     transitions so XMOS knows when its DFU/diagnostic USB is actually
-    connected to the host AP vs. floating.
-  - Heartbeat / watchdog command surface (todo 23).
-  - NOT used for stream-gate signaling — gate truth is FPGA-owned
+    connected to the host AP vs. floating. Distinct from `USB_ATTACH`
+    (X1D16 ← ISOUSB211 U852.23), which senses the *panel-side* cable, not
+    the mux direction.
+  - **NOT used for stream-gate signaling** — gate truth is FPGA-owned
     (STREAM_STATUS); HOST_SPI must not become a second selection authority.
+
+## 7. AP→XMOS hard reset + watchdog (2026-11-24 audit + proposal)
+
+**Hardware gap found:** no AP path to `XMOS_RST_N`. The net is
+`{C861, J851.10, R854, TP857, U851.21, U855.6}` — buck PG + R/C delay +
+XTAG4 only. If the XMOS wedges with both SPI and USB dead, nothing the AP
+can reach recovers it short of mains power. `AP09_EN` is supervisor-driven,
+not AP-controllable.
+
+- **Proposed wire:** one AP GPIO → `XMOS_RST_N`. Electrically safe today:
+  all existing drivers are open-drain (U855 PG; XTAG4 pin 10), the node is
+  pulled up by R854 — an AP pin configured drive-low/Hi-Z joins the
+  wired-AND with no contention. No FET needed (4.7 kΩ pull-up).
+- **Candidate J855 pads** (all unconnected in the current map):
+  - **pin 97** — NC in the `EC` assembly config (RGMII1_TXC is no-EC only).
+    Zero contention, no strap/drive-holdoff caveats. Preferred.
+  - pins 62/64 — GPIO1_45/47 (MMC1 unused); inherits the
+    `SYS_NRSTIN_3V3`+1 ms drive-holdoff rule already on HOST_IRQ_N.
+  - pin 80 — GPIO1_48 (MMC1_SDCD), pulled-low-until-boot note.
+- **Watchdog policy (no extra wire):** AP expects the XMOS `alive_counter`
+  to advance on a poll, or a periodic `HOST_IRQ_N` doorbell. N missed
+  beats → escalation ladder: `soft_reset` command → hard reset via the
+  GPIO wire → mark `sticky_err` + log. Timeout ≫ boot+renegotiation time
+  (≫2 s; DFU sessions legitimately stall the counter — watchdog suspends
+  while `state==dfu`).
+- **Multi-DFU arbitration:** the AP is the sole update manager (ruled
+  2026-11-03) with four targets — self, XMOS flash (U853 via DFU over
+  U857), FPGA SoM flash (AP_SPI indirect-flash registers), coefficient
+  store (AP_SPI streaming). All updates hold a single AP-side
+  update-session lock (exclusive). XMOS DFU sequence: AP drives
+  `XMOS_DFU_EN` high → `enter_dfu` command → flip `USB_MUX_SEL` →
+  confirm `mux_seen`/attach → USB DFU → restore mux → clear DFU_EN.
 
 ## 6. I²S source / rate contract
 
