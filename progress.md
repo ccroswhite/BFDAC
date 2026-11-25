@@ -6876,3 +6876,20 @@ FIRMWARE_CONTRACT.md updated:
 - Watchdog policy + multi-DFU arbitration ladder written (exclusive
   update-session lock; DFU sequence: DFU_EN -> enter_dfu cmd -> mux flip ->
   attach confirm -> DFU -> restore).
+
+## 2026-11-24 todo #20 (partial): resp_lag capture-offset — VERIFIED already implemented
+
+The isolator-latency fix the bom asked for ("384 kHz wants the resp_lag
+capture-offset in i2s_master_ingress on BOTH source paths") is in place:
+
+- `rx_trim_src1`/`rx_trim_src2` = 0x1C [12:8]/[20:16], per-source (XMOS vs AP
+  McASP0 paths have different isolator crossing counts), default 5'd8,
+  selected by `i2s_src_sel`, readback STREAM_STATUS[15:11].
+- `i2s_master_ingress.delay_cycles` = 46/23/11/6 (rate_shift 0-3) + rx_trim
+  (0-31) — capture point shifts in dsp_clk units (278/302 MHz => ~3.3-3.6 ns
+  granularity, 0-112 ns range). Two MAX22445 crossings at max tPD ≈ 44 ns
+  sit well inside the range.
+- Trim changes flush + re-arm framing (muted-only per contract).
+
+REMAINING = bench calibration only: measure the real per-path latency at
+A5 and set the two trim values. No RTL work needed.
