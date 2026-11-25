@@ -26,17 +26,17 @@ module spi_slave (
     // =========================================================
     (* ASYNC_REG = "TRUE" *) logic [2:0] sclk_sync;
     (* ASYNC_REG = "TRUE" *) logic [2:0] cs_n_sync;
-    (* ASYNC_REG = "TRUE" *) logic [1:0] mosi_sync;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] mosi_sync;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             sclk_sync <= 3'b000;
             cs_n_sync <= 3'b111;
-            mosi_sync <= 2'b00;
+            mosi_sync <= 3'b000;
         end else begin
             sclk_sync <= {sclk_sync[1:0], spi_sclk};
             cs_n_sync <= {cs_n_sync[1:0], spi_cs_n};
-            mosi_sync <= {mosi_sync[0], spi_mosi};
+            mosi_sync <= {mosi_sync[1:0], spi_mosi};
         end
     end
 
@@ -53,7 +53,7 @@ module spi_slave (
     assign cs_n_fall   = (cs_n_sync[2:1] == 2'b10);
     assign cs_n_rise   = (cs_n_sync[2:1] == 2'b01);
     assign cs_n_active = ~cs_n_sync[1]; 
-    assign mosi_val    = mosi_sync[1];
+    assign mosi_val    = mosi_sync[2];   // 3-FF like sclk/cs: keeps MOSI setup vs the 2-cycle-delayed sclk_rise detect (REVIEW-13)
 
     // Let a final SCLK edge settle through its synchronizer before closing the
     // frame. CS and SCLK are independent asynchronous inputs and can resolve

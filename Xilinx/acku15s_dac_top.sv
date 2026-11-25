@@ -622,6 +622,7 @@ module acku15s_dac_top #(
     ) u_flash_ctrl (
         .clk            (clk_200m),
         .rst_n          (ext_rst_n),
+        .eos            (eos_sync_boot[1]),
         .cmd_opcode     (flash_cmd_opcode),
         .cmd_target     (flash_cmd_target),
         .cmd_addr       (flash_cmd_addr),

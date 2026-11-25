@@ -170,15 +170,29 @@ module qspi_boot_loader #(
     logic        done_pulse_c;
     logic        job_err_ui;                  // sticky per job, sampled at done
 
-    always_ff @(posedge ui_clk) job_sync_ui <= {job_sync_ui[1:0], job_toggle};
+    // Both chains need a real reset: without one they power up X, and on an
+    // ext_rst_n pulse the two domains can release asymmetrically (ui_rst
+    // trails ext_rst_n through the MIG reset tree) — a done_toggle 1->0
+    // transition landing after done_sync_c's first shift would forge a
+    // done_pulse_c (REVIEW-13).
+    always_ff @(posedge ui_clk) begin
+        if (ui_rst) job_sync_ui <= '0;
+        else        job_sync_ui <= {job_sync_ui[1:0], job_toggle};
+    end
     assign job_pulse_ui = job_sync_ui[2] ^ job_sync_ui[1];
 
-    always_ff @(posedge clk) done_sync_c <= {done_sync_c[1:0], done_toggle_ui};
+    always_ff @(posedge clk) begin
+        if (!rst_n) done_sync_c <= '0;
+        else        done_sync_c <= {done_sync_c[1:0], done_toggle_ui};
+    end
     assign done_pulse_c = done_sync_c[2] ^ done_sync_c[1];
 
     // job_err is quasi-static at the done toggle; 2-FF resample
     (* ASYNC_REG = "TRUE" *) logic [1:0] job_err_sync;
-    always_ff @(posedge clk) job_err_sync <= {job_err_sync[0], job_err_ui};
+    always_ff @(posedge clk) begin
+        if (!rst_n) job_err_sync <= '0;
+        else        job_err_sync <= {job_err_sync[0], job_err_ui};
+    end
 
     // =========================================================================
     // Flash-side FSM (clk domain): header parse, CRC32, byte->word pack

@@ -46,6 +46,9 @@ module qspi_flash_ctrl #(
 )(
     input  logic        clk,           // 200 MHz ctrl clock
     input  logic        rst_n,
+    input  logic        eos = 1'b1,    // STARTUPE3 end-of-startup (sync'd); CCLK_WARM
+                                       // waits for it so the USRCCLKO dummy clocks
+                                       // land after the CCLK mux transfers (REVIEW-13)
 
     // --- ARM command interface (ctrl plane registers) ------------------------
     input  logic [7:0]  cmd_opcode,
@@ -134,6 +137,9 @@ module qspi_flash_ctrl #(
     // STARTUPE3 swallows the first ~3 USRCCLKO edges after EOS to transfer the
     // CCLK mux (UG570), independent of elapsed wall time. Burn 8 half-cycles
     // (4 full clocks) with CS_n high so no real opcode edge is ever eaten.
+    // REVIEW-13: two fixes — the count is EOS-gated (it used to run on
+    // ext_rst_n, possibly before EOS existed) and the toggling steps on the
+    // /8 tick: 25 MHz, not the 100 MHz free-run it had (F_USRCCLKO / trace).
     logic [2:0] warm_cnt;
     wire        warm_active = (state == CCLK_WARM);
 
@@ -237,7 +243,7 @@ module qspi_flash_ctrl #(
                 op_busy  <= 1'b0;
                 spi_cs_n <= 1'b1;
                 sck_int  <= 1'b0;
-            end else if (warm_active) begin
+            end else if (warm_active && (&ckdiv)) begin
                 sck_int <= ~sck_int;   // CS_n stays high: flashes ignore these
             end else if (op_start) begin
                 op_busy     <= 1'b1;
@@ -341,8 +347,20 @@ module qspi_flash_ctrl #(
     logic [31:0] cmd_addr_r;
     logic [7:0]  cmd_opcode_r;
     logic       rd_served;   // set when a stream is accepted; clears when rd_req drops
+    logic       cmd_pend;    // cmd_trigger arriving during CCLK_WARM is latched —
+                           // the trigger is a 1-cycle pulse and would otherwise be
+                           // lost before IDLE is reached (REVIEW-13)
+    logic [31:0] pend_addr;
+    logic [7:0]  pend_opcode;
+    logic [1:0]  pend_target;
 
     assign wip = rx_sr[0];   // last RDSR byte, bit0 = write-in-progress
+
+    // Effective command fields: live inputs normally; latched payload while a
+    // CCLK_WARM-pended trigger drains (its inputs are only valid for 1 cycle).
+    wire [31:0] cmd_addr_e   = cmd_pend ? pend_addr   : cmd_addr;
+    wire [7:0]  cmd_opcode_e = cmd_pend ? pend_opcode : cmd_opcode;
+    wire [1:0]  cmd_target_e = cmd_pend ? pend_target : cmd_target;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -367,11 +385,24 @@ module qspi_flash_ctrl #(
             polling    <= 1'b0;
             cmd_err    <= 1'b0;
             rd_served  <= 1'b0;
+            cmd_pend   <= 1'b0;
         end else begin
             op_start <= 1'b0;
             rd_done  <= 1'b0;
             cmd_err  <= 1'b0;
             if (!rd_req) rd_served <= 1'b0;
+            if (cmd_trigger && state == CCLK_WARM && !cmd_pend) begin
+                if ((cmd_target == TGT_CARRIER || cmd_target == 2'd3) &&
+                    !carrier_addr_valid(cmd_addr))
+                    cmd_err <= 1'b1;   // out-of-range: reject immediately, don't queue
+                else begin
+                    cmd_pend    <= 1'b1;
+                    pend_addr   <= cmd_addr;
+                    pend_opcode <= cmd_opcode;
+                    pend_target <= cmd_target;
+                    cmd_busy    <= 1'b1;   // accepted-and-queued
+                end
+            end
 
             if (wdt_abort) begin
                 // Watchdog abort: release busy, flag error, return to IDLE
@@ -381,7 +412,7 @@ module qspi_flash_ctrl #(
                 cmd_err  <= 1'b1;
             end else
             case (state)
-                CCLK_WARM: begin
+                CCLK_WARM: if (eos && (&ckdiv)) begin
                     warm_cnt <= warm_cnt + 3'd1;
                     if (warm_cnt == 3'd7)
                         state <= IDLE;
@@ -407,17 +438,18 @@ module qspi_flash_ctrl #(
                         op_stream   <= 1'b1;
                         op_start    <= 1'b1;
                         state       <= B_READ;
-                    end else if (cmd_trigger) begin
-                        if ((cmd_target == TGT_CARRIER || cmd_target == 2'd3) &&
-                            !carrier_addr_valid(cmd_addr)) begin
+                    end else if (cmd_trigger || cmd_pend) begin
+                        cmd_pend <= 1'b0;   // consumed — rd_req priority can't drop it
+                        if ((cmd_target_e == TGT_CARRIER || cmd_target_e == 2'd3) &&
+                            !carrier_addr_valid(cmd_addr_e)) begin
                             cmd_err <= 1'b1;
                         end else begin
                             cmd_busy    <= 1'b1;
-                            cmd_addr_r   <= cmd_addr;
-                            cmd_opcode_r <= cmd_opcode;
-                            sel_target <= (cmd_target == 2'd3) ? TGT_CARRIER : cmd_target;
-                            cf_cs_sel  <= carrier_cs_index(cmd_addr);
-                            case (cmd_opcode)
+                            cmd_addr_r   <= cmd_addr_e;
+                            cmd_opcode_r <= cmd_opcode_e;
+                            sel_target <= (cmd_target_e == 2'd3) ? TGT_CARRIER : cmd_target_e;
+                            cf_cs_sel  <= carrier_cs_index(cmd_addr_e);
+                            case (cmd_opcode_e)
                             8'h01, 8'h02: begin
                                 // WREN first
                                 op_hdr      <= {8'h06, 32'd0};
