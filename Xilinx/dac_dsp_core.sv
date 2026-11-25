@@ -75,6 +75,9 @@ module dac_dsp_core #(
     input  logic [1:0]      cell_test_req,
     output logic [1:0]      cell_test_ack,
     input  logic            cell_test_safe,
+    input  logic            cell_test_dc_hold,   // reg 0x22[0]: hold RTZ gate open
+                                                // during cell test (static-DC
+                                                // noise-isolation step A3)
     input  tri0             bench_req,
     input  logic [10:0]     bench_cmd,
     output logic            bench_ack,
@@ -758,6 +761,26 @@ module dac_dsp_core #(
 
     assign rtz_gate = (pace_div != 3'd0) && (pace_div != 3'd7);
 
+    // Noise-isolation step A3: hold the RTZ gate open so a CELL_TEST midscale
+    // pattern conducts 100 % of the frame — separates DC tail-current-source
+    // noise from switching-rectified noise at the I/V node. Quasi-static bits:
+    // dc_hold arrives on clk_200m, cell_test_active on dsp_clk; both are only
+    // honored after the multi-million-cycle cell-test mute, so 2-FF is ample.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] dc_hold_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] test_active_sync;
+    logic        rtz_gate_eff;
+
+    always_ff @(posedge cell_clk) begin
+        if (!cell_rst_n) begin
+            dc_hold_sync     <= '0;
+            test_active_sync <= '0;
+        end else begin
+            dc_hold_sync     <= {dc_hold_sync[0], cell_test_dc_hold};
+            test_active_sync <= {test_active_sync[0], cell_test_active};
+        end
+    end
+    assign rtz_gate_eff = rtz_gate || (dc_hold_sync[1] && test_active_sync[1]);
+
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_l;
     (* IOB = "TRUE" *) logic [63:0] cascode_iob_r;
 
@@ -766,8 +789,8 @@ module dac_dsp_core #(
             cascode_iob_l <= '0;
             cascode_iob_r <= '0;
         end else begin
-            cascode_iob_l <= (rtz_gate && cell_alive) ? cell_cap_l : 64'd0;
-            cascode_iob_r <= (rtz_gate && cell_alive) ? cell_cap_r : 64'd0;
+            cascode_iob_l <= (rtz_gate_eff && cell_alive) ? cell_cap_l : 64'd0;
+            cascode_iob_r <= (rtz_gate_eff && cell_alive) ? cell_cap_r : 64'd0;
         end
     end
 

@@ -853,6 +853,7 @@ module acku15s_dac_top #(
     logic             dpd_enable_sync;
     logic [1:0][7:0]  cell_test_cfg;
     logic [1:0]       cell_test_req, cell_test_ack;
+    logic             cell_test_dc_hold;    // reg 0x22[0], clk_200m -> cell_clk
     logic [10:0] bench_cmd;
     logic bench_req, bench_ack, bench_ready, bench_busy, bench_available;
     logic [31:0] bench_status;
@@ -961,6 +962,7 @@ module acku15s_dac_top #(
         .cell_test_cfg          (cell_test_cfg),
         .cell_test_req          (cell_test_req),
         .cell_test_ack          (cell_test_ack),
+        .cell_test_dc_hold      (cell_test_dc_hold),
         .bench_busy             (bench_busy),
         .bench_status           (bench_status),
         .bench_available        (bench_available),
@@ -1168,6 +1170,7 @@ module acku15s_dac_top #(
         .cell_test_cfg          (cell_test_cfg),
         .cell_test_req          (cell_test_req),
         .cell_test_ack          (cell_test_ack),
+        .cell_test_dc_hold      (cell_test_dc_hold),
         .cell_test_safe         (force_zero && !line_mute_drive && pg_all_sync[1]),
         .bench_req              (bench_req),
         .bench_cmd              (bench_cmd),

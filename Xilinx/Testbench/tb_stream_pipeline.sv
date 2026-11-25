@@ -27,6 +27,7 @@ module tb_stream_pipeline;
         .voicing_en(1'b0), .voicing_k2('0), .voicing_k3('0),
         .boot_envelope_gain(16'hffff), .dpd_enable(1'b0), .dpd_cal_data('0),
         .cell_test_cfg('0), .cell_test_req(2'd0), .cell_test_safe(1'b0),
+        .cell_test_dc_hold(1'b0),
         .bench_req(1'b0), .bench_cmd(11'd0), .cascode_l(cascode_l), .cascode_r(cascode_r)
     );
     int fir_frame_count=0;

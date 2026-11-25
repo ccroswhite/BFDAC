@@ -118,6 +118,10 @@
 `define SPI_W_VOICING_FILTER_ID 7'h20  // [15:0] raw directory ID; 16'hFFFF =
                                       //   don't-touch-bank sentinel (fields only)
 `define SPI_W_STREAM_EVENT     7'h21  // W1C [2:0]: [0]=preempt_xmos [1]=preempt_ap
+`define SPI_W_CELL_TEST_MODE   7'h22  // [0]=cell_test_dc_hold: hold RTZ gate open
+                                      //   during CELL_TEST (static-DC midscale,
+                                      //   noise-isolation step A3); inert unless
+                                      //   a cell test is active. AP-only.
                                       //   [2]=echo_mismatch.  XMOS masked to {0,2}
                                       //   (its own domain); AP clears all.
                                       //   (stream-gate contract 2026-11-21)

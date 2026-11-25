@@ -97,6 +97,7 @@ module dac_ctrl_plane (
     output logic [1:0][7:0] cell_test_cfg,
     output logic [1:0]      cell_test_req,
     input  logic [1:0]      cell_test_ack,
+    output logic            cell_test_dc_hold,   // reg 0x22[0]: static-DC RTZ hold
     input  logic            bench_busy,
     input  logic [31:0]    bench_status,
     output logic          bench_available,
@@ -315,7 +316,7 @@ module dac_ctrl_plane (
             `SPI_W_FLASH_ADDR_HI, `SPI_W_FLASH_CMD,      `SPI_W_FLASH_DATA,
             `SPI_W_FLASH_PTR,     `SPI_W_DPD_EN,         `SPI_W_STICKY_W1C,
             `SPI_W_FILTER_SELECT_ID,
-            `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R,
+            `SPI_W_CELL_TEST_L, `SPI_W_CELL_TEST_R, `SPI_W_CELL_TEST_MODE,
             `SPI_W_STREAM_RATE, `SPI_W_STREAM_VALID, `SPI_W_STREAM_EVENT,
             `SPI_W_I2S_SRC,
             `SPI_W_VOICING_K2, `SPI_W_VOICING_K3, `SPI_W_VOICING_CTRL,
@@ -626,6 +627,10 @@ module dac_ctrl_plane (
                     wr_rej_reason = `SPI_ERR_TEST_UNSAFE;
                 end
             end
+            `SPI_W_CELL_TEST_MODE: if (ctrl_bus_data[23:1] != 0) begin
+                wr_rejected   = 1'b1;
+                wr_rej_reason = `SPI_ERR_TEST_FORMAT;
+            end
             `SPI_W_FLASH_CMD: if (flash_cmd_busy) begin
                 wr_rejected   = 1'b1;
                 wr_rej_reason = ERR_FLASH_BUSY;
@@ -877,6 +882,7 @@ module dac_ctrl_plane (
             dpd_enable        <= 1'b0;
             cell_test_cfg     <= '0;
             cell_test_req     <= '0;
+            cell_test_dc_hold <= 1'b0;
             cal_ptr_wrapped   <= 1'b0;
             // Voicing: fail-safe = bypass preset 0, no commit pending
             voicing_sh_en        <= 1'b0;
@@ -1087,6 +1093,8 @@ module dac_ctrl_plane (
                             flash_buf_raddr <= ctrl_bus_data[15:8];
                         end
                         `SPI_W_DPD_EN: if (!wr_rejected) dpd_enable <= ctrl_bus_data[0]; // Step 4D.1
+                        `SPI_W_CELL_TEST_MODE: if (!wr_rejected)
+                            cell_test_dc_hold <= ctrl_bus_data[0];
                         `SPI_W_FILTER_SELECT_ID: if (!wr_rejected) begin // [15:0]=directory filter_id, bypasses
                                      // the toggle list ("any filter at any time", TODO-23).
                                      // filter_cur_index is left untouched; 0x17 readback

@@ -10,6 +10,7 @@ module tb_cell_measurement;
     wire relay_switch_busy;
     wire [1:0][7:0] cfg;
     wire [1:0] req, ack;
+    wire dc_hold;
     wire [63:0] out_l, out_r;
     logic [31:0] rd;
     logic [63:0] base, stepped;
@@ -55,6 +56,7 @@ module tb_cell_measurement;
         .coef_load_err(1'b0), .coef_load_err_code(3'b0), .i2s_err(1'b0),
         .boot_crc_fail(1'b0), .boot_axi_fail(1'b0), .flash_cmd_err(1'b0),
         .stream_source_valid(unmute), .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack),
+        .cell_test_dc_hold(dc_hold),
         .bench_busy(manual_busy), .bench_available(manual_available), .bench_status(manual_status),
         // formerly tri0/tri1 defaults — now explicit (tri ports removed)
         .cal_write_reject_toggle(1'b0), .calibration_valid(1'b1),
@@ -87,6 +89,7 @@ module tb_cell_measurement;
         .bank_select(1'b0), .bank_load_target(1'b0), .sys_volume(32'd0),
         .boot_envelope_gain(16'd0), .dpd_enable(1'b0), .dpd_cal_data('0),
         .cell_test_cfg(cfg), .cell_test_req(req), .cell_test_ack(ack), .cell_test_safe(safe),
+        .cell_test_dc_hold(dc_hold),
         .bench_cmd(manual_cmd), .bench_req(manual_req), .bench_ack(manual_ack), .bench_ready(manual_ready),
         .cascode_l(out_l), .cascode_r(out_r)
     );
@@ -250,6 +253,20 @@ module tb_cell_measurement;
             end
             wr(ch == 0 ? `SPI_W_CELL_TEST_L : `SPI_W_CELL_TEST_R, 24'd0);
         end
+
+        // SPI_W_CELL_TEST_MODE[0] dc_hold: opens the RTZ gate while a cell
+        // test is applied — static-DC midscale (noise-isolation step A3).
+        // out_l must carry the pattern for the WHOLE frame: no zero window.
+        wr(`SPI_W_CELL_TEST_MODE, 24'h1);
+        wr(`SPI_W_CELL_TEST_L, 24'h80);
+        for (int n = 0; n < 4000 && out_l == 64'd0; n++) @(negedge cell_clk);
+        if (out_l == 64'd0) $fatal(1, "dc_hold: test pattern never reached cascode");
+        for (int i = 0; i < 40; i++) begin   // 5 full 8-cycle frames, never zero
+            @(negedge cell_clk);
+            if (out_l !== baseline(0)) $fatal(1, "dc_hold: L dropped mid-frame (got %h)", out_l);
+        end
+        wr(`SPI_W_CELL_TEST_L, 24'd0);
+        wr(`SPI_W_CELL_TEST_MODE, 24'h0);
 
         wr(`SPI_W_CELL_TEST_L, 24'hc0);
         wr(`SPI_W_CELL_TEST_R, 24'hbf);

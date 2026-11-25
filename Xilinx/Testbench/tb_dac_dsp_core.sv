@@ -93,6 +93,7 @@ module tb_dac_dsp_core;
         .voicing_k2         ('0),
         .voicing_k3         ('0),
         .cell_test_cfg      ('0),
+        .cell_test_dc_hold  (1'b0),
         .cell_test_req      (2'd0),
         .cell_test_safe     (1'b0),
         .bench_cmd          (11'd0),
